@@ -125,3 +125,11 @@ def test_path_traversal_is_a_404():
     resp = client.get("/..%2F..%2Fbackend%2Fapp%2Fconfig.py")
     assert resp.status_code == 404
     assert "DATA_DIR" not in resp.text
+
+
+@pytest.mark.parametrize("path", ["/%01", "/a%00b", "/%7F%01x/y"])
+def test_paths_the_os_cannot_look_up_are_404s(path):
+    html = client.get(path, headers={"accept": "text/html"})
+    assert html.status_code == 404 and "Page not found" in html.text
+    api = client.get(path, headers={"accept": "application/json"})
+    assert api.status_code == 404 and api.json()["code"] == "not_found"
