@@ -71,3 +71,14 @@ def test_parsed_rows_fit_the_schema(tmp_path):
 
 def test_dataset_urls_cover_every_parser():
     assert set(nflverse.dataset_urls(2026)) == set(nflverse.PARSERS)
+
+
+def test_team_abbreviations_match_the_rest_of_the_app():
+    games = nflverse.parse_games("game_id,season,week,away_team,home_team\n2026_10_LA_SF,2026,10,LA,SF\n")
+    assert (games[0]["away_team"], games[0]["home_team"]) == ("LAR", "SF")
+    stats = nflverse.parse_player_week_stats(
+        "player_id,season,week,team,opponent_team\n00-1,2026,1,LA,SEA\n00-2,2026,1,SEA,LA\n"
+    )
+    assert [(r["team"], r["opponent"]) for r in stats] == [("LAR", "SEA"), ("SEA", "LAR")]
+    teams = nflverse.parse_team_week_stats("team,season,week,opponent_team\nLA,2026,1,SEA\n")
+    assert teams[0]["team"] == "LAR"

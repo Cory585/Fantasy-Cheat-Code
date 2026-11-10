@@ -16,6 +16,9 @@ from app.data.sources.http import RateLimitedClient
 
 RELEASES = "https://github.com/nflverse/nflverse-data/releases/download"
 
+# nflverse abbreviations that differ from the ones used elsewhere in the app (Sleeper's).
+TEAM_ALIASES = {"LA": "LAR"}
+
 
 def dataset_urls(season: int) -> dict[str, str]:
     return {
@@ -59,6 +62,11 @@ def _str(value: str | None) -> str | None:
     return value if value not in (None, "", "NA") else None
 
 
+def _team(value: str | None) -> str | None:
+    value = _str(value)
+    return TEAM_ALIASES.get(value, value) if value else None
+
+
 def _rows(text: str) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text.lstrip("﻿"))))
 
@@ -83,7 +91,7 @@ def parse_players(text: str) -> list[dict]:
             "gsis_id": r["gsis_id"],
             "name": r.get("display_name") or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip(),
             "position": _str(r.get("position")),
-            "team": _str(r.get("latest_team")),
+            "team": _team(r.get("latest_team")),
             "status": _str(r.get("status")),
             "espn_id": _int(r.get("espn_id")),
             "pfr_id": _str(r.get("pfr_id")),
@@ -112,8 +120,8 @@ def parse_games(text: str) -> list[dict]:
             "week": _int(r.get("week")),
             "gameday": _str(r.get("gameday")),
             "gametime": _str(r.get("gametime")),
-            "away_team": _str(r.get("away_team")),
-            "home_team": _str(r.get("home_team")),
+            "away_team": _team(r.get("away_team")),
+            "home_team": _team(r.get("home_team")),
             "away_score": _int(r.get("away_score")),
             "home_score": _int(r.get("home_score")),
             "spread_line": _num(r.get("spread_line")),
@@ -146,8 +154,8 @@ def parse_player_week_stats(text: str) -> list[dict]:
             "season_type": r.get("season_type") or "REG",
             "name": _str(r.get("player_display_name")) or _str(r.get("player_name")),
             "position": _str(r.get("position")),
-            "team": _str(r.get("team")),
-            "opponent": _str(r.get("opponent_team")),
+            "team": _team(r.get("team")),
+            "opponent": _team(r.get("opponent_team")),
             "fantasy_points": _num(r.get("fantasy_points")),
             "fantasy_points_ppr": _num(r.get("fantasy_points_ppr")),
             "stats": _stats_json(r, PLAYER_STAT_PROMOTED),
@@ -163,11 +171,11 @@ TEAM_STAT_PROMOTED = {"team", "season", "week", "season_type", "opponent_team"}
 def parse_team_week_stats(text: str) -> list[dict]:
     return [
         {
-            "team": r["team"],
+            "team": _team(r["team"]),
             "season": _int(r["season"]),
             "week": _int(r["week"]),
             "season_type": r.get("season_type") or "REG",
-            "opponent": _str(r.get("opponent_team")),
+            "opponent": _team(r.get("opponent_team")),
             "stats": _stats_json(r, TEAM_STAT_PROMOTED),
         }
         for r in _rows(text)
@@ -184,8 +192,8 @@ def parse_snap_counts(text: str) -> list[dict]:
             "week": _int(r.get("week")),
             "name": _str(r.get("player")),
             "position": _str(r.get("position")),
-            "team": _str(r.get("team")),
-            "opponent": _str(r.get("opponent")),
+            "team": _team(r.get("team")),
+            "opponent": _team(r.get("opponent")),
             "offense_snaps": _num(r.get("offense_snaps")),
             "offense_pct": _num(r.get("offense_pct")),
             "defense_snaps": _num(r.get("defense_snaps")),
@@ -205,7 +213,7 @@ def parse_injuries(text: str) -> list[dict]:
             "season": _int(r["season"]),
             "week": _int(r["week"]),
             "season_type": r.get("season_type") or "REG",
-            "team": r["team"],
+            "team": _team(r["team"]),
             "name": _str(r.get("full_name")),
             "position": _str(r.get("position")),
             "report_status": _str(r.get("report_status")),
