@@ -60,12 +60,13 @@ class DraftPlanner:
             end = min(start + targets_per_pick, len(self._board))
             targets = [self._target(j) for j in range(start, end)]
 
-            # Players that go from this pick up to (not including) your next one.
+            # Players other teams take between this pick and your next one, assuming you
+            # take the top-ranked player here.
             next_overall = mine[i + 1].overall if i + 1 < len(mine) else None
-            span_end = min(next_overall - 1 if next_overall else start + 1, len(self._board))
             mix: dict = {}
-            for p, _ in self._board[start:span_end]:
-                mix[p.position] = mix.get(p.position, 0) + 1
+            if next_overall:
+                for p, _ in self._board[start + 1:next_overall - 1]:
+                    mix[p.position] = mix.get(p.position, 0) + 1
 
             picks.append(PlannedPick(
                 pick=pick,

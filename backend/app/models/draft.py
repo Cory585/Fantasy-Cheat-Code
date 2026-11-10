@@ -32,7 +32,7 @@ class PlannedPick(BaseModel):
     )
     position_mix: dict[Position, int] = Field(
         default_factory=dict,
-        description="Positions of the players likely taken from this pick until your next one",
+        description="Positions of the players other teams likely take before your next pick",
     )
 
 

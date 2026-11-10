@@ -96,9 +96,15 @@ def test_plan_includes_mock_board_and_gaps():
     first, second = plan.picks
     # Pick 2, then pick 7: 4 picks by other teams in between.
     assert first.picks_until_next == 4 and second.picks_until_next is None
-    # Players ranked 2-6 go between your picks: qb2, rb1, wr1, wr2, rb2 by projection.
-    assert first.position_mix == {Position.QB: 1, Position.RB: 2, Position.WR: 2}
-    assert sum(second.position_mix.values()) == 1
+    # You take qb2 at pick 2; others take ranks 3-6: rb1, wr1, wr2, rb2 by projection.
+    assert first.position_mix == {Position.RB: 2, Position.WR: 2}
+    assert second.position_mix == {}  # last pick
+
+
+def test_back_to_back_picks_have_an_empty_mix():
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=4, rounds=2)
+    assert plan.picks[0].picks_until_next == 0
+    assert plan.picks[0].position_mix == {}
 
 
 def test_board_stops_at_the_player_pool():
