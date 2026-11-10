@@ -8,6 +8,7 @@ Responses are large (~25 MB for the full player pool), so this is sync-job only.
 """
 
 import json
+from typing import NamedTuple
 
 from app.data.sources.http import RateLimitedClient
 from app.models.player import Position
@@ -36,15 +37,20 @@ STAT_SPLIT_WEEKLY = 1
 TEAM_ALIASES = {"WSH": "WAS"}
 
 
+class ProTeam(NamedTuple):
+    abbrev: str
+    bye_week: int | None
+
+
 class EspnSource:
     def __init__(self, client: RateLimitedClient):
         self._client = client
 
-    def pro_teams(self, season: int) -> dict[int, str]:
-        """ESPN proTeamId -> team abbreviation (Sleeper style)."""
+    def pro_teams(self, season: int) -> dict[int, ProTeam]:
+        """ESPN proTeamId -> team abbreviation (Sleeper style) and bye week."""
         data = self._client.get_json(f"{API}/seasons/{season}", params={"view": "proTeamSchedules_wl"})
         return {
-            t["id"]: TEAM_ALIASES.get(t["abbrev"], t["abbrev"])
+            t["id"]: ProTeam(TEAM_ALIASES.get(t["abbrev"], t["abbrev"]), t.get("byeWeek"))
             for t in data["settings"]["proTeams"]
             if t["id"]
         }
