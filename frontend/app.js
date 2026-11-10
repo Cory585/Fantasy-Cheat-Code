@@ -197,7 +197,7 @@ function verdictText(analysis) {
   const pct = analysis.value_difference_pct.toFixed(1);
   if (analysis.verdict === "fair") return { headline: "Even trade", detail: `The two sides are ${pct}% apart in value.` };
   const winner = analysis.verdict === "favors_a" ? teamName("a") : teamName("b");
-  return { headline: `${winner} wins this trade`, detail: `${winner} gets ${pct}% more value than they give up.` };
+  return { headline: `${winner} wins this trade`, detail: `The value gap is ${pct}% in ${winner}'s favor.` };
 }
 
 // Ball position in yards from Team A's goal line (0) to Team B's (100).
