@@ -5,6 +5,10 @@ so a sync job can never hammer Sleeper or ESPN:
 
   * Requests to the same host are spaced at least `min_interval` seconds apart.
   * 429 and 5xx responses are retried with exponential backoff, honoring `Retry-After`.
+  * Optional limits for request-time use: `max_response_bytes` (checked while the body
+    streams in, after decompression, so an oversized or gzip-bomb body is never fully
+    read), `total_timeout` (a deadline for the whole body, since `timeout` is per read),
+    and `max_retry_delay` (if the server asks for a longer wait, fail instead of sleeping).
 """
 
 import threading
@@ -58,9 +62,13 @@ class RateLimitedClient:
         sleep: Callable[[float], None] = time.sleep,
         transport: httpx.BaseTransport | None = None,
         max_response_bytes: int | None = None,
+        total_timeout: float | None = None,
+        max_retry_delay: float | None = None,
     ):
         self._min_interval = min_interval
         self._max_response_bytes = max_response_bytes
+        self._total_timeout = total_timeout
+        self._max_retry_delay = max_retry_delay
         self._max_retries = max_retries
         self._backoff_base = backoff_base
         self._sleep = sleep
@@ -92,21 +100,43 @@ class RateLimitedClient:
         limiter = self._limiter_for(url)
         for attempt in range(self._max_retries + 1):
             limiter.wait()
-            response = self._client.get(url, params=params, headers=headers)
+            response = self._read(url, params, headers)
             if response.status_code not in RETRY_STATUSES or attempt == self._max_retries:
                 response.raise_for_status()
-                self._check_size(response)
                 return response
-            self._sleep(self._retry_delay(response, attempt))
+            delay = self._retry_delay(response, attempt)
+            if self._max_retry_delay is not None and delay > self._max_retry_delay:
+                response.raise_for_status()  # don't park the caller for a long Retry-After
+            self._sleep(delay)
         raise AssertionError("unreachable")
 
-    def _check_size(self, response: httpx.Response) -> None:
+    def _read(self, url: str, params, headers: dict[str, str] | None) -> httpx.Response:
+        """GET with the body streamed in, enforcing the size cap and overall deadline."""
+        request = self._client.build_request("GET", url, params=params, headers=headers)
+        response = self._client.send(request, stream=True)
         limit = self._max_response_bytes
-        if limit is None:
-            return
-        declared = response.headers.get("Content-Length", "")
-        if (declared.isdigit() and int(declared) > limit) or len(response.content) > limit:
-            raise ResponseTooLarge(f"Response from {response.url.host} is larger than {limit} bytes")
+        deadline = time.monotonic() + self._total_timeout if self._total_timeout else None
+        try:
+            declared = response.headers.get("Content-Length", "")
+            # Content-Length is the compressed size, and decompressed is never smaller.
+            if limit is not None and declared.isdigit() and int(declared) > limit:
+                raise ResponseTooLarge(f"Response from {response.url.host} is larger than {limit} bytes")
+            chunks, total = [], 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if limit is not None and total > limit:
+                    raise ResponseTooLarge(f"Response from {response.url.host} is larger than {limit} bytes")
+                if deadline is not None and time.monotonic() > deadline:
+                    raise httpx.ReadTimeout(f"Response from {response.url.host} took too long", request=request)
+                chunks.append(chunk)
+        finally:
+            response.close()
+        # Rebuild a plain response from the decoded body (dropping encoding headers that no
+        # longer describe it), so callers can use .json() and .text as before.
+        kept = [(k, v) for k, v in response.headers.multi_items()
+                if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")]
+        return httpx.Response(response.status_code, headers=kept, content=b"".join(chunks),
+                              request=response.request)
 
     def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
         retry_after = response.headers.get("Retry-After")

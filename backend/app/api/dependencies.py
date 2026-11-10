@@ -161,7 +161,9 @@ def get_profile_service() -> ProfileService:
                 max_retries=1,
                 backoff_base=1.0,
                 timeout=8.0,
+                total_timeout=10.0,
                 max_response_bytes=2 * 1024 * 1024,
+                max_retry_delay=2.0,
             )
             _profile_service = ProfileService(
                 EspnAthleteSource(client),
