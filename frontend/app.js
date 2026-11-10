@@ -7,7 +7,10 @@ const state = {
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
   values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
+  search: { a: { position: "", active: -1, results: [], open: false }, b: { position: "", active: -1, results: [], open: false } },
 };
+
+const MAX_RESULTS = 8;
 
 const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
@@ -38,30 +41,160 @@ function formatPoints(value) {
   return value.toFixed(1);
 }
 
-function playerLabel(p) {
-  return `${p.name} (${p.position}, ${p.team}) ${formatPoints(p.ros_projection)}`;
+// ESPN's image CDN, resized server-side so thumbnails stay small.
+const ESPN_LOGO_CODES = { WAS: "wsh" };
+
+function teamLogoUrl(team) {
+  const code = (ESPN_LOGO_CODES[team] || team).toLowerCase();
+  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${code}.png&w=80&h=80`;
 }
 
-function renderPicker(side) {
-  const el = sideEl(side);
-  const position = el.querySelector(".position-filter").value;
-  const select = el.querySelector(".player-select");
-  const previous = select.value;
+function headshotUrl(player) {
+  if (player.position === "DST") return teamLogoUrl(player.team);
+  if (!player.espn_id) return null;
+  return `https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.espn_id}.png&w=96&h=70`;
+}
 
-  const options = [...state.players.values()]
+// Headshot (or team logo for defenses), falling back to initials if the image is missing.
+function avatar(player, size = "md") {
+  const wrap = document.createElement("span");
+  wrap.className = `avatar avatar-${size}`;
+  wrap.setAttribute("aria-hidden", "true");
+  const initials = player.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  const url = headshotUrl(player);
+  if (!url) {
+    wrap.textContent = initials;
+    return wrap;
+  }
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  img.loading = "lazy";
+  img.addEventListener("error", () => {
+    img.remove();
+    wrap.textContent = initials;
+  });
+  wrap.append(img);
+  return wrap;
+}
+
+// ---------- Player search ----------
+
+function normalize(text) {
+  return text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
+}
+
+function searchPlayers(query, position) {
+  const q = normalize(query.trim());
+  return [...state.players.values()]
+    .filter((p) => !inTrade(p.id))
     .filter((p) => !position || p.position === position)
-    .sort((x, y) => y.ros_projection - x.ros_projection);
+    .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
+    .sort((x, y) => y.ros_projection - x.ros_projection)
+    .slice(0, MAX_RESULTS);
+}
 
-  select.replaceChildren(
-    new Option("Choose a player", ""),
-    ...options.map((p) => {
-      const option = new Option(playerLabel(p), p.id);
-      option.disabled = inTrade(p.id);
-      return option;
-    }),
-  );
-  if (previous && !inTrade(previous)) select.value = previous;
-  el.querySelector(".btn-add").disabled = !select.value;
+function searchOption(side, player, index) {
+  const option = document.createElement("li");
+  option.id = `result-${side}-${index}`;
+  option.className = "search-option";
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", String(index === state.search[side].active));
+
+  const text = document.createElement("span");
+  text.className = "search-option-text";
+  const name = document.createElement("span");
+  name.className = "search-option-name";
+  name.textContent = player.name;
+  const meta = document.createElement("span");
+  meta.className = "search-option-meta";
+  meta.textContent = [player.position, player.team, player.injury_status].filter(Boolean).join(", ");
+  text.append(name, meta);
+
+  const proj = document.createElement("span");
+  proj.className = "search-option-proj";
+  proj.textContent = formatPoints(player.ros_projection);
+
+  option.append(avatar(player, "sm"), text, proj);
+  // mousedown (not click) so the input doesn't blur and close the list first.
+  option.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    addPlayer(side, player.id);
+  });
+  return option;
+}
+
+// Open or close a side's results list, then redraw it.
+function setSearchOpen(side, open) {
+  state.search[side].open = open;
+  if (!open) state.search[side].active = -1;
+  renderSearch(side);
+}
+
+function renderSearch(side) {
+  const el = sideEl(side);
+  const input = el.querySelector(".player-search");
+  const list = el.querySelector(".search-results");
+  const search = state.search[side];
+  search.results = searchPlayers(input.value, search.position);
+  if (search.active >= search.results.length) search.active = search.results.length - 1;
+
+  const show = search.open && document.activeElement === input;
+  list.hidden = !show;
+  input.setAttribute("aria-expanded", String(show));
+  input.removeAttribute("aria-activedescendant");
+  if (!show) return;
+
+  if (search.results.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "search-empty";
+    const query = input.value.trim();
+    empty.textContent = query ? `No players match "${query}".` : "No players left to add.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  list.replaceChildren(...search.results.map((p, i) => searchOption(side, p, i)));
+  if (search.active >= 0) {
+    input.setAttribute("aria-activedescendant", `result-${side}-${search.active}`);
+    list.children[search.active]?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function onSearchKey(side, event) {
+  const search = state.search[side];
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!search.open) {
+      search.open = true;
+      renderSearch(side); // refresh results before moving through them
+    }
+    const total = search.results.length;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    search.active = total ? (search.active + step + total) % total : -1;
+    if (event.key === "ArrowUp" && search.active === -1) search.active = total - 1;
+    renderSearch(side);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const pick = search.results[search.active >= 0 ? search.active : 0];
+    if (pick) addPlayer(side, pick.id);
+  } else if (event.key === "Escape") {
+    // First Escape closes the list; a second one (list already closed) clears the text.
+    if (search.open) {
+      event.preventDefault();
+      setSearchOpen(side, false);
+    }
+  }
+}
+
+function setPositionFilter(side, position) {
+  state.search[side].position = position;
+  state.search[side].active = -1;
+  for (const chipEl of sideEl(side).querySelectorAll(".pos-chip")) {
+    chipEl.setAttribute("aria-pressed", String(chipEl.dataset.pos === position));
+  }
+  sideEl(side).querySelector(".player-search").focus();
+  setSearchOpen(side, true);
 }
 
 function renderRoster(side) {
@@ -90,6 +223,7 @@ function rosterItem(side, player) {
   item.dataset.id = player.id;
 
   const info = document.createElement("div");
+  info.className = "player-info";
   const name = document.createElement("div");
   name.className = "player-name";
   name.textContent = player.name;
@@ -126,13 +260,13 @@ function rosterItem(side, player) {
   remove.title = "Remove from trade";
   remove.addEventListener("click", () => removePlayer(side, player.id));
 
-  item.append(info, value, remove);
+  item.append(avatar(player), info, value, remove);
   return item;
 }
 
 function render() {
   for (const side of SIDES) {
-    renderPicker(side);
+    renderSearch(side);
     renderRoster(side);
   }
   refreshValues();
@@ -365,21 +499,20 @@ function renderOutlook(container, player, valuation) {
 
 // ---------- Actions ----------
 
-function addPlayer(side) {
-  const select = sideEl(side).querySelector(".player-select");
-  const id = select.value;
-  if (!id || inTrade(id)) return;
+function addPlayer(side, id) {
+  if (!id || inTrade(id) || !state.players.has(id)) return;
   state.sides[side].push(id);
-  select.value = "";
+  sideEl(side).querySelector(".player-search").value = "";
+  state.search[side].open = false;
+  state.search[side].active = -1;
   render();
-  select.focus();
 }
 
 function removePlayer(side, id) {
   state.sides[side] = state.sides[side].filter((x) => x !== id);
-  render();
   // Keep keyboard focus in the side the player was removed from.
-  sideEl(side).querySelector(".player-select").focus();
+  sideEl(side).querySelector(".player-search").focus();
+  render();
 }
 
 function swapSides() {
@@ -399,11 +532,18 @@ function clearTrade() {
 function bindEvents() {
   for (const side of SIDES) {
     const el = sideEl(side);
-    el.querySelector(".position-filter").addEventListener("change", () => renderPicker(side));
-    el.querySelector(".player-select").addEventListener("change", (e) => {
-      el.querySelector(".btn-add").disabled = !e.target.value;
+    const input = el.querySelector(".player-search");
+    input.addEventListener("input", () => {
+      state.search[side].open = true;
+      state.search[side].active = input.value.trim() ? 0 : -1;
+      renderSearch(side);
     });
-    el.querySelector(".btn-add").addEventListener("click", () => addPlayer(side));
+    input.addEventListener("click", () => setSearchOpen(side, true));
+    input.addEventListener("blur", () => setSearchOpen(side, false));
+    input.addEventListener("keydown", (event) => onSearchKey(side, event));
+    for (const chipEl of el.querySelectorAll(".pos-chip")) {
+      chipEl.addEventListener("click", () => setPositionFilter(side, chipEl.dataset.pos));
+    }
     el.querySelector(".team-name").addEventListener("input", onTradeChanged);
   }
   document.getElementById("swap").addEventListener("click", swapSides);

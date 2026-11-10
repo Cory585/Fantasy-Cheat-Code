@@ -59,13 +59,21 @@
         <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <select class="position-filter" aria-label="Filter Team A players by position">
-            <option value="">All positions</option>
-            <option>QB</option><option>RB</option><option>WR</option>
-            <option>TE</option><option>K</option><option>DST</option>
-          </select>
-          <select class="player-select" aria-label="Choose a player for Team A"></select>
-          <button class="btn btn-add" type="button">Add player</button>
+          <div class="pos-chips" role="group" aria-label="Filter Team A search by position">
+            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
+            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          </div>
+          <div class="search">
+            <input type="search" class="player-search" placeholder="Search players or teams"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-a"
+              aria-label="Search players to add to Team A" autocomplete="off" spellcheck="false">
+            <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
         </div>
         <ul class="roster" aria-live="polite"></ul>
         <p class="side-total"></p>
@@ -81,13 +89,21 @@
         <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <select class="position-filter" aria-label="Filter Team B players by position">
-            <option value="">All positions</option>
-            <option>QB</option><option>RB</option><option>WR</option>
-            <option>TE</option><option>K</option><option>DST</option>
-          </select>
-          <select class="player-select" aria-label="Choose a player for Team B"></select>
-          <button class="btn btn-add" type="button">Add player</button>
+          <div class="pos-chips" role="group" aria-label="Filter Team B search by position">
+            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
+            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          </div>
+          <div class="search">
+            <input type="search" class="player-search" placeholder="Search players or teams"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-b"
+              aria-label="Search players to add to Team B" autocomplete="off" spellcheck="false">
+            <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
         </div>
         <ul class="roster" aria-live="polite"></ul>
         <p class="side-total"></p>
