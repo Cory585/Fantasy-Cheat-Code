@@ -51,3 +51,25 @@ def test_unexpected_errors_are_generic_500s():
     assert resp.status_code == 500
     assert resp.json()["code"] == "internal_error"
     assert "hunter2" not in resp.text
+
+
+# ---------- Security headers ----------
+
+def test_pages_and_api_get_security_headers():
+    for path in ["/", "/draft/", "/players", "/players/nope"]:
+        headers = client.get(path).headers
+        assert headers["X-Content-Type-Options"] == "nosniff"
+        assert headers["X-Frame-Options"] == "DENY"
+        assert "script-src 'self'" in headers["Content-Security-Policy"]
+        assert "unsafe-inline" not in headers["Content-Security-Policy"].split("script-src")[1].split(";")[0]
+
+
+def test_docs_skip_the_csp_but_keep_other_headers():
+    headers = client.get("/docs").headers
+    assert "Content-Security-Policy" not in headers
+    assert headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_pages_have_no_inline_scripts():
+    for path in ["/", "/draft/", "/tiers/", "/start-sit/"]:
+        assert "<script>" not in client.get(path).text, path

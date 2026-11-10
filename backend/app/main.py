@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import draft, errors, meta, players, trades
 from app.api.errors import error_response
+from app.api.security import add_security_headers
 from app.api.ratelimit import RateLimiter, Rule, retry_after_header
 from app.config import settings
 
@@ -55,6 +56,9 @@ async def too_deeply_nested(request: Request, exc: RecursionError):
     # Python's JSON parser recurses per nesting level, so e.g. 5,000 nested arrays overflow it.
     return error_response(400, "Request body is nested too deeply.", "body_too_deep")
 
+
+# Registered last so it's the outermost middleware: even 413s and 429s get the headers.
+app.middleware("http")(add_security_headers)
 
 app.include_router(players.router)
 app.include_router(trades.router)
