@@ -4,6 +4,8 @@
 a local DB, ...). The in-memory implementation lets the API run end to end today.
 """
 
+import json
+from pathlib import Path
 from typing import Protocol
 
 from app.models.player import Player, Position
@@ -32,3 +34,11 @@ class InMemoryPlayerRepository:
         if position is not None:
             players = [p for p in players if p.position == position]
         return sorted(players, key=lambda p: p.ros_projection, reverse=True)
+
+
+def load_player_cache(path: Path) -> list[Player] | None:
+    """Players from the JSON cache written by `app.data.sync`, or None if there is no cache."""
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return [Player.model_validate(p) for p in payload["players"]]
