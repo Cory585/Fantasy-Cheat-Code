@@ -51,6 +51,8 @@ def test_unexpected_errors_are_generic_500s():
     assert resp.status_code == 500
     assert resp.json()["code"] == "internal_error"
     assert "hunter2" not in resp.text
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert "Content-Security-Policy" in resp.headers
 
 
 # ---------- Security headers ----------
@@ -68,6 +70,11 @@ def test_docs_skip_the_csp_but_keep_other_headers():
     headers = client.get("/docs").headers
     assert "Content-Security-Policy" not in headers
     assert headers["X-Content-Type-Options"] == "nosniff"
+
+
+@pytest.mark.parametrize("path", ["/docsx", "/redoc-anything", "/openapi.jsonfoo", "/docs-guide/"])
+def test_csp_exemption_is_exact(path):
+    assert "Content-Security-Policy" in client.get(path).headers
 
 
 def test_pages_have_no_inline_scripts():

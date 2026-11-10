@@ -32,13 +32,22 @@ HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
 }
 
-DOCS_PATHS = ("/docs", "/redoc", "/openapi.json")
+DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
+
+def is_docs_path(path: str) -> bool:
+    # Exact paths (plus /docs/oauth2-redirect), so e.g. a future /docs-guide/ keeps the CSP.
+    return path in DOCS_PATHS or path.startswith("/docs/")
+
+
+def apply_security_headers(headers, path: str) -> None:
+    for name, value in HEADERS.items():
+        headers.setdefault(name, value)
+    if not is_docs_path(path):
+        headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
 
 
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    for name, value in HEADERS.items():
-        response.headers.setdefault(name, value)
-    if not request.url.path.startswith(DOCS_PATHS):
-        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    apply_security_headers(response.headers, request.url.path)
     return response

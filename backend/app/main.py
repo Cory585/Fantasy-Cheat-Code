@@ -58,7 +58,8 @@ async def too_deeply_nested(request: Request, exc: RecursionError):
     return error_response(400, "Request body is nested too deeply.", "body_too_deep")
 
 
-# Registered last so it's the outermost middleware: even 413s and 429s get the headers.
+# Registered last so it's the outermost middleware: 413s and 429s get the headers too. (500s are
+# produced outside the middleware stack, so the error handler adds them itself.)
 app.middleware("http")(add_security_headers)
 
 app.include_router(players.router)
