@@ -26,7 +26,9 @@ const POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"];
 const TARGETS_SHOWN = 5;
 const TARGETS_FETCHED = 15; // extra, so a position filter still has players to show
 
-const state = { teams: 12, slot: 1, rounds: 15, position: "", plan: null };
+// `plan` is for the current settings only (cleared when they change); `board` is the ADP
+// ranking, which doesn't depend on settings, so it's kept to avoid flicker while reloading.
+const state = { teams: 12, slot: 1, rounds: 15, position: "", plan: null, board: [], error: null };
 let requestId = 0; // ignore responses to settings that have since changed
 
 // ---------- Helpers ----------
@@ -172,7 +174,7 @@ function renderTimeline() {
   const x = (overall) => pad + ((overall - 0.5) / total) * (width - pad * 2);
   const maxGap = 2 * state.teams - 2;
   const chart = svg("svg", {
-    width, height, viewBox: `0 0 ${width} ${height}`, class: "timeline-svg", role: "img",
+    width, height, viewBox: `0 0 ${width} ${height}`, class: "timeline-svg", role: "group",
     "aria-label": `Your picks: ${picks.map((p) => p.label).join(", ")}`,
   });
 
@@ -211,12 +213,18 @@ function renderTimeline() {
     chart.append(group);
   });
 
-  for (const pick of picks) {
+  // Each dot is focusable and carries the wait to the next pick, so keyboard and
+  // screen-reader users get what the arcs show.
+  picks.forEach((pick, i) => {
+    const next = picks[i + 1];
+    const wait = next ? next.overall - pick.overall - 1 : null;
+    const label = `${pick.label}: round ${pick.round}, ${ordinal(pick.overall)} overall. ` +
+      (wait == null ? "Your last pick." : wait === 0 ? "You pick again right after." : `${plural(wait, "pick")} until your next.`);
     chart.append(svg("circle", {
       cx: x(pick.overall), cy: baseline, r: 6, class: "my-pick-dot",
-      "data-tip": `${pick.label}: round ${pick.round}, ${ordinal(pick.overall)} overall`,
+      tabindex: 0, role: "img", "aria-label": label, "data-tip": label,
     }));
-  }
+  });
   els.timeline.replaceChildren(chart);
 
   const gaps = picks.slice(0, -1).map((p, i) => ({ gap: picks[i + 1].overall - p.overall - 1, from: p, to: picks[i + 1] }));
@@ -236,26 +244,48 @@ function renderTimeline() {
 
 function renderBoard() {
   const { teams, slot, rounds } = state;
-  const board = state.plan?.board || [];
+  const board = state.board;
   const grid = el("div", "draft-grid");
   grid.style.setProperty("--teams", teams);
+  grid.setAttribute("role", "table");
+  grid.setAttribute("aria-label", `Mock draft, ${teams} teams, ${rounds} rounds`);
+  // Rows use display: contents, so they group cells for assistive tech without
+  // affecting the CSS grid.
+  const row = () => {
+    const r = el("div", "grid-row");
+    r.setAttribute("role", "row");
+    grid.append(r);
+    return r;
+  };
 
-  grid.append(el("span", "grid-corner"));
+  const headRow = row();
+  const corner = el("span", "grid-corner");
+  corner.setAttribute("role", "columnheader");
+  corner.setAttribute("aria-label", "Round");
+  headRow.append(corner);
   for (let team = 1; team <= teams; team++) {
+    const th = el("span", "team-head-cell");
+    th.setAttribute("role", "columnheader");
     const head = el("button", "team-head" + (team === slot ? " is-mine" : ""), team === slot ? "You" : `Team ${team}`);
     head.type = "button";
     head.dataset.slot = team;
     head.setAttribute("aria-label", team === slot ? `Your slot, ${ordinal(team)} pick` : `Draft from the ${ordinal(team)} pick`);
-    grid.append(head);
+    th.append(head);
+    headRow.append(th);
   }
 
   for (let round = 1; round <= rounds; round++) {
-    grid.append(el("span", "round-label", `R${round}`));
+    const roundRow = row();
+    const label = el("span", "round-label", `R${round}`);
+    label.setAttribute("role", "rowheader");
+    label.setAttribute("aria-label", `Round ${round}`);
+    roundRow.append(label);
     for (let team = 1; team <= teams; team++) {
       const pickInRound = round % 2 ? team : teams + 1 - team;
       const overall = (round - 1) * teams + pickInRound;
       const player = board[overall - 1];
       const cell = el("div", "pick" + (team === slot ? " is-mine" : ""));
+      cell.setAttribute("role", "cell");
       cell.append(el("span", "pick-num", pickLabel(round, pickInRound)));
       if (player) {
         cell.classList.add(`pos-${player.position}`);
@@ -265,7 +295,7 @@ function renderBoard() {
         cell.dataset.tip = `${pickLabel(round, pickInRound)}: ${player.name} (${player.position}, ${player.team}), ` +
           (player.adp != null ? `ADP ${player.adp.toFixed(1)}` : "no ADP");
       }
-      grid.append(cell);
+      roundRow.append(cell);
     }
   }
   els.board.replaceChildren(grid);
@@ -288,7 +318,11 @@ function mixBar(mix, picksUntilNext) {
     wrap.append(el("p", "mix-caption", "No ranked players left before your next pick."));
     return wrap;
   }
-  wrap.append(el("p", "mix-caption", `Before your next pick, other teams take ${plural(picksUntilNext, "player")}:`));
+  const ranked = entries.reduce((sum, [, n]) => sum + n, 0);
+  const unranked = picksUntilNext - ranked;
+  wrap.append(el("p", "mix-caption",
+    `Before your next pick, other teams take ${plural(ranked, "ranked player")}` +
+    (unranked > 0 ? ` (the board runs out of ranked players for the other ${plural(unranked, "pick")})` : "") + ":"));
   const bar = el("div", "mix-bar");
   bar.setAttribute("role", "img");
   bar.setAttribute("aria-label", entries.map(([p, n]) => `${n} ${p}`).join(", "));
@@ -349,7 +383,10 @@ function targetItem(target, overall) {
 
 function renderPlan() {
   const plan = state.plan;
-  if (!plan) return;
+  if (!plan) {
+    if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks..."));
+    return;
+  }
   els.planList.replaceChildren(
     ...plan.picks.map(({ pick, targets, position_mix, picks_until_next }) => {
       const card = el("li", "plan-pick");
@@ -372,14 +409,19 @@ function renderPlan() {
       return card;
     }),
   );
+  // A one-line summary for screen readers (this element is the live region, not the cards).
+  const first = plan.picks[0]?.pick.label;
   els.status.textContent =
-    plan.adp_source === "espn"
+    `Plan for the ${ordinal(plan.slot)} pick: ${plural(plan.picks.length, "pick")}` + (first ? `, first at ${first}. ` : ". ") +
+    (plan.adp_source === "espn"
       ? "Ranked by ESPN average draft position."
-      : "No ADP data yet, so players are ranked by projection. Run python -m app.data.collect to add ADP.";
+      : "No ADP data yet, so players are ranked by projection. Run python -m app.data.collect to add ADP.");
 }
 
 function renderError(message) {
+  state.error = message;
   els.planList.replaceChildren(el("li", "result-error", message));
+  els.status.textContent = message;
 }
 
 async function loadPlan() {
@@ -399,21 +441,44 @@ async function loadPlan() {
     renderError(`Couldn't load the draft plan (the server returned HTTP ${response.status}).`);
     return;
   }
-  const plan = await response.json();
+  let plan;
+  try {
+    plan = await response.json();
+  } catch {
+    if (id === requestId) renderError("The server sent a response this page couldn't read. Change a setting to retry.");
+    return;
+  }
   if (id !== requestId) return;
   state.plan = plan;
+  state.board = plan.board || [];
+  const focusedSlot = document.activeElement?.dataset?.slot;
   renderBoard();
+  restoreBoardFocus(focusedSlot);
   renderPlan();
+}
+
+// Re-rendering the board replaces its buttons; put focus back on the same team.
+function restoreBoardFocus(slot) {
+  if (slot) els.board.querySelector(`button[data-slot="${slot}"]`)?.focus();
 }
 
 // ---------- Wiring ----------
 
 function update({ refetch = true } = {}) {
+  const focusedSlot = document.activeElement?.dataset?.slot;
+  const focusedStep = document.activeElement === els.slotPrev || document.activeElement === els.slotNext
+    ? document.activeElement : null;
   renderControls();
   writeSettings();
+  // A disabled button can't hold focus; move it to the select instead of losing it.
+  if (focusedStep?.disabled) els.slot.focus();
   if (refetch) {
+    state.plan = null; // never show cards for the previous settings
+    state.error = null;
     renderTimeline();
-    renderBoard(); // shows the new slot right away; players fill in when the plan arrives
+    renderBoard(); // shows the new slot right away; players come from the last ranking
+    restoreBoardFocus(focusedSlot);
+    renderPlan();
     loadPlan();
   } else {
     renderPlan();

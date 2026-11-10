@@ -1190,6 +1190,8 @@ main {
 }
 
 .segmented button:last-child { border-right: 0; }
+/* The container clips overflow, so draw the focus ring inside the button. */
+.segmented button:focus-visible { outline-offset: -3px; }
 .segmented button:hover { background: var(--bg); }
 
 .segmented button[aria-pressed="true"] {
@@ -1284,6 +1286,7 @@ main {
 
 .team-head:hover { color: var(--ink); border-bottom-color: var(--line); }
 .team-head.is-mine { color: var(--ink); border-bottom-color: var(--turf); }
+.grid-row, .team-head-cell { display: contents; }
 
 .round-label {
   display: flex;
@@ -1315,6 +1318,16 @@ main {
   outline: 2px solid var(--turf);
   outline-offset: -1px;
 }
+
+/* --turf is a background shade in dark mode; use the readable green for "yours" there. */
+:root[data-theme="dark"] .team-head.is-mine { border-bottom-color: var(--good); }
+:root[data-theme="dark"] .pick.is-mine { outline-color: var(--good); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .team-head.is-mine { border-bottom-color: var(--good); }
+  :root:not([data-theme="light"]) .pick.is-mine { outline-color: var(--good); }
+}
+
+.timeline-svg .my-pick-dot:focus-visible { outline: none; stroke: var(--focus); stroke-width: 3; }
 
 .pick-num {
   font-size: 0.6875rem;
