@@ -7,8 +7,9 @@
   --turf: #2e6a4c;
   --turf-dark: #275a41;
   --chalk: rgba(255, 255, 255, 0.7);
+  --chalk-text: rgba(255, 255, 255, 0.92); /* yard numbers: brighter than the lines for legibility */
   --side-a: #2952a3;
-  --side-b: #b5761b;
+  --side-b: #97600f; /* deep enough for white text (5.3:1) */
   --good: #23704b;
   --bad: #a8372b;
   --focus: #2952a3;
@@ -28,6 +29,7 @@
     --turf: #1f4d37;
     --turf-dark: #1a422f;
     --chalk: rgba(228, 236, 231, 0.55);
+    --chalk-text: rgba(228, 236, 231, 0.85);
     --side-a: #86a7ef;
     --side-b: #e3a74c;
     --good: #6cc896;
@@ -47,6 +49,7 @@
   --turf: #1f4d37;
   --turf-dark: #1a422f;
   --chalk: rgba(228, 236, 231, 0.55);
+  --chalk-text: rgba(228, 236, 231, 0.85);
   --side-a: #86a7ef;
   --side-b: #e3a74c;
   --good: #6cc896;
@@ -701,7 +704,7 @@ main {
   line-height: 1.25rem;
   left: 50%;
   transform: translateX(-50%);
-  color: var(--chalk);
+  color: var(--chalk-text);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.9375rem;
