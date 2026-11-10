@@ -187,3 +187,45 @@ per process, so several workers multiply them.
 a referrer policy, a permissions policy, and (except on `/docs` and `/redoc`) a Content Security
 Policy: scripts only from this app (no inline scripts), images only from here and
 `a.espncdn.com`, fonts from Google Fonts, and API calls only to this app.
+
+## Player profiles
+
+`GET /players/{id}/profile` (and the page at `/player/?id=<id>`, linked from player names)
+returns a player's bio, NFL career stats, college stats, and combine results:
+
+| Part | Source | How it's fetched |
+|---|---|---|
+| Bio (height, weight, age, college, draft), headshot | ESPN athlete API | On demand, cached |
+| NFL career stats by season | ESPN `nfl/athletes/{id}/stats` | On demand, cached |
+| College stats by season | ESPN `college-football/athletes/{id}/stats` (ESPN reuses the NFL id) | On demand, cached |
+| Combine results and percentiles | nflverse `combine.csv`, joined on `pfr_id` | `python -m app.data.collect --datasets combine` |
+| Fallback bio (height, weight, draft) | nflverse `players` | Already collected |
+
+Combine percentiles compare a result with every combine participant at the same position
+since 2000 (for the 40, 3-cone, and shuttle, lower is better).
+
+**Keeping ESPN safe.** A profile fetch is three ESPN requests, so they're protected at every step:
+
+- Only players in the app's player pool can be fetched; unknown ids are a 404 before any request.
+- Results are cached in `backend/data/profiles.db` for `PROFILE_TTL_HOURS` (default 24), and
+  players ESPN doesn't know are cached for a week. The cache is a separate file from
+  `fantasy.db`, so writes don't make the API reload player data.
+- Concurrent requests for the same player share one fetch, and at most 2 fetches run at once.
+- Requests use the shared rate-limited client (one request per second per host), an 8-second
+  timeout, one retry, and a 2 MB response cap.
+- After a failure, that player isn't retried for 10 minutes.
+- The `/profile` endpoint has its own strict incoming rate limit (see above).
+
+ESPN responses are treated as untrusted: only known fields are kept, each is type-checked
+and length-capped, and headshots are only accepted from `a.espncdn.com`.
+
+**When ESPN is unavailable**, the profile still returns 200 with what's stored locally, and
+`espn` says what happened:
+
+| `espn.status` | Meaning |
+|---|---|
+| `fresh` / `cached` | ESPN data included (just fetched / from the cache) |
+| `stale` | ESPN failed; an older cached copy is included |
+| `unavailable` | No ESPN data. `code` is `upstream_busy` or `upstream_error`; `retry_after` is in seconds |
+| `not_found` | ESPN has no athlete with this id (`code: espn_player_not_found`) |
+| `not_applicable` | Team defenses and players without an ESPN id |
