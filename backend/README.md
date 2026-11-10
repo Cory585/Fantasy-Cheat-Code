@@ -120,3 +120,25 @@ All sources here are public APIs or published data files. No scraping is needed.
 
 Each valuation in the `/trades/analyze` response includes the projection used and an `outlook`
 with remaining opponents, schedule rank (1 = easiest at the position), and recent points per game.
+
+## Draft guide
+
+`GET /draft/plan` (and the page at `/draft/`) lays out a snake draft for your league size,
+draft slot, and number of rounds:
+
+| Parameter | Default | Range |
+|---|---|---|
+| `teams` | 12 | 4 to 20 |
+| `slot` | required | 1 to `teams` (your draft position; 1 = first pick) |
+| `rounds` | 15 | 1 to 25 |
+| `targets` | 5 | 1 to 20 players per pick |
+
+Your pick in round *r* is `slot` in odd rounds and `teams + 1 - slot` in even rounds.
+
+Players are ranked into one board: first by ESPN average draft position (the latest
+`espn_player_market` snapshot, joined on `espn_id`), then players with no ADP by projection.
+At each pick, every player ranked ahead of it is assumed to be gone, and the next `targets`
+players are suggested. Without a collected database, the whole board is ranked by projection
+(`adp_source` in the response says which).
+
+This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.

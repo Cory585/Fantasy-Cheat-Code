@@ -1,0 +1,21 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.api.dependencies import get_draft_planner
+from app.models.draft import DraftPlan
+from app.services.draft import DraftPlanner
+
+router = APIRouter(prefix="/draft", tags=["draft"])
+
+
+@router.get("/plan", response_model=DraftPlan)
+def draft_plan(
+    teams: int = Query(12, ge=4, le=20, description="Number of teams in the league"),
+    slot: int = Query(..., ge=1, description="Your draft slot (1 = first pick)"),
+    rounds: int = Query(15, ge=1, le=25),
+    targets: int = Query(5, ge=1, le=20, description="Players to suggest per pick"),
+    planner: DraftPlanner = Depends(get_draft_planner),
+) -> DraftPlan:
+    """Your picks in a snake draft, with the players likely to be available at each."""
+    if slot > teams:
+        raise HTTPException(status_code=422, detail=f"Draft slot must be between 1 and {teams}.")
+    return planner.plan(teams=teams, slot=slot, rounds=rounds, targets_per_pick=targets)

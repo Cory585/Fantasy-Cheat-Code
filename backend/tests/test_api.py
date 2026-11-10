@@ -174,3 +174,9 @@ def test_cache_with_invalid_player_keeps_serving(tmp_path):
     cache.write_text('{"season": 2026, "players": [{"id": "x1", "name": "No position"}]}', encoding="utf-8")
     repo, _ = ReloadingPlayerData(cache).current()
     assert repo.get("rb1") is not None  # falls back to sample data instead of crashing
+
+
+def test_draft_page_has_slot_dropdown_and_script():
+    page = client.get("/draft/").text
+    assert 'id="draft-slot"' in page and "/draft/draft.js" in page
+    assert client.get("/draft/draft.js").status_code == 200

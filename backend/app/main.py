@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import meta, players, trades
+from app.api import draft, meta, players, trades
 from app.config import settings
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -34,6 +34,7 @@ async def too_deeply_nested(request: Request, exc: RecursionError) -> JSONRespon
 app.include_router(players.router)
 app.include_router(trades.router)
 app.include_router(meta.router)
+app.include_router(draft.router)
 
 
 @app.get("/health", tags=["meta"])
