@@ -32,6 +32,10 @@ class Settings:
     request_interval_seconds: float = field(
         default_factory=lambda: float(os.getenv("REQUEST_INTERVAL_SECONDS", "1.0"))
     )
+    # Incoming rate limits per client IP (see app/api/ratelimit.py). RATE_LIMIT_ENABLED=0 turns them off.
+    rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
+    # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
+    trust_proxy: bool = field(default_factory=lambda: os.getenv("TRUST_PROXY", "0") == "1")
 
 
 settings = Settings()

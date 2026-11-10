@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import draft, errors, meta, players, trades
 from app.api.errors import error_response
+from app.api.ratelimit import RateLimiter, Rule, retry_after_header
 from app.config import settings
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -16,6 +17,29 @@ errors.install(app)
 
 # Requests are small (a trade is a few dozen ids); anything bigger is a mistake or abuse.
 MAX_BODY_BYTES = 256 * 1024
+
+
+# Page loads fetch a handful of assets, so the general limit is generous. Endpoints that
+# trigger requests to outside providers get their own, much smaller, bucket.
+limiter = RateLimiter(
+    [
+        Rule("all", burst=300, per_second=5, matches=lambda path: True),
+        Rule("upstream", burst=10, per_second=0.2, matches=lambda path: path.endswith("/profile")),
+    ],
+    trust_proxy=settings.trust_proxy,
+)
+limiter.enabled = settings.rate_limit_enabled
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    wait = limiter.check(limiter.client_key(request), request.url.path)
+    if wait is not None:
+        return error_response(
+            429, "Too many requests. Slow down and try again shortly.",
+            headers={"Retry-After": retry_after_header(wait)},
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")
