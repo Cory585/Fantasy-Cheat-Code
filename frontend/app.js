@@ -6,7 +6,7 @@ const state = {
   players: new Map(), // id -> player
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
-  values: new Map(), // player id -> trade value from the latest analysis
+  values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
 };
 
 const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
@@ -110,7 +110,9 @@ function rosterItem(side, player) {
   ]
     .filter(Boolean)
     .join(", ");
-  info.append(name, meta);
+  const outlook = document.createElement("div");
+  outlook.className = "player-outlook";
+  info.append(name, meta, outlook);
 
   const value = document.createElement("div");
   value.className = "player-value";
@@ -262,7 +264,7 @@ function sideSummary(side, analysis) {
 function renderAnalysis(analysis) {
   state.values = new Map();
   for (const side of SIDES) {
-    for (const v of analysis[`side_${side}`].gives) state.values.set(v.player.id, v.value);
+    for (const v of analysis[`side_${side}`].gives) state.values.set(v.player.id, v);
   }
   refreshValues();
 
@@ -276,7 +278,9 @@ function renderAnalysis(analysis) {
     ${fieldMarkup(analysis)}
     <div class="summary"></div>
     <p class="value-note">Trade value is a player's projected rest-of-season points above a
-      replacement-level player at the same position in a ${state.numTeams}-team league.</p>`;
+      replacement-level player at the same position in a ${state.numTeams}-team league. When
+      schedule data is available, projections blend Sleeper and ESPN with recent form adjusted
+      for each player's remaining opponents.</p>`;
   result.querySelector(".verdict h2").textContent = headline;
   result.querySelector(".verdict p").textContent = detail;
   result.querySelector(".endzone-a span").textContent = teamName("a");
@@ -301,12 +305,62 @@ function renderAnalysis(analysis) {
 function refreshValues() {
   for (const item of document.querySelectorAll(".roster-item")) {
     const player = state.players.get(item.dataset.id);
-    const value = state.values.get(item.dataset.id);
+    const valuation = state.values.get(item.dataset.id);
     const cell = item.querySelector(".player-value");
-    cell.innerHTML = value === undefined
+    cell.innerHTML = valuation === undefined
       ? `${formatPoints(player.ros_projection)}<small>proj. pts</small>`
-      : `${formatPoints(value)}<small>trade value</small>`;
+      : `${formatPoints(valuation.value)}<small>trade value</small>`;
+    renderOutlook(item.querySelector(".player-outlook"), player, valuation);
   }
+}
+
+// Schedule and recent-form chips under a rostered player (after analysis).
+function scheduleLabel(rank, teams) {
+  if (!rank || !teams) return null;
+  if (rank <= 8) return "easy";
+  if (rank > teams - 8) return "hard";
+  return "average";
+}
+
+function chip(text, title, modifier) {
+  const el = document.createElement("span");
+  el.className = `chip${modifier ? ` chip-${modifier}` : ""}`;
+  el.textContent = text;
+  if (title) el.title = title;
+  return el;
+}
+
+function renderOutlook(container, player, valuation) {
+  const outlook = valuation?.outlook;
+  if (!outlook) {
+    container.replaceChildren();
+    return;
+  }
+  const chips = [];
+  const label = scheduleLabel(outlook.sos_rank, outlook.sos_teams);
+  if (label) {
+    const games = outlook.games_remaining;
+    chips.push(chip(
+      `${label[0].toUpperCase()}${label.slice(1)} schedule`,
+      `${games} game${games === 1 ? "" : "s"} left: ${outlook.remaining_opponents.join(", ")}. ` +
+        `Ranked ${outlook.sos_rank} of ${outlook.sos_teams} for ${player.position}s (1 = easiest).`,
+      label,
+    ));
+  }
+  if (outlook.recent_ppg !== null && outlook.recent_games > 0) {
+    chips.push(chip(
+      `Last ${outlook.recent_games}: ${outlook.recent_ppg.toFixed(1)} pts/game`,
+      "Average fantasy points over recent games",
+    ));
+  }
+  if (Math.abs(outlook.adjusted_projection - outlook.provider_projection) >= 0.05) {
+    chips.push(chip(
+      `Adj. proj. ${formatPoints(outlook.adjusted_projection)}`,
+      `Sleeper/ESPN projection ${formatPoints(outlook.provider_projection)}, ` +
+        "blended with recent form adjusted for the remaining schedule",
+    ));
+  }
+  container.replaceChildren(...chips);
 }
 
 // ---------- Actions ----------

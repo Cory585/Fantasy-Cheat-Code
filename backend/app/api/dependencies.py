@@ -1,65 +1,111 @@
 """Dependency wiring. Swap the repository here to plug in a different data source."""
 
 import logging
+import sqlite3
 import threading
 from pathlib import Path
 
 from fastapi import Depends
 
 from app.config import settings
-from app.data.repository import InMemoryPlayerRepository, PlayerRepository, load_player_cache
+from app.data.repository import (
+    InMemoryPlayerRepository,
+    PlayerRepository,
+    load_cache_metadata,
+    load_player_cache,
+)
 from app.data.sample_players import SAMPLE_PLAYERS
+from app.models.player import PlayerOutlook
+from app.models.trade import ScoringFormat
+from app.services.outlook import OutlookBuilder
 from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
 
 log = logging.getLogger(__name__)
 
 
-class ReloadingPlayerRepository:
-    """Serves players from the sync cache and reloads them when the file changes,
-    so a fresh `python -m app.data.sync` shows up without restarting the server."""
+def _mtime(*paths: Path) -> float | None:
+    """Latest modification time across paths (None if none exist)."""
+    times = [p.stat().st_mtime for p in paths if p.exists()]
+    return max(times) if times else None
 
-    def __init__(self, path: Path):
-        self._path = path
+
+class ReloadingPlayerData:
+    """Players from the sync cache, plus schedule/form outlooks from the collected
+    database. Both reload when their files change, so a fresh `app.data.sync` or
+    `app.data.collect` shows up without restarting the server."""
+
+    def __init__(self, cache_path: Path, database_path: Path | None = None):
+        self._cache_path = cache_path
+        self._db_paths = (database_path, database_path.with_name(database_path.name + "-wal")) if database_path else ()
         self._lock = threading.Lock()
-        self._mtime: float | None = None
+        self._versions: tuple | None = None
         self._repo: PlayerRepository | None = None
+        self._outlooks: dict[str, PlayerOutlook] = {}
 
-    def current(self) -> PlayerRepository:
-        try:
-            mtime = self._path.stat().st_mtime
-        except FileNotFoundError:
-            mtime = None
+    def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
+        versions = (_mtime(self._cache_path), _mtime(*self._db_paths))
         with self._lock:
-            if self._repo is None or mtime != self._mtime:
-                self._reload(mtime)
-            return self._repo
+            if self._repo is None or versions != self._versions:
+                self._reload(versions)
+            return self._repo, self._outlooks
 
-    def _reload(self, mtime: float | None) -> None:
+    def _reload(self, versions: tuple) -> None:
         try:
-            players = load_player_cache(self._path)
+            players = load_player_cache(self._cache_path)
         except (OSError, ValueError) as error:
             # Keep serving the previous data if the new file can't be read.
-            log.error("Couldn't load player cache %s: %s", self._path, error)
+            log.error("Couldn't load player cache %s: %s", self._cache_path, error)
             if self._repo is not None:
                 return
             players = None
         if players is None:
-            log.warning("No player cache at %s; using sample data. Run `python -m app.data.sync`.", self._path)
-            players = SAMPLE_PLAYERS
+            log.warning("No player cache at %s; using sample data. Run `python -m app.data.sync`.", self._cache_path)
+            self._repo, self._outlooks = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
         else:
-            log.info("Loaded %d players from %s", len(players), self._path)
-        self._repo = InMemoryPlayerRepository(players)
-        self._mtime = mtime
+            self._repo = InMemoryPlayerRepository(players)
+            self._outlooks = self._build_outlooks(players)
+            log.info("Loaded %d players (%d with schedule/form outlooks)", len(players), len(self._outlooks))
+        self._versions = versions
+
+    def _build_outlooks(self, players) -> dict[str, PlayerOutlook]:
+        if not self._db_paths or not self._db_paths[0].exists():
+            log.info("No database at %s; trade values use projections only. Run `python -m app.data.collect`.",
+                     self._db_paths[0] if self._db_paths else None)
+            return {}
+        try:
+            meta = load_cache_metadata(self._cache_path)
+            conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
+            try:
+                return OutlookBuilder(
+                    conn,
+                    season=int(meta["season"]),
+                    scoring=ScoringFormat(meta.get("scoring", settings.default_scoring)),
+                    end_week=int(meta.get("weeks", [None, 17])[1]),
+                    form_weight=settings.form_weight,
+                ).build(players)
+            finally:
+                conn.close()
+        except (sqlite3.Error, KeyError, ValueError) as error:
+            log.error("Couldn't build outlooks from %s: %s", self._db_paths[0], error)
+            return {}
 
 
-_players = ReloadingPlayerRepository(settings.player_cache_path)
+_data = ReloadingPlayerData(settings.player_cache_path, settings.database_path)
 
 
 def get_player_repository() -> PlayerRepository:
     """Synced Sleeper/ESPN data if `python -m app.data.sync` has been run, else sample data."""
-    return _players.current()
+    return _data.current()[0]
 
 
-def get_trade_analyzer(repo: PlayerRepository = Depends(get_player_repository)) -> TradeAnalyzer:
-    return TradeAnalyzer(repo, ValuationService(repo))
+def get_outlooks() -> dict[str, PlayerOutlook]:
+    """Schedule and form outlooks by player id (empty without a collected database)."""
+    return _data.current()[1]
+
+
+def get_trade_analyzer(
+    repo: PlayerRepository = Depends(get_player_repository),
+    outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
+) -> TradeAnalyzer:
+    return TradeAnalyzer(repo, ValuationService(repo, outlooks))

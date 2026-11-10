@@ -25,6 +25,9 @@ class Settings:
     database_path: Path = field(
         default_factory=lambda: Path(os.getenv("DATABASE_PATH", str(DEFAULT_DATABASE_PATH)))
     )
+    # Share of a player's projection that comes from schedule-adjusted recent form
+    # (the rest comes from the Sleeper/ESPN projection). 0 turns form off.
+    form_weight: float = field(default_factory=lambda: float(os.getenv("FORM_WEIGHT", "0.3")))
     # Minimum seconds between requests to the same external host (rate limiting).
     request_interval_seconds: float = field(
         default_factory=lambda: float(os.getenv("REQUEST_INTERVAL_SECONDS", "1.0"))

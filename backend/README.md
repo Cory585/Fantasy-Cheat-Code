@@ -97,3 +97,26 @@ as new datasets. Private ESPN league data (your league's rosters and settings) n
 `espn_s2` and `SWID` cookies from a logged-in browser.
 
 All sources here are public APIs or published data files. No scraping is needed.
+
+## How trade values are calculated
+
+1. **Projection.** Each player's rest-of-season projection starts as the mean of Sleeper's and
+   ESPN's weekly projections over the remaining weeks (games already played are skipped).
+2. **Schedule-adjusted recent form** (needs `app.data.collect`). Average points over the last
+   4 games (within the last 6 weeks), times remaining games, times the player's strength of
+   schedule. The final projection is 70% provider projection and 30% this estimate
+   (`FORM_WEIGHT`). The form estimate is capped at ±25% of the provider projection, because it
+   can't see role changes like a starter returning from injury. Players listed Out or on IR,
+   and team defenses, use the provider projection only.
+3. **Strength of schedule.** Each defense's fantasy points allowed per game to the position this
+   season, relative to the league average and shrunk toward average for small samples, then
+   averaged over the player's remaining opponents. Kickers use kicker points allowed (computed
+   from field goals and extra points); defenses use opponents' points scored. Provider
+   projections already account for opponents, so the schedule only adjusts the form estimate,
+   so it isn't counted twice.
+4. **Value over replacement.** Value is the projection minus the best player at the same
+   position who wouldn't start in a league of this size, counting FLEX slots, then discounted
+   for injury status (Q ×0.9, D ×0.75, O ×0.6, IR ×0.2).
+
+Each valuation in the `/trades/analyze` response includes the projection used and an `outlook`
+with remaining opponents, schedule rank (1 = easiest at the position), and recent points per game.

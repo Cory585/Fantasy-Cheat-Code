@@ -52,3 +52,45 @@ def test_value_floors_at_zero_and_discounts_injuries():
     svc = service(players)
     assert svc.value(players[0], league).value == 45.0  # (100 - 50) x 0.9
     assert svc.value(players[2], league).value == 0.0
+
+
+def test_outlook_adjusted_projection_drives_value_and_replacement():
+    from app.models.player import PlayerOutlook
+
+    league = LeagueSettings(num_teams=1, roster_slots={"RB": 1})
+    players = make(Position.RB, 100, 90, 80)
+
+    def outlook(adjusted, provider, **kw):
+        return PlayerOutlook(provider_projection=provider, adjusted_projection=adjusted, games_remaining=8, **kw)
+
+    # Adjusted: RB0 100 (no outlook), RB1 70, RB2 85. The starter is RB0 and the
+    # replacement level is the best non-starter by adjusted projection: RB2 at 85.
+    outlooks = {"RB1": outlook(70, 90), "RB2": outlook(85, 80)}
+    svc = ValuationService(InMemoryPlayerRepository(players), outlooks)
+    assert svc.replacement_level(Position.RB, league) == 85
+    result = svc.value(players[0], league)
+    assert result.projection == 100 and result.value == 15
+    assert svc.value(players[1], league).projection == 70
+
+
+def test_outlook_notes_for_schedule_and_form():
+    from app.models.player import PlayerOutlook
+    from app.services.valuation import outlook_notes
+
+    p = make(Position.RB, 100)[0]
+    easy = PlayerOutlook(provider_projection=100, adjusted_projection=104, games_remaining=8,
+                         sos_rank=2, sos_teams=32, recent_ppg=15.0, recent_games=4, form_projection=120)
+    notes = outlook_notes(p, easy)
+    assert "2nd easiest remaining schedule for RBs" in notes
+    assert any("running above projections" in n for n in notes)
+    hard = PlayerOutlook(provider_projection=100, adjusted_projection=100, games_remaining=8, sos_rank=31, sos_teams=32)
+    assert outlook_notes(p, hard) == ["2nd hardest remaining schedule for RBs"]
+
+
+def test_rank_phrase_for_first_place():
+    from app.models.player import PlayerOutlook
+    from app.services.valuation import outlook_notes
+
+    p = make(Position.WR, 100)[0]
+    o = PlayerOutlook(provider_projection=100, adjusted_projection=100, games_remaining=8, sos_rank=32, sos_teams=32)
+    assert outlook_notes(p, o) == ["Hardest remaining schedule for WRs"]
