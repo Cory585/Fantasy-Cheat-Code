@@ -37,12 +37,14 @@ class TradeAnalyzer:
         side_a = self._side_analysis(request.side_a, a_gives, given=a_total, received=b_total, league=league)
         side_b = self._side_analysis(request.side_b, b_gives, given=b_total, received=a_total, league=league)
 
-        diff_pct = self._difference_pct(a_total, b_total)
+        # Round before judging so the verdict matches the reported percentage and
+        # float noise (e.g. 10.000000000000002) can't push an exact 10% gap past the threshold.
+        diff_pct = round(self._difference_pct(a_total, b_total), 1)
         verdict = self._verdict(a_total, b_total, diff_pct)
 
         return TradeAnalysis(
             verdict=verdict,
-            value_difference_pct=round(diff_pct, 1),
+            value_difference_pct=diff_pct,
             side_a=side_a,
             side_b=side_b,
             summary=self._summary(verdict, diff_pct),
@@ -56,6 +58,10 @@ class TradeAnalyzer:
         missing = [pid for pid in ids if self._repo.get(pid) is None]
         if missing:
             raise UnknownPlayerError(missing)
+        for side in (request.side_a, request.side_b):
+            dupes = {pid for pid in side.player_ids if side.player_ids.count(pid) > 1}
+            if dupes:
+                raise ValueError(f"Player(s) listed more than once: {', '.join(sorted(dupes))}")
         overlap = set(request.side_a.player_ids) & set(request.side_b.player_ids)
         if overlap:
             raise ValueError(f"Player(s) on both sides of trade: {', '.join(sorted(overlap))}")
