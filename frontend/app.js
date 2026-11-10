@@ -102,11 +102,12 @@ async function loadMeta() {
     el.textContent = "Using sample players. Run the data sync to load real projections.";
     return;
   }
-  const when = new Date(meta.synced_at).toLocaleString(undefined, {
+  const synced = new Date(meta.synced_at);
+  const when = Number.isNaN(synced.getTime()) ? null : synced.toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
-  const [start, end] = meta.weeks || [];
-  const parts = [`Projections updated ${when}`];
+  const [start, end] = Array.isArray(meta.weeks) ? meta.weeks : [];
+  const parts = [when ? `Projections updated ${when}` : "Projections loaded"];
   if (start && end) parts.push(`weeks ${start}–${end}`);
   if (meta.scoring) parts.push(meta.scoring.replace("_", "-").toUpperCase());
   el.textContent = `${parts.join(", ")}.${meta.outlooks ? " Includes schedule and recent form." : ""}`;
