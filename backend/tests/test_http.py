@@ -72,3 +72,14 @@ def test_get_text_follows_redirects():
         min_interval=0, sleep=lambda s: None, transport=httpx.MockTransport(handler)
     ) as client:
         assert client.get_text("https://github.example/file.csv") == "a,b\n1,2\n"
+
+
+def test_client_rejects_oversized_responses():
+    from app.data.sources.http import ResponseTooLarge
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=b"x" * 2000))
+    with RateLimitedClient(min_interval=0, transport=transport, max_response_bytes=1000) as client:
+        with pytest.raises(ResponseTooLarge):
+            client.get_text("https://example.test/big")
+    with RateLimitedClient(min_interval=0, transport=transport) as client:
+        assert len(client.get_text("https://example.test/big")) == 2000  # no limit by default

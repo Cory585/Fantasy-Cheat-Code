@@ -17,6 +17,10 @@ import httpx
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
+class ResponseTooLarge(httpx.HTTPError):
+    """The response body exceeded the client's `max_response_bytes`."""
+
+
 class RateLimiter:
     """Enforces a minimum delay between consecutive calls (thread-safe)."""
 
@@ -53,8 +57,10 @@ class RateLimitedClient:
         user_agent: str = "fantasy-cheat-code/0.1",
         sleep: Callable[[float], None] = time.sleep,
         transport: httpx.BaseTransport | None = None,
+        max_response_bytes: int | None = None,
     ):
         self._min_interval = min_interval
+        self._max_response_bytes = max_response_bytes
         self._max_retries = max_retries
         self._backoff_base = backoff_base
         self._sleep = sleep
@@ -89,9 +95,18 @@ class RateLimitedClient:
             response = self._client.get(url, params=params, headers=headers)
             if response.status_code not in RETRY_STATUSES or attempt == self._max_retries:
                 response.raise_for_status()
+                self._check_size(response)
                 return response
             self._sleep(self._retry_delay(response, attempt))
         raise AssertionError("unreachable")
+
+    def _check_size(self, response: httpx.Response) -> None:
+        limit = self._max_response_bytes
+        if limit is None:
+            return
+        declared = response.headers.get("Content-Length", "")
+        if (declared.isdigit() and int(declared) > limit) or len(response.content) > limit:
+            raise ResponseTooLarge(f"Response from {response.url.host} is larger than {limit} bytes")
 
     def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
         retry_after = response.headers.get("Retry-After")
