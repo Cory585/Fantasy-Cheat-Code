@@ -47,15 +47,32 @@ class DraftPlanner:
     def adp_source(self) -> str:
         return "espn" if any(adp is not None for _, adp in self._board) else "projection"
 
+    def _target(self, index: int) -> DraftTarget:
+        p, adp = self._board[index]
+        return DraftTarget(player_id=p.id, name=p.name, position=p.position, team=p.team,
+                           adp=adp, projection=p.ros_projection, rank=index + 1)
+
     def plan(self, teams: int, slot: int, rounds: int, targets_per_pick: int = 5) -> DraftPlan:
+        mine = snake_picks(teams, slot, rounds)
         picks = []
-        for pick in snake_picks(teams, slot, rounds):
+        for i, pick in enumerate(mine):
             start = pick.overall - 1  # players ranked ahead of this pick are assumed gone
-            window = self._board[start:start + targets_per_pick]
-            targets = [
-                DraftTarget(player_id=p.id, name=p.name, position=p.position, team=p.team,
-                            adp=adp, projection=p.ros_projection, rank=start + i + 1)
-                for i, (p, adp) in enumerate(window)
-            ]
-            picks.append(PlannedPick(pick=pick, targets=targets))
-        return DraftPlan(teams=teams, slot=slot, rounds=rounds, adp_source=self.adp_source, picks=picks)
+            end = min(start + targets_per_pick, len(self._board))
+            targets = [self._target(j) for j in range(start, end)]
+
+            # Players that go from this pick up to (not including) your next one.
+            next_overall = mine[i + 1].overall if i + 1 < len(mine) else None
+            span_end = min(next_overall - 1 if next_overall else start + 1, len(self._board))
+            mix: dict = {}
+            for p, _ in self._board[start:span_end]:
+                mix[p.position] = mix.get(p.position, 0) + 1
+
+            picks.append(PlannedPick(
+                pick=pick,
+                targets=targets,
+                picks_until_next=next_overall - pick.overall - 1 if next_overall else None,
+                position_mix=mix,
+            ))
+        board = [self._target(j) for j in range(min(teams * rounds, len(self._board)))]
+        return DraftPlan(teams=teams, slot=slot, rounds=rounds, adp_source=self.adp_source,
+                         picks=picks, board=board)

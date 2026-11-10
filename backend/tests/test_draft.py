@@ -87,3 +87,21 @@ def test_draft_plan_endpoint():
 ])
 def test_draft_plan_rejects_bad_settings(params):
     assert client.get("/draft/plan", params=params).status_code == 422
+
+
+def test_plan_includes_mock_board_and_gaps():
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=2, rounds=2, targets_per_pick=1)
+    # Board covers every pick (4 teams x 2 rounds), in rank order.
+    assert [t.rank for t in plan.board] == list(range(1, 9))
+    first, second = plan.picks
+    # Pick 2, then pick 7: 4 picks by other teams in between.
+    assert first.picks_until_next == 4 and second.picks_until_next is None
+    # Players ranked 2-6 go between your picks: qb2, rb1, wr1, wr2, rb2 by projection.
+    assert first.position_mix == {Position.QB: 1, Position.RB: 2, Position.WR: 2}
+    assert sum(second.position_mix.values()) == 1
+
+
+def test_board_stops_at_the_player_pool():
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=12, slot=1, rounds=3)
+    assert len(plan.board) == len(SAMPLE_PLAYERS)
+    assert plan.picks[-1].position_mix == {}
