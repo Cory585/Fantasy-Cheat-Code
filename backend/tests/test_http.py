@@ -60,3 +60,15 @@ def test_client_gives_up_after_max_retries():
     ) as client:
         with pytest.raises(httpx.HTTPStatusError):
             client.get_json("https://example.test/x")
+
+
+def test_get_text_follows_redirects():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "github.example":
+            return httpx.Response(302, headers={"Location": "https://storage.example/file.csv"})
+        return httpx.Response(200, text="a,b\n1,2\n")
+
+    with RateLimitedClient(
+        min_interval=0, sleep=lambda s: None, transport=httpx.MockTransport(handler)
+    ) as client:
+        assert client.get_text("https://github.example/file.csv") == "a,b\n1,2\n"
