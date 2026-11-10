@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS games (
     temp         REAL,
     wind         REAL,
     div_game     INTEGER,
-    espn_id      TEXT
+    espn_id      TEXT,
+    away_coach   TEXT,
+    home_coach   TEXT
 );
 CREATE INDEX IF NOT EXISTS games_season_week ON games (season, week);
 
@@ -221,6 +223,14 @@ CREATE TABLE IF NOT EXISTS collection_runs (
 """
 
 
+# Columns added after a table was first released: (table, column, type). Applied to
+# existing databases on connect, since CREATE TABLE IF NOT EXISTS won't add them.
+MIGRATIONS = [
+    ("games", "away_coach", "TEXT"),
+    ("games", "home_coach", "TEXT"),
+]
+
+
 def connect(path: Path) -> sqlite3.Connection:
     """Open (and create if needed) the database, with the schema applied."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,7 +238,16 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")  # lets the API read while a collection writes
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, kind in MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+    conn.commit()
 
 
 def upsert(conn: sqlite3.Connection, table: str, rows: Iterable[Mapping]) -> int:

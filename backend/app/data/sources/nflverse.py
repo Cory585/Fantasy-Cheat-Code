@@ -136,6 +136,8 @@ def parse_games(text: str) -> list[dict]:
             "wind": _num(r.get("wind")),
             "div_game": _int(r.get("div_game")),
             "espn_id": _str(r.get("espn")),
+            "away_coach": _str(r.get("away_coach")),
+            "home_coach": _str(r.get("home_coach")),
         }
         for r in _rows(text)
         if r.get("game_id")
