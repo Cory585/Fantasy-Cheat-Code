@@ -132,6 +132,12 @@ button, input, select { font: inherit; color: inherit; }
 
 .nav-links a:hover { color: var(--ink); background: var(--bg); }
 
+/* Set by theme.js when more tabs are off to the right. */
+.nav-links.has-more {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
+}
+
 .nav-links a[aria-current="page"] {
   color: var(--ink);
   font-weight: 600;
