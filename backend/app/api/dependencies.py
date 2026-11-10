@@ -18,7 +18,12 @@ from app.data.sample_players import SAMPLE_PLAYERS
 from app.models.player import PlayerOutlook
 from app.models.trade import ScoringFormat
 from app.data.adp import load_adp
+from app.data.profile_cache import ProfileCache
+from app.data.sources.espn_athletes import EspnAthleteSource
+from app.data.sources.http import RateLimitedClient
 from app.services.draft import DraftPlanner
+from app.services.player_profile import LocalPlayerData
+from app.services.profiles import ProfileService
 from app.services.outlook import OutlookBuilder
 from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
@@ -139,6 +144,35 @@ def get_draft_planner(
     adp: dict[int, float] = Depends(get_adp),
 ) -> DraftPlanner:
     return DraftPlanner(repo.list(), adp)
+
+
+_profile_service: ProfileService | None = None
+_profile_lock = threading.Lock()
+
+
+def get_profile_service() -> ProfileService:
+    """ESPN profile fetcher, created on first use. Request-time fetches use a short timeout,
+    one retry, and a response size cap, so a slow ESPN can't tie up the server."""
+    global _profile_service
+    with _profile_lock:
+        if _profile_service is None:
+            client = RateLimitedClient(
+                min_interval=settings.request_interval_seconds,
+                max_retries=1,
+                backoff_base=1.0,
+                timeout=8.0,
+                max_response_bytes=2 * 1024 * 1024,
+            )
+            _profile_service = ProfileService(
+                EspnAthleteSource(client),
+                ProfileCache(settings.profile_cache_path),
+                ttl=settings.profile_ttl_hours * 3600,
+            )
+        return _profile_service
+
+
+def get_local_player_data() -> LocalPlayerData:
+    return LocalPlayerData(settings.database_path)
 
 
 def get_trade_analyzer(

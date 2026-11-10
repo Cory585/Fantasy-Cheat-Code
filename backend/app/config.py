@@ -32,6 +32,12 @@ class Settings:
     request_interval_seconds: float = field(
         default_factory=lambda: float(os.getenv("REQUEST_INTERVAL_SECONDS", "1.0"))
     )
+    # Cache of ESPN player profiles, written while the API runs (kept apart from the database).
+    profile_cache_path: Path = field(
+        default_factory=lambda: Path(os.getenv("PROFILE_CACHE_PATH", str(DATA_DIR / "profiles.db")))
+    )
+    # How long a fetched ESPN profile is reused before it's fetched again.
+    profile_ttl_hours: float = field(default_factory=lambda: float(os.getenv("PROFILE_TTL_HOURS", "24")))
     # Incoming rate limits per client IP (see app/api/ratelimit.py). RATE_LIMIT_ENABLED=0 turns them off.
     rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
     # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
