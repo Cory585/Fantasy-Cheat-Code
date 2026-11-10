@@ -82,6 +82,10 @@ class RateLimitedClient:
         """For CSV and other text downloads (e.g. nflverse files on GitHub releases)."""
         return self._get(url, params, headers).text
 
+    def get_bytes(self, url: str, params=None, headers: dict[str, str] | None = None) -> bytes:
+        """For binary downloads such as gzipped CSVs."""
+        return self._get(url, params, headers).content
+
     def _get(self, url: str, params, headers: dict[str, str] | None) -> httpx.Response:
         limiter = self._limiter_for(url)
         for attempt in range(self._max_retries + 1):
