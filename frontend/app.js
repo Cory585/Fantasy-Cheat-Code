@@ -11,6 +11,7 @@ const state = {
 };
 
 const MAX_RESULTS = 8;
+const MAX_PER_SIDE = 40; // matches the API's limit
 
 // Starting lineup slots per team (FLEX = RB/WR/TE). Matches the backend default.
 const DEFAULT_SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
@@ -234,6 +235,14 @@ function renderSearch(side) {
   input.removeAttribute("aria-activedescendant");
   if (!show) return;
 
+  if (sideIsFull(side)) {
+    const full = document.createElement("li");
+    full.className = "search-empty";
+    full.textContent = `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.`;
+    list.replaceChildren(full);
+    return;
+  }
+
   if (search.results.length === 0) {
     const empty = document.createElement("li");
     empty.className = "search-empty";
@@ -388,6 +397,8 @@ function writeUrl() {
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
 
+// Anything a link leaves out goes back to its default, so opening a new link in a tab that
+// already has a trade doesn't mix the two.
 function readUrl() {
   const params = new URLSearchParams(location.hash.slice(1));
   const seen = new Set();
@@ -397,16 +408,15 @@ function readUrl() {
       const ok = id && state.players.has(id) && !seen.has(id);
       seen.add(id);
       return ok;
-    });
+    }).slice(0, MAX_PER_SIDE);
     const name = params.get(`${side}n`);
-    if (name) sideEl(side).querySelector(".team-name").value = name.slice(0, 30);
+    sideEl(side).querySelector(".team-name").value = name ? name.slice(0, 30) : `Team ${side.toUpperCase()}`;
   }
   const teams = Number(params.get("teams"));
   const select = document.getElementById("league-size");
-  if ([...select.options].some((o) => Number(o.value) === teams)) {
-    state.numTeams = teams;
-    select.value = String(teams);
-  }
+  state.numTeams = [...select.options].some((o) => Number(o.value) === teams) ? teams : 12;
+  select.value = String(state.numTeams);
+  state.slots = { ...DEFAULT_SLOTS };
   for (const part of (params.get("slots") || "").split(".")) {
     const match = /^([A-Z]+)(\d)$/.exec(part);
     if (match && match[1] in DEFAULT_SLOTS) state.slots[match[1]] = Math.min(SLOT_LIMIT, Number(match[2]));
@@ -610,6 +620,7 @@ function balancePanel(analysis) {
     button.type = "button";
     button.className = "btn btn-quiet btn-small";
     button.textContent = `Add to ${teamName(side)}`;
+    button.disabled = sideIsFull(side);
     button.addEventListener("click", () => addPlayer(side, v.player.id));
     item.append(avatar(v.player, "sm"), text, button);
     list.append(item);
@@ -726,8 +737,12 @@ function renderOutlook(container, player, valuation) {
 
 // ---------- Actions ----------
 
+function sideIsFull(side) {
+  return state.sides[side].length >= MAX_PER_SIDE;
+}
+
 function addPlayer(side, id) {
-  if (!id || inTrade(id) || !state.players.has(id)) return;
+  if (!id || inTrade(id) || !state.players.has(id) || sideIsFull(side)) return;
   state.sides[side].push(id);
   sideEl(side).querySelector(".player-search").value = "";
   state.search[side].open = false;
@@ -809,6 +824,12 @@ async function init() {
     renderLineupSettings();
     render();
     loadMeta();
+    // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
+    window.addEventListener("hashchange", () => {
+      readUrl();
+      renderLineupSettings();
+      render();
+    });
   } catch (error) {
     const result = document.getElementById("result");
     result.innerHTML = "";
