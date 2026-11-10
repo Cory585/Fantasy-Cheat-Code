@@ -21,6 +21,7 @@ make the server crawl ESPN.
 import logging
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -45,6 +46,9 @@ class ProfileUnavailable(Exception):
 class ProfileResult:
     profile: CachedProfile
     freshness: str  # "fresh" (just fetched), "cached", or "stale" (ESPN failed, older copy)
+
+
+RECENT_PROFILES = 200
 
 
 class _Flight:
@@ -79,11 +83,14 @@ class ProfileService:
         self._guard = threading.Lock()  # protects _flights and _failures
         self._flights: dict[int, _Flight] = {}
         self._failures: dict[int, float] = {}
+        # Recently fetched profiles, so a broken cache file doesn't mean re-fetching from
+        # ESPN on every request. Bounded; the SQLite cache is still the main store.
+        self._recent: OrderedDict[int, CachedProfile] = OrderedDict()
 
     def get(self, espn_id: int) -> ProfileResult:
         if not valid_espn_id(espn_id):
             raise ValueError("Invalid ESPN id")
-        cached = self._cache.get(espn_id)
+        cached = self._lookup(espn_id)
         if cached and self._is_fresh(cached):
             return ProfileResult(cached, "cached")
 
@@ -115,7 +122,7 @@ class ProfileService:
 
     def _lead(self, espn_id: int, cached: CachedProfile | None, flight: _Flight) -> ProfileResult:
         # The cache may have been filled between the first check and becoming the leader.
-        latest = self._cache.get(espn_id)
+        latest = self._lookup(espn_id)
         if latest and self._is_fresh(latest):
             flight.profile = latest
             return ProfileResult(latest, "cached")
@@ -135,8 +142,19 @@ class ProfileService:
         self._cache.put(profile)
         with self._guard:
             self._failures.pop(espn_id, None)
+            self._recent[espn_id] = profile
+            self._recent.move_to_end(espn_id)
+            if len(self._recent) > RECENT_PROFILES:
+                self._recent.popitem(last=False)
         flight.profile = profile
         return ProfileResult(profile, "fresh")
+
+    def _lookup(self, espn_id: int) -> CachedProfile | None:
+        cached = self._cache.get(espn_id)
+        if cached is not None:
+            return cached
+        with self._guard:
+            return self._recent.get(espn_id)
 
     def _backoff_left(self, espn_id: int) -> float:
         failed_at = self._failures.get(espn_id)

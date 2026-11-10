@@ -189,3 +189,22 @@ def test_rejects_invalid_ids(setup):
     with pytest.raises(ValueError):
         service.get(-1)
     assert source.calls == []
+
+
+def test_deleted_cache_file_is_recreated(setup, tmp_path):
+    service, source, clock = setup
+    service.get(12)
+    (tmp_path / "p.db").unlink()
+    clock.now += 101  # expired, so it refetches and writes to a fresh file
+    assert service.get(12).freshness == "fresh"
+    assert ProfileCache(tmp_path / "p.db").get(12) is not None
+
+
+def test_unusable_cache_does_not_fail_or_refetch_every_time(tmp_path):
+    source, clock = FakeSource(), Clock()
+    blocked = tmp_path / "not-a-dir"
+    blocked.write_text("a file where the cache folder should be")
+    service = ProfileService(source, ProfileCache(blocked / "p.db"), clock=clock)
+    assert service.get(13).freshness == "fresh"
+    assert service.get(13).freshness == "cached"  # from memory, not ESPN
+    assert source.calls.count(("bio", 13)) == 1

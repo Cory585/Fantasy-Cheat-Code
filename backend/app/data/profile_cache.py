@@ -5,10 +5,13 @@ and profiles are written while the API runs.
 """
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS player_profiles (
@@ -33,30 +36,39 @@ class CachedProfile:
 
 
 class ProfileCache:
+    """Every failure (missing, deleted, locked, unwritable or corrupt file) is logged and
+    treated as a cache miss, so a cache problem never turns a profile into a 500."""
+
     def __init__(self, path: Path):
         self._path = path
         self._lock = threading.Lock()
-        self._ready = False
 
     def _connect(self) -> sqlite3.Connection:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._path, timeout=5)
-        if not self._ready:
+        conn = sqlite3.connect(self._path, timeout=2)
+        try:
+            # Cheap when the table exists, and recreates it if the file was deleted.
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
-            self._ready = True
+        except sqlite3.Error:
+            conn.close()
+            raise
         return conn
 
     def get(self, espn_id: int) -> CachedProfile | None:
-        with self._lock:
-            conn = self._connect()
-            try:
-                row = conn.execute(
-                    "SELECT status, fetched_at, bio, nfl_stats, college_stats FROM player_profiles WHERE espn_id = ?",
-                    (espn_id,),
-                ).fetchone()
-            finally:
-                conn.close()
+        try:
+            with self._lock:
+                conn = self._connect()
+                try:
+                    row = conn.execute(
+                        "SELECT status, fetched_at, bio, nfl_stats, college_stats FROM player_profiles WHERE espn_id = ?",
+                        (espn_id,),
+                    ).fetchone()
+                finally:
+                    conn.close()
+        except (sqlite3.Error, OSError) as error:
+            log.warning("Profile cache read failed (%s): %s", self._path, error)
+            return None
         if row is None:
             return None
         status, fetched_at, bio, nfl, college = row
@@ -66,16 +78,22 @@ class ProfileCache:
         except ValueError:
             return None  # a corrupt row is treated as a miss and overwritten on the next fetch
 
-    def put(self, profile: CachedProfile) -> None:
-        with self._lock:
-            conn = self._connect()
-            try:
-                with conn:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO player_profiles VALUES (?, ?, ?, ?, ?, ?)",
-                        (profile.espn_id, profile.status, profile.fetched_at,
-                         json.dumps(profile.bio) if profile.bio is not None else None,
-                         json.dumps(profile.nfl_stats), json.dumps(profile.college_stats)),
-                    )
-            finally:
-                conn.close()
+    def put(self, profile: CachedProfile) -> bool:
+        """Returns False (after logging) if the profile couldn't be saved."""
+        try:
+            with self._lock:
+                conn = self._connect()
+                try:
+                    with conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO player_profiles VALUES (?, ?, ?, ?, ?, ?)",
+                            (profile.espn_id, profile.status, profile.fetched_at,
+                             json.dumps(profile.bio) if profile.bio is not None else None,
+                             json.dumps(profile.nfl_stats), json.dumps(profile.college_stats)),
+                        )
+                finally:
+                    conn.close()
+        except (sqlite3.Error, OSError) as error:
+            log.warning("Profile cache write failed (%s): %s", self._path, error)
+            return False
+        return True
