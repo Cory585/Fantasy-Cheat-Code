@@ -17,6 +17,8 @@ from app.data.repository import (
 from app.data.sample_players import SAMPLE_PLAYERS
 from app.models.player import PlayerOutlook
 from app.models.trade import ScoringFormat
+from app.data.adp import load_adp
+from app.services.draft import DraftPlanner
 from app.services.outlook import OutlookBuilder
 from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
@@ -42,13 +44,22 @@ class ReloadingPlayerData:
         self._versions: tuple | None = None
         self._repo: PlayerRepository | None = None
         self._outlooks: dict[str, PlayerOutlook] = {}
+        self._adp: dict[int, float] = {}
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
-        versions = (_mtime(self._cache_path), _mtime(*self._db_paths))
         with self._lock:
-            if self._repo is None or versions != self._versions:
-                self._reload(versions)
+            self._refresh()
             return self._repo, self._outlooks
+
+    def adp(self) -> dict[int, float]:
+        with self._lock:
+            self._refresh()
+            return self._adp
+
+    def _refresh(self) -> None:
+        versions = (_mtime(self._cache_path), _mtime(*self._db_paths))
+        if self._repo is None or versions != self._versions:
+            self._reload(versions)
 
     def _reload(self, versions: tuple) -> None:
         try:
@@ -66,7 +77,21 @@ class ReloadingPlayerData:
             self._repo = InMemoryPlayerRepository(players)
             self._outlooks = self._build_outlooks(players)
             log.info("Loaded %d players (%d with schedule/form outlooks)", len(players), len(self._outlooks))
+        self._adp = self._load_adp()
         self._versions = versions
+
+    def _load_adp(self) -> dict[int, float]:
+        if not self._db_paths or not self._db_paths[0].exists():
+            return {}
+        try:
+            conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
+            try:
+                return load_adp(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error as error:
+            log.error("Couldn't load ADP from %s: %s", self._db_paths[0], error)
+            return {}
 
     def _build_outlooks(self, players) -> dict[str, PlayerOutlook]:
         if not self._db_paths or not self._db_paths[0].exists():
@@ -102,6 +127,18 @@ def get_player_repository() -> PlayerRepository:
 def get_outlooks() -> dict[str, PlayerOutlook]:
     """Schedule and form outlooks by player id (empty without a collected database)."""
     return _data.current()[1]
+
+
+def get_adp() -> dict[int, float]:
+    """Latest ESPN average draft position by ESPN id (empty without a collected database)."""
+    return _data.adp()
+
+
+def get_draft_planner(
+    repo: PlayerRepository = Depends(get_player_repository),
+    adp: dict[int, float] = Depends(get_adp),
+) -> DraftPlanner:
+    return DraftPlanner(repo.list(), adp)
 
 
 def get_trade_analyzer(
