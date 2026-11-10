@@ -432,6 +432,45 @@ function valueBars(analysis) {
   return wrap;
 }
 
+// Players the winning side could add so the trade comes out even.
+function balancePanel(analysis) {
+  const balance = analysis.balance;
+  if (!balance || balance.players.length === 0) return null;
+  const side = balance.side;
+  const wrap = document.createElement("section");
+  wrap.className = `balance balance-${side}`;
+  const heading = document.createElement("h3");
+  heading.textContent = "Even it out";
+  const intro = document.createElement("p");
+  intro.textContent =
+    `${teamName(side)} could add one of these players, each worth close to the ` +
+    `${formatPoints(balance.value_gap)}-point gap.`;
+  const list = document.createElement("ul");
+  list.className = "balance-list";
+  for (const v of balance.players) {
+    const item = document.createElement("li");
+    item.className = "balance-item";
+    const text = document.createElement("span");
+    text.className = "balance-text";
+    const name = document.createElement("span");
+    name.className = "balance-name";
+    name.textContent = v.player.name;
+    const meta = document.createElement("span");
+    meta.className = "balance-meta";
+    meta.textContent = `${v.player.position}, ${v.player.team}, ${formatPoints(v.value)} value`;
+    text.append(name, meta);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-quiet btn-small";
+    button.textContent = `Add to ${teamName(side)}`;
+    button.addEventListener("click", () => addPlayer(side, v.player.id));
+    item.append(avatar(v.player, "sm"), text, button);
+    list.append(item);
+  }
+  wrap.append(heading, intro, list);
+  return wrap;
+}
+
 function renderAnalysis(analysis) {
   state.values = new Map();
   for (const side of SIDES) {
@@ -460,6 +499,8 @@ function renderAnalysis(analysis) {
   result.querySelector(".field").setAttribute("aria-label", `${headline}. ${detail}`);
   result.querySelector(".summary").append(sideSummary("a", analysis), sideSummary("b", analysis));
   result.querySelector(".summary").after(valueBars(analysis));
+  const balance = balancePanel(analysis);
+  if (balance) result.querySelector(".value-bars").after(balance);
 
   if (analysis.warnings.length) {
     const list = document.createElement("ul");
