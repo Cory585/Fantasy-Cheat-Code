@@ -337,7 +337,65 @@ function teamName(side) {
   return sideEl(side).querySelector(".team-name").value.trim() || `Team ${side.toUpperCase()}`;
 }
 
+// ---------- Shareable links ----------
+// The trade lives in the URL hash, e.g. #a=9221,7564&b=6794&an=Aces&teams=10&slots=QB1.RB2...
+
+function writeUrl() {
+  const params = new URLSearchParams();
+  for (const side of SIDES) {
+    if (state.sides[side].length) params.set(side, state.sides[side].join(","));
+    const name = sideEl(side).querySelector(".team-name").value.trim();
+    if (name && name !== `Team ${side.toUpperCase()}`) params.set(`${side}n`, name);
+  }
+  if (state.numTeams !== 12) params.set("teams", String(state.numTeams));
+  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  if (custom) params.set("slots", Object.entries(state.slots).map(([k, n]) => `${k}${n}`).join("."));
+  const hash = params.toString();
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
+}
+
+function readUrl() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const seen = new Set();
+  for (const side of SIDES) {
+    // Ignore unknown ids (e.g. a player dropped from the data) and duplicates.
+    state.sides[side] = (params.get(side) || "").split(",").filter((id) => {
+      const ok = id && state.players.has(id) && !seen.has(id);
+      seen.add(id);
+      return ok;
+    });
+    const name = params.get(`${side}n`);
+    if (name) sideEl(side).querySelector(".team-name").value = name.slice(0, 30);
+  }
+  const teams = Number(params.get("teams"));
+  const select = document.getElementById("league-size");
+  if ([...select.options].some((o) => Number(o.value) === teams)) {
+    state.numTeams = teams;
+    select.value = String(teams);
+  }
+  for (const part of (params.get("slots") || "").split(".")) {
+    const match = /^([A-Z]+)(\d)$/.exec(part);
+    if (match && match[1] in DEFAULT_SLOTS) state.slots[match[1]] = Math.min(SLOT_LIMIT, Number(match[2]));
+  }
+}
+
+async function copyShareLink(button) {
+  writeUrl();
+  const status = document.getElementById("share-status");
+  try {
+    await navigator.clipboard.writeText(location.href);
+    status.textContent = "Link copied";
+  } catch {
+    // Clipboard can be blocked (e.g. insecure context); fall back to selecting the URL.
+    window.prompt("Copy this link:", location.href);
+    status.textContent = "";
+  }
+  clearTimeout(button._statusTimer);
+  button._statusTimer = setTimeout(() => { status.textContent = ""; }, 2500);
+}
+
 function onTradeChanged() {
+  writeUrl();
   clearTimeout(analysisTimer);
   analysisSeq++; // discard any in-flight response for the previous trade
   if (SIDES.some((side) => state.sides[side].length === 0)) {
@@ -708,8 +766,11 @@ async function init() {
     renderLineupSettings();
     onTradeChanged();
   });
+  document.getElementById("share").addEventListener("click", (e) => copyShareLink(e.currentTarget));
   try {
     await loadPlayers();
+    readUrl();
+    renderLineupSettings();
     render();
   } catch (error) {
     const result = document.getElementById("result");
