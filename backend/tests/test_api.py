@@ -1,3 +1,5 @@
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -33,3 +35,43 @@ def test_analyze_trade_unknown_player_404():
         json={"side_a": {"player_ids": ["nope"]}, "side_b": {"player_ids": ["rb1"]}},
     )
     assert resp.status_code == 404
+
+
+def test_frontend_served_at_root():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Trade Analyzer" in resp.text
+
+
+def test_analyze_trade_duplicate_player_on_one_side_422():
+    resp = client.post(
+        "/trades/analyze",
+        json={"side_a": {"player_ids": ["rb1", "rb1"]}, "side_b": {"player_ids": ["wr1"]}},
+    )
+    assert resp.status_code == 422
+
+
+def test_analyze_trade_rejects_invalid_league_size():
+    # A negative league size used to index the position pool from the end (wrong baseline).
+    for league in ({"num_teams": -1}, {"num_teams": 0}, {"roster_slots": {"QB": -1}}):
+        resp = client.post(
+            "/trades/analyze",
+            json={"side_a": {"player_ids": ["qb1"]}, "side_b": {"player_ids": ["qb2"]}, "league": league},
+        )
+        assert resp.status_code == 422, league
+
+
+@pytest.mark.parametrize(
+    "path, heading",
+    [("/tiers/", "Player Tier Lists"), ("/start-sit/", "Start/Sit Guide"), ("/draft/", "Draft Masterclass")],
+)
+def test_feature_pages_served(path, heading):
+    resp = client.get(path)
+    assert resp.status_code == 200
+    assert heading in resp.text
+    assert 'aria-current="page"' in resp.text
+
+
+def test_shared_assets_served():
+    for asset in ("/styles.css", "/theme.js", "/app.js"):
+        assert client.get(asset).status_code == 200
