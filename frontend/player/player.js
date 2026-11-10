@@ -53,7 +53,17 @@ function initials(name) {
 
 // ---------- States ----------
 
+// The one retry countdown; cleared whenever the notice changes, so timers never stack.
+let retryTimer = null;
+
+function clearRetryTimer() {
+  clearInterval(retryTimer);
+  retryTimer = null;
+}
+
 function showNotice(text, { retryAfter = null, retry = false } = {}) {
+  clearRetryTimer();
+  els.notice.querySelector(".notice-link")?.remove();
   els.noticeText.textContent = text;
   els.notice.hidden = false;
   els.retry.hidden = !retry;
@@ -63,10 +73,10 @@ function showNotice(text, { retryAfter = null, retry = false } = {}) {
     els.retry.disabled = true;
     let left = retryAfter;
     els.retry.textContent = `Try again in ${left}s`;
-    const timer = setInterval(() => {
+    retryTimer = setInterval(() => {
       left -= 1;
       if (left <= 0) {
-        clearInterval(timer);
+        clearRetryTimer();
         els.retry.disabled = false;
         els.retry.textContent = "Try again";
       } else {
@@ -87,7 +97,7 @@ function showFatal(title, text, { retry = false, retryAfter = null } = {}) {
   for (const section of [els.combineSection, els.nflSection, els.collegeSection]) section.hidden = true;
   showNotice(text, { retry, retryAfter });
   if (!retry) {
-    const link = el("a", "btn btn-quiet", "Go to the trade analyzer");
+    const link = el("a", "btn btn-quiet notice-link", "Go to the trade analyzer");
     link.href = "/";
     els.notice.append(link);
   }
@@ -135,6 +145,7 @@ function renderHeader(profile) {
 }
 
 function renderEspnStatus(espn) {
+  clearRetryTimer();
   els.notice.hidden = true;
   if (espn.status === "unavailable") {
     const why = espn.code === "upstream_busy" ? "ESPN is busy right now" : "ESPN couldn't be reached";
