@@ -180,3 +180,7 @@ def test_draft_page_has_slot_dropdown_and_script():
     page = client.get("/draft/").text
     assert 'id="draft-slot"' in page and "/draft/draft.js" in page
     assert client.get("/draft/draft.js").status_code == 200
+
+
+def test_draft_page_loads_its_script_once():
+    assert client.get("/draft/").text.count('src="/draft/draft.js"') == 1
