@@ -118,8 +118,7 @@ def parse_site_teams(data: dict) -> list[dict]:
 def parse_market(players: list[dict], teams: dict[int, ProTeam], snapshot_date: str) -> list[dict]:
     """Rostered/started %, ADP, auction value, and draft ranks from the fantasy player feed.
 
-    These come back in the same response as projections (`EspnSource.players`), so
-    collecting them costs no extra requests.
+    These fields are in the same player feed as the projections (`EspnSource.players`).
     """
     rows = []
     for p in players:
