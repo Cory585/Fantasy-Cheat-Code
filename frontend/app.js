@@ -86,6 +86,40 @@ async function loadPlayers() {
   for (const player of await response.json()) state.players.set(player.id, player);
 }
 
+// Where the data comes from and how fresh it is. Not essential, so failures are quiet.
+async function loadMeta() {
+  try {
+    const response = await request("/meta");
+    if (!response.ok) return;
+    state.meta = await response.json();
+  } catch {
+    return;
+  }
+  const el = document.getElementById("data-status");
+  const meta = state.meta;
+  if (meta.source !== "synced") {
+    el.textContent = "Using sample players. Run the data sync to load real projections.";
+    return;
+  }
+  const when = new Date(meta.synced_at).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+  const [start, end] = meta.weeks || [];
+  const parts = [`Projections updated ${when}`];
+  if (start && end) parts.push(`weeks ${start}–${end}`);
+  if (meta.scoring) parts.push(meta.scoring.replace("_", "-").toUpperCase());
+  el.textContent = `${parts.join(", ")}.${meta.outlooks ? " Includes schedule and recent form." : ""}`;
+  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
+  for (const side of SIDES) renderRoster(side);
+  refreshValues();
+}
+
+function byeLabel(player) {
+  const firstWeek = state.meta?.weeks?.[0];
+  if (!player.bye_week || (firstWeek && player.bye_week < firstWeek)) return null; // already past
+  return `bye week ${player.bye_week}`;
+}
+
 function inTrade(id) {
   return SIDES.some((side) => state.sides[side].includes(id));
 }
@@ -295,7 +329,7 @@ function rosterItem(side, player) {
     player.position,
     player.team,
     `${formatPoints(player.ros_projection)} proj. pts`,
-    player.bye_week ? `bye week ${player.bye_week}` : null,
+    byeLabel(player),
   ]
     .filter(Boolean)
     .join(", ");
@@ -772,6 +806,7 @@ async function init() {
     readUrl();
     renderLineupSettings();
     render();
+    loadMeta();
   } catch (error) {
     const result = document.getElementById("result");
     result.innerHTML = "";
