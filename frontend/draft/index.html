@@ -37,49 +37,79 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>Draft Masterclass</h1>
-      <p class="lede">Pick your draft slot to see every pick you'll make in a snake draft and who's likely on the board at each one.</p>
+      <p class="lede">Choose your draft slot to see when you're on the clock and who should still be there each time.</p>
       <p class="data-status" id="data-status"></p>
     </div>
-    <form class="masthead-controls" id="draft-settings">
-      <label class="inline-field">
-        <span>League size</span>
-        <select id="league-size">
-          <option value="8">8 teams</option>
-          <option value="10">10 teams</option>
-          <option value="12" selected>12 teams</option>
-          <option value="14">14 teams</option>
-          <option value="16">16 teams</option>
-        </select>
-      </label>
-      <label class="inline-field">
-        <span>Your pick</span>
-        <select id="draft-slot"></select>
-      </label>
-      <label class="inline-field">
-        <span>Rounds</span>
-        <select id="rounds">
-          <option value="13">13</option>
-          <option value="14">14</option>
-          <option value="15" selected>15</option>
-          <option value="16">16</option>
-          <option value="17">17</option>
-          <option value="18">18</option>
-        </select>
-      </label>
-    </form>
   </header>
 
   <main>
-    <section aria-labelledby="board-heading">
-      <h2 id="board-heading" class="section-heading">Draft board</h2>
-      <p class="section-note" id="my-picks"></p>
+    <form class="draft-setup" id="draft-setup" aria-label="Draft settings">
+      <fieldset class="setup-group">
+        <legend>League size</legend>
+        <div class="segmented" id="league-size" role="group">
+          <button type="button" data-teams="8">8</button>
+          <button type="button" data-teams="10">10</button>
+          <button type="button" data-teams="12">12</button>
+          <button type="button" data-teams="14">14</button>
+          <button type="button" data-teams="16">16</button>
+        </div>
+      </fieldset>
+      <fieldset class="setup-group">
+        <legend>Your pick</legend>
+        <div class="stepper">
+          <button type="button" class="btn btn-quiet step-btn" id="slot-prev" aria-label="Earlier pick">&#9664;</button>
+          <select id="draft-slot" aria-label="Your draft slot"></select>
+          <button type="button" class="btn btn-quiet step-btn" id="slot-next" aria-label="Later pick">&#9654;</button>
+        </div>
+      </fieldset>
+      <fieldset class="setup-group">
+        <legend>Rounds</legend>
+        <select id="rounds" aria-label="Number of rounds">
+          <option value="13">13 rounds</option>
+          <option value="14">14 rounds</option>
+          <option value="15" selected>15 rounds</option>
+          <option value="16">16 rounds</option>
+          <option value="17">17 rounds</option>
+          <option value="18">18 rounds</option>
+        </select>
+      </fieldset>
+    </form>
+
+    <section class="draft-section" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading" class="section-heading">When you're on the clock</h2>
+      <p class="section-note" id="timeline-summary"></p>
+      <div class="timeline" id="timeline"></div>
+    </section>
+
+    <section class="draft-section" aria-labelledby="board-heading">
+      <div class="section-head">
+        <div>
+          <h2 id="board-heading" class="section-heading">Mock draft by ADP</h2>
+          <p class="section-note">Every team takes the best player left by average draft position (ADP).
+            Pick a team's name to draft from that slot.</p>
+        </div>
+        <ul class="position-legend" id="position-legend" aria-label="Position colors"></ul>
+      </div>
       <div class="draft-board" id="draft-board"></div>
     </section>
 
-    <section class="result" id="plan" aria-live="polite" aria-labelledby="plan-heading">
-      <h2 id="plan-heading" class="section-heading">Likely available at your picks</h2>
-      <p class="section-note">Players ranked around each pick by average draft position (ADP).
-        Everyone ranked ahead of a pick is assumed to be gone.</p>
+    <section class="draft-section" id="plan" aria-live="polite" aria-labelledby="plan-heading">
+      <div class="section-head">
+        <div>
+          <h2 id="plan-heading" class="section-heading">Who to target at each pick</h2>
+          <p class="section-note">The bar shows which positions go before your next pick. Dots show where
+            each target is usually drafted compared with your pick.</p>
+        </div>
+        <div class="segmented position-filter" id="position-filter" role="group" aria-label="Show targets at">
+          <button type="button" data-position="">All</button>
+          <button type="button" data-position="QB">QB</button>
+          <button type="button" data-position="RB">RB</button>
+          <button type="button" data-position="WR">WR</button>
+          <button type="button" data-position="TE">TE</button>
+          <button type="button" data-position="K">K</button>
+          <button type="button" data-position="DST">DST</button>
+        </div>
+      </div>
       <ol class="plan-list" id="plan-list"></ol>
     </section>
 
@@ -90,7 +120,6 @@
           <li>Suggestions that account for your roster so far, not just ADP.</li>
           <li>Tiers, so you can see when a position is about to run dry.</li>
           <li>Live draft tracking: mark picks as they happen and update what's left.</li>
-          <li>Mock drafts against opponents who pick by ADP.</li>
         </ul>
       </div>
       <div>
@@ -102,7 +131,9 @@
     </section>
   </main>
 
+  <div class="viz-tooltip" id="viz-tooltip" role="tooltip" hidden></div>
   <script src="/theme.js"></script>
+  <script src="/draft/draft.js"></script>
   <script src="/draft/draft.js"></script>
 </body>
 </html>
