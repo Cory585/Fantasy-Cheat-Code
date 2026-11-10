@@ -11,6 +11,7 @@ All requests go through a rate-limited client (see sources/http.py).
 import argparse
 import json
 import logging
+import os
 import re
 from collections.abc import Container
 from datetime import datetime, timezone
@@ -232,7 +233,10 @@ def write_cache(
         "scoring": scoring.value,
         "players": [p.model_dump(mode="json") for p in players],
     }
-    output.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    # Write to a temp file and swap it in, so the running API never reads a half-written cache.
+    tmp = output.with_name(output.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    os.replace(tmp, output)
 
 
 def main() -> None:

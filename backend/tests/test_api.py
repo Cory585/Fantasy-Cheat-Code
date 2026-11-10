@@ -75,3 +75,35 @@ def test_feature_pages_served(path, heading):
 def test_shared_assets_served():
     for asset in ("/styles.css", "/theme.js", "/app.js"):
         assert client.get(asset).status_code == 200
+
+
+def test_player_repository_reloads_when_cache_changes(tmp_path):
+    from app.api.dependencies import ReloadingPlayerRepository
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    repo = ReloadingPlayerRepository(path)
+    assert repo.current().get("rb1") is not None  # no cache yet -> sample data
+
+    one = Player(id="x1", name="First", position=Position.QB, team="KC", ros_projection=100.0)
+    write_cache(path, [one], 2026, range(10, 18), ScoringFormat.PPR)
+    assert repo.current().get("x1").name == "First"
+
+    two = Player(id="x2", name="Second", position=Position.QB, team="KC", ros_projection=90.0)
+    write_cache(path, [two], 2026, range(10, 18), ScoringFormat.PPR)
+    import os
+    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))  # filesystems with coarse mtimes
+    assert repo.current().get("x2") is not None
+    assert repo.current().get("x1") is None
+
+
+def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
+    from app.api.dependencies import ReloadingPlayerRepository
+
+    path = tmp_path / "players.json"
+    repo = ReloadingPlayerRepository(path)
+    sample = repo.current()
+    path.write_text("{not json", encoding="utf-8")
+    assert repo.current() is sample
