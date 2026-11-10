@@ -60,8 +60,12 @@ class RateLimitedClient:
         self._sleep = sleep
         self._limiters: dict[str, RateLimiter] = {}
         self._limiters_lock = threading.Lock()
+        # follow_redirects: GitHub release downloads redirect to a storage host.
         self._client = httpx.Client(
-            timeout=timeout, headers={"User-Agent": user_agent}, transport=transport
+            timeout=timeout,
+            headers={"User-Agent": user_agent},
+            transport=transport,
+            follow_redirects=True,
         )
 
     def _limiter_for(self, url: str) -> RateLimiter:
@@ -72,13 +76,20 @@ class RateLimitedClient:
             return self._limiters[host]
 
     def get_json(self, url: str, params=None, headers: dict[str, str] | None = None):
+        return self._get(url, params, headers).json()
+
+    def get_text(self, url: str, params=None, headers: dict[str, str] | None = None) -> str:
+        """For CSV and other text downloads (e.g. nflverse files on GitHub releases)."""
+        return self._get(url, params, headers).text
+
+    def _get(self, url: str, params, headers: dict[str, str] | None) -> httpx.Response:
         limiter = self._limiter_for(url)
         for attempt in range(self._max_retries + 1):
             limiter.wait()
             response = self._client.get(url, params=params, headers=headers)
             if response.status_code not in RETRY_STATUSES or attempt == self._max_retries:
                 response.raise_for_status()
-                return response.json()
+                return response
             self._sleep(self._retry_delay(response, attempt))
         raise AssertionError("unreachable")
 

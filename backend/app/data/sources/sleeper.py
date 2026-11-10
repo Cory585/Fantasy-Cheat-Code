@@ -46,25 +46,36 @@ class SleeperSource:
         return self._client.get_json(f"{PROJECTIONS_API}/{season}/{week}", params=params)
 
     def ros_projections(
-        self, season: int, weeks: range, scoring: ScoringFormat
+        self,
+        season: int,
+        weeks: range,
+        scoring: ScoringFormat,
+        played_first_week: frozenset[str] = frozenset(),
     ) -> dict[str, float]:
-        """Sum of weekly projected points per Sleeper player_id over `weeks`."""
+        """Sum of weekly projected points per Sleeper player_id over `weeks`.
+
+        `played_first_week` lists teams whose game in the first week is already final;
+        their projections for that week are skipped so finished games aren't counted.
+        """
         totals: dict[str, float] = {}
         for week in weeks:
+            skip = played_first_week if week == weeks.start else frozenset()
             for player_id, points in parse_weekly_points(
-                self.weekly_projections(season, week), scoring
+                self.weekly_projections(season, week), scoring, skip_teams=skip
             ).items():
                 totals[player_id] = totals.get(player_id, 0.0) + points
         return totals
 
 
-def parse_weekly_points(rows: list[dict], scoring: ScoringFormat) -> dict[str, float]:
+def parse_weekly_points(
+    rows: list[dict], scoring: ScoringFormat, skip_teams: frozenset[str] = frozenset()
+) -> dict[str, float]:
     field = POINTS_FIELD[scoring]
     points: dict[str, float] = {}
     for row in rows:
         player_id = row.get("player_id")
         value = (row.get("stats") or {}).get(field)
-        if player_id and value:
+        if player_id and value and row.get("team") not in skip_teams:
             points[player_id] = float(value)
     return points
 

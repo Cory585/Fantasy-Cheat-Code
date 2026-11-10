@@ -6,17 +6,120 @@ const state = {
   players: new Map(), // id -> player
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
-  values: new Map(), // player id -> trade value from the latest analysis
+  values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
+  search: { a: { position: "", active: -1, results: [], open: false }, b: { position: "", active: -1, results: [], open: false } },
 };
+
+const MAX_RESULTS = 8;
+const MAX_PER_SIDE = 40; // matches the API's limit
+
+// Starting lineup slots per team (FLEX = RB/WR/TE). Matches the backend default.
+const DEFAULT_SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
+const SLOT_LIMIT = 4;
+state.slots = { ...DEFAULT_SLOTS };
+
+function slotsSummary() {
+  return Object.entries(state.slots)
+    .filter(([, n]) => n > 0)
+    .map(([slot, n]) => `${n} ${slot}`)
+    .join(", ");
+}
+
+function renderLineupSettings() {
+  const grid = document.getElementById("lineup-slots");
+  grid.replaceChildren(...Object.keys(DEFAULT_SLOTS).map((slot) => {
+    const row = document.createElement("div");
+    row.className = "stepper";
+    const label = document.createElement("span");
+    label.className = "stepper-label";
+    label.textContent = slot;
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "stepper-btn";
+    minus.textContent = "−";
+    minus.setAttribute("aria-label", `Fewer ${slot} starters`);
+    minus.disabled = state.slots[slot] <= 0;
+    const count = document.createElement("output");
+    count.className = "stepper-count";
+    count.textContent = String(state.slots[slot]);
+    count.setAttribute("aria-label", `${slot} starters`);
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "stepper-btn";
+    plus.textContent = "+";
+    plus.setAttribute("aria-label", `More ${slot} starters`);
+    plus.disabled = state.slots[slot] >= SLOT_LIMIT;
+    minus.addEventListener("click", () => changeSlot(slot, -1, minus));
+    plus.addEventListener("click", () => changeSlot(slot, 1, plus));
+    row.append(label, minus, count, plus);
+    return row;
+  }));
+  const summary = document.querySelector(".lineup-settings summary");
+  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  summary.textContent = custom ? "Starting lineup (custom)" : "Starting lineup";
+}
+
+function changeSlot(slot, delta, button) {
+  state.slots[slot] = Math.min(SLOT_LIMIT, Math.max(0, state.slots[slot] + delta));
+  renderLineupSettings();
+  // Re-rendering replaced the button; keep focus on its replacement for keyboard users.
+  const label = button.getAttribute("aria-label");
+  document.querySelector(`#lineup-slots [aria-label="${label}"]`)?.focus();
+  onTradeChanged();
+}
 
 const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
 // ---------- Data ----------
 
+// fetch() that turns network failures into a plain-language error.
+async function request(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch {
+    throw new Error("Couldn't reach the server.");
+  }
+}
+
 async function loadPlayers() {
-  const response = await fetch("/players");
-  if (!response.ok) throw new Error(`Couldn't load players (HTTP ${response.status}).`);
+  const response = await request("/players");
+  if (!response.ok) throw new Error(`Couldn't load players (the server returned HTTP ${response.status}).`);
   for (const player of await response.json()) state.players.set(player.id, player);
+}
+
+// Where the data comes from and how fresh it is. Not essential, so failures are quiet.
+async function loadMeta() {
+  try {
+    const response = await request("/meta");
+    if (!response.ok) return;
+    state.meta = await response.json();
+  } catch {
+    return;
+  }
+  const el = document.getElementById("data-status");
+  const meta = state.meta;
+  if (meta.source !== "synced") {
+    el.textContent = "Using sample players. Run the data sync to load real projections.";
+    return;
+  }
+  const synced = new Date(meta.synced_at);
+  const when = Number.isNaN(synced.getTime()) ? null : synced.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+  const [start, end] = Array.isArray(meta.weeks) ? meta.weeks : [];
+  const parts = [when ? `Projections updated ${when}` : "Projections loaded"];
+  if (start && end) parts.push(`weeks ${start}–${end}`);
+  if (meta.scoring) parts.push(meta.scoring.replace("_", "-").toUpperCase());
+  el.textContent = `${parts.join(", ")}.${meta.outlooks ? " Includes schedule and recent form." : ""}`;
+  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
+  for (const side of SIDES) renderRoster(side);
+  refreshValues();
+}
+
+function byeLabel(player) {
+  const firstWeek = state.meta?.weeks?.[0];
+  if (!player.bye_week || (firstWeek && player.bye_week < firstWeek)) return null; // already past
+  return `bye week ${player.bye_week}`;
 }
 
 function inTrade(id) {
@@ -29,30 +132,168 @@ function formatPoints(value) {
   return value.toFixed(1);
 }
 
-function playerLabel(p) {
-  return `${p.name} (${p.position}, ${p.team}) ${formatPoints(p.ros_projection)}`;
+// ESPN's image CDN, resized server-side so thumbnails stay small.
+const ESPN_LOGO_CODES = { WAS: "wsh" };
+
+function teamLogoUrl(team) {
+  const code = (ESPN_LOGO_CODES[team] || team).toLowerCase();
+  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${code}.png&w=80&h=80`;
 }
 
-function renderPicker(side) {
-  const el = sideEl(side);
-  const position = el.querySelector(".position-filter").value;
-  const select = el.querySelector(".player-select");
-  const previous = select.value;
+function headshotUrl(player) {
+  if (player.position === "DST") return teamLogoUrl(player.team);
+  if (!player.espn_id) return null;
+  return `https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.espn_id}.png&w=96&h=70`;
+}
 
-  const options = [...state.players.values()]
+// Headshot (or team logo for defenses), falling back to initials if the image is missing.
+function avatar(player, size = "md") {
+  const wrap = document.createElement("span");
+  wrap.className = `avatar avatar-${size}`;
+  wrap.setAttribute("aria-hidden", "true");
+  const initials = player.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  const url = headshotUrl(player);
+  if (!url) {
+    wrap.textContent = initials;
+    return wrap;
+  }
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  img.loading = "lazy";
+  img.addEventListener("error", () => {
+    img.remove();
+    wrap.textContent = initials;
+  });
+  wrap.append(img);
+  return wrap;
+}
+
+// ---------- Player search ----------
+
+function normalize(text) {
+  return text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
+}
+
+function searchPlayers(query, position) {
+  const q = normalize(query.trim());
+  return [...state.players.values()]
+    .filter((p) => !inTrade(p.id))
     .filter((p) => !position || p.position === position)
-    .sort((x, y) => y.ros_projection - x.ros_projection);
+    .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
+    .sort((x, y) => y.ros_projection - x.ros_projection)
+    .slice(0, MAX_RESULTS);
+}
 
-  select.replaceChildren(
-    new Option("Choose a player", ""),
-    ...options.map((p) => {
-      const option = new Option(playerLabel(p), p.id);
-      option.disabled = inTrade(p.id);
-      return option;
-    }),
-  );
-  if (previous && !inTrade(previous)) select.value = previous;
-  el.querySelector(".btn-add").disabled = !select.value;
+function searchOption(side, player, index) {
+  const option = document.createElement("li");
+  option.id = `result-${side}-${index}`;
+  option.className = "search-option";
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", String(index === state.search[side].active));
+
+  const text = document.createElement("span");
+  text.className = "search-option-text";
+  const name = document.createElement("span");
+  name.className = "search-option-name";
+  name.textContent = player.name;
+  const meta = document.createElement("span");
+  meta.className = "search-option-meta";
+  meta.textContent = [player.position, player.team, player.injury_status].filter(Boolean).join(", ");
+  text.append(name, meta);
+
+  const proj = document.createElement("span");
+  proj.className = "search-option-proj";
+  proj.textContent = formatPoints(player.ros_projection);
+
+  option.append(avatar(player, "sm"), text, proj);
+  // mousedown (not click) so the input doesn't blur and close the list first.
+  option.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    addPlayer(side, player.id);
+  });
+  return option;
+}
+
+// Open or close a side's results list, then redraw it.
+function setSearchOpen(side, open) {
+  state.search[side].open = open;
+  if (!open) state.search[side].active = -1;
+  renderSearch(side);
+}
+
+function renderSearch(side) {
+  const el = sideEl(side);
+  const input = el.querySelector(".player-search");
+  const list = el.querySelector(".search-results");
+  const search = state.search[side];
+  search.results = searchPlayers(input.value, search.position);
+  if (search.active >= search.results.length) search.active = search.results.length - 1;
+
+  const show = search.open && document.activeElement === input;
+  list.hidden = !show;
+  input.setAttribute("aria-expanded", String(show));
+  input.removeAttribute("aria-activedescendant");
+  if (!show) return;
+
+  if (sideIsFull(side)) {
+    const full = document.createElement("li");
+    full.className = "search-empty";
+    full.textContent = `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.`;
+    list.replaceChildren(full);
+    return;
+  }
+
+  if (search.results.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "search-empty";
+    const query = input.value.trim();
+    empty.textContent = query ? `No players match "${query}".` : "No players left to add.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  list.replaceChildren(...search.results.map((p, i) => searchOption(side, p, i)));
+  if (search.active >= 0) {
+    input.setAttribute("aria-activedescendant", `result-${side}-${search.active}`);
+    list.children[search.active]?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function onSearchKey(side, event) {
+  const search = state.search[side];
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!search.open) {
+      search.open = true;
+      renderSearch(side); // refresh results before moving through them
+    }
+    const total = search.results.length;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    search.active = total ? (search.active + step + total) % total : -1;
+    if (event.key === "ArrowUp" && search.active === -1) search.active = total - 1;
+    renderSearch(side);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const pick = search.results[search.active >= 0 ? search.active : 0];
+    if (pick) addPlayer(side, pick.id);
+  } else if (event.key === "Escape") {
+    // First Escape closes the list; a second one (list already closed) clears the text.
+    if (search.open) {
+      event.preventDefault();
+      setSearchOpen(side, false);
+    }
+  }
+}
+
+function setPositionFilter(side, position) {
+  state.search[side].position = position;
+  state.search[side].active = -1;
+  for (const chipEl of sideEl(side).querySelectorAll(".pos-chip")) {
+    chipEl.setAttribute("aria-pressed", String(chipEl.dataset.pos === position));
+  }
+  sideEl(side).querySelector(".player-search").focus();
+  setSearchOpen(side, true);
 }
 
 function renderRoster(side) {
@@ -81,6 +322,7 @@ function rosterItem(side, player) {
   item.dataset.id = player.id;
 
   const info = document.createElement("div");
+  info.className = "player-info";
   const name = document.createElement("div");
   name.className = "player-name";
   name.textContent = player.name;
@@ -97,11 +339,13 @@ function rosterItem(side, player) {
     player.position,
     player.team,
     `${formatPoints(player.ros_projection)} proj. pts`,
-    player.bye_week ? `bye week ${player.bye_week}` : null,
+    byeLabel(player),
   ]
     .filter(Boolean)
     .join(", ");
-  info.append(name, meta);
+  const outlook = document.createElement("div");
+  outlook.className = "player-outlook";
+  info.append(name, meta, outlook);
 
   const value = document.createElement("div");
   value.className = "player-value";
@@ -115,13 +359,13 @@ function rosterItem(side, player) {
   remove.title = "Remove from trade";
   remove.addEventListener("click", () => removePlayer(side, player.id));
 
-  item.append(info, value, remove);
+  item.append(avatar(player), info, value, remove);
   return item;
 }
 
 function render() {
   for (const side of SIDES) {
-    renderPicker(side);
+    renderSearch(side);
     renderRoster(side);
   }
   refreshValues();
@@ -137,7 +381,66 @@ function teamName(side) {
   return sideEl(side).querySelector(".team-name").value.trim() || `Team ${side.toUpperCase()}`;
 }
 
+// ---------- Shareable links ----------
+// The trade lives in the URL hash, e.g. #a=9221,7564&b=6794&an=Aces&teams=10&slots=QB1.RB2...
+
+function writeUrl() {
+  const params = new URLSearchParams();
+  for (const side of SIDES) {
+    if (state.sides[side].length) params.set(side, state.sides[side].join(","));
+    const name = sideEl(side).querySelector(".team-name").value.trim();
+    if (name && name !== `Team ${side.toUpperCase()}`) params.set(`${side}n`, name);
+  }
+  if (state.numTeams !== 12) params.set("teams", String(state.numTeams));
+  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  if (custom) params.set("slots", Object.entries(state.slots).map(([k, n]) => `${k}${n}`).join("."));
+  const hash = params.toString();
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
+}
+
+// Anything a link leaves out goes back to its default, so opening a new link in a tab that
+// already has a trade doesn't mix the two.
+function readUrl() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const seen = new Set();
+  for (const side of SIDES) {
+    // Ignore unknown ids (e.g. a player dropped from the data) and duplicates.
+    state.sides[side] = (params.get(side) || "").split(",").filter((id) => {
+      const ok = id && state.players.has(id) && !seen.has(id);
+      seen.add(id);
+      return ok;
+    }).slice(0, MAX_PER_SIDE);
+    const name = params.get(`${side}n`);
+    sideEl(side).querySelector(".team-name").value = name ? name.slice(0, 30) : `Team ${side.toUpperCase()}`;
+  }
+  const teams = Number(params.get("teams"));
+  const select = document.getElementById("league-size");
+  state.numTeams = [...select.options].some((o) => Number(o.value) === teams) ? teams : 12;
+  select.value = String(state.numTeams);
+  state.slots = { ...DEFAULT_SLOTS };
+  for (const part of (params.get("slots") || "").split(".")) {
+    const match = /^([A-Z]+)(\d)$/.exec(part);
+    if (match && match[1] in DEFAULT_SLOTS) state.slots[match[1]] = Math.min(SLOT_LIMIT, Number(match[2]));
+  }
+}
+
+async function copyShareLink(button) {
+  writeUrl();
+  const status = document.getElementById("share-status");
+  try {
+    await navigator.clipboard.writeText(location.href);
+    status.textContent = "Link copied";
+  } catch {
+    // Clipboard can be blocked (e.g. insecure context); fall back to selecting the URL.
+    window.prompt("Copy this link:", location.href);
+    status.textContent = "";
+  }
+  clearTimeout(button._statusTimer);
+  button._statusTimer = setTimeout(() => { status.textContent = ""; }, 2500);
+}
+
 function onTradeChanged() {
+  writeUrl();
   clearTimeout(analysisTimer);
   analysisSeq++; // discard any in-flight response for the previous trade
   if (SIDES.some((side) => state.sides[side].length === 0)) {
@@ -153,17 +456,18 @@ async function analyze() {
   const body = {
     side_a: { team_name: teamName("a"), player_ids: state.sides.a },
     side_b: { team_name: teamName("b"), player_ids: state.sides.b },
-    league: { num_teams: state.numTeams },
+    league: { num_teams: state.numTeams, roster_slots: state.slots },
   };
   try {
-    const response = await fetch("/trades/analyze", {
+    const response = await request("/trades/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => null); // error pages may not be JSON
     if (seq !== analysisSeq) return; // a newer request superseded this one
-    if (!response.ok) throw new Error(errorDetail(data));
+    if (!response.ok) throw new Error(errorDetail(data) || `the server returned HTTP ${response.status}.`);
+    if (!data) throw new Error("the server sent a response the page couldn't read.");
     renderAnalysis(data);
   } catch (error) {
     if (seq !== analysisSeq) return;
@@ -172,9 +476,9 @@ async function analyze() {
 }
 
 function errorDetail(data) {
-  if (typeof data.detail === "string") return data.detail;
-  if (Array.isArray(data.detail)) return data.detail.map((d) => d.msg).join("; ");
-  return "unexpected response from the server.";
+  if (typeof data?.detail === "string") return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map((d) => d.msg).join("; ");
+  return null;
 }
 
 function renderEmptyResult() {
@@ -249,10 +553,87 @@ function sideSummary(side, analysis) {
   return wrap;
 }
 
+// Two stacked bars (one per side), each split into the players that side sends.
+// Widths are relative to the bigger side, so the gap between the bars is the value gap.
+function valueBars(analysis) {
+  const totals = SIDES.map((side) => analysis[`side_${side}`].total_value_given);
+  const max = Math.max(...totals, 1);
+  const wrap = document.createElement("div");
+  wrap.className = "value-bars";
+  const heading = document.createElement("h3");
+  heading.textContent = "Value sent";
+  wrap.append(heading);
+
+  SIDES.forEach((side, i) => {
+    const row = document.createElement("div");
+    row.className = `value-row value-row-${side}`;
+    const label = document.createElement("span");
+    label.className = "value-row-label";
+    label.textContent = teamName(side);
+    const track = document.createElement("div");
+    track.className = "value-track";
+    const gives = [...analysis[`side_${side}`].gives].sort((x, y) => y.value - x.value);
+    for (const v of gives) {
+      const seg = document.createElement("span");
+      seg.className = "value-seg";
+      seg.style.width = `${(v.value / max) * 100}%`;
+      seg.title = `${v.player.name}: ${formatPoints(v.value)}`;
+      seg.textContent = v.value / max > 0.14 ? v.player.name.split(" ").slice(-1)[0] : "";
+      track.append(seg);
+    }
+    const total = document.createElement("span");
+    total.className = "value-row-total";
+    total.textContent = formatPoints(totals[i]);
+    row.append(label, track, total);
+    wrap.append(row);
+  });
+  return wrap;
+}
+
+// Players the winning side could add so the trade comes out even.
+function balancePanel(analysis) {
+  const balance = analysis.balance;
+  if (!balance || balance.players.length === 0) return null;
+  const side = balance.side;
+  const wrap = document.createElement("section");
+  wrap.className = `balance balance-${side}`;
+  const heading = document.createElement("h3");
+  heading.textContent = "Even it out";
+  const intro = document.createElement("p");
+  intro.textContent =
+    `${teamName(side)} could add one of these players, each worth close to the ` +
+    `${formatPoints(balance.value_gap)}-point gap.`;
+  const list = document.createElement("ul");
+  list.className = "balance-list";
+  for (const v of balance.players) {
+    const item = document.createElement("li");
+    item.className = "balance-item";
+    const text = document.createElement("span");
+    text.className = "balance-text";
+    const name = document.createElement("span");
+    name.className = "balance-name";
+    name.textContent = v.player.name;
+    const meta = document.createElement("span");
+    meta.className = "balance-meta";
+    meta.textContent = `${v.player.position}, ${v.player.team}, ${formatPoints(v.value)} value`;
+    text.append(name, meta);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-quiet btn-small";
+    button.textContent = `Add to ${teamName(side)}`;
+    button.disabled = sideIsFull(side);
+    button.addEventListener("click", () => addPlayer(side, v.player.id));
+    item.append(avatar(v.player, "sm"), text, button);
+    list.append(item);
+  }
+  wrap.append(heading, intro, list);
+  return wrap;
+}
+
 function renderAnalysis(analysis) {
   state.values = new Map();
   for (const side of SIDES) {
-    for (const v of analysis[`side_${side}`].gives) state.values.set(v.player.id, v.value);
+    for (const v of analysis[`side_${side}`].gives) state.values.set(v.player.id, v);
   }
   refreshValues();
 
@@ -266,7 +647,10 @@ function renderAnalysis(analysis) {
     ${fieldMarkup(analysis)}
     <div class="summary"></div>
     <p class="value-note">Trade value is a player's projected rest-of-season points above a
-      replacement-level player at the same position in a ${state.numTeams}-team league.</p>`;
+      replacement-level player at the same position in a ${state.numTeams}-team league starting
+      ${slotsSummary()}. When
+      schedule data is available, projections blend Sleeper and ESPN with recent form adjusted
+      for each player's remaining opponents.</p>`;
   result.querySelector(".verdict h2").textContent = headline;
   result.querySelector(".verdict p").textContent = detail;
   result.querySelector(".endzone-a span").textContent = teamName("a");
@@ -274,6 +658,9 @@ function renderAnalysis(analysis) {
   result.querySelector(".field").setAttribute("role", "img");
   result.querySelector(".field").setAttribute("aria-label", `${headline}. ${detail}`);
   result.querySelector(".summary").append(sideSummary("a", analysis), sideSummary("b", analysis));
+  result.querySelector(".summary").after(valueBars(analysis));
+  const balance = balancePanel(analysis);
+  if (balance) result.querySelector(".value-bars").after(balance);
 
   if (analysis.warnings.length) {
     const list = document.createElement("ul");
@@ -291,31 +678,84 @@ function renderAnalysis(analysis) {
 function refreshValues() {
   for (const item of document.querySelectorAll(".roster-item")) {
     const player = state.players.get(item.dataset.id);
-    const value = state.values.get(item.dataset.id);
+    const valuation = state.values.get(item.dataset.id);
     const cell = item.querySelector(".player-value");
-    cell.innerHTML = value === undefined
+    cell.innerHTML = valuation === undefined
       ? `${formatPoints(player.ros_projection)}<small>proj. pts</small>`
-      : `${formatPoints(value)}<small>trade value</small>`;
+      : `${formatPoints(valuation.value)}<small>trade value</small>`;
+    renderOutlook(item.querySelector(".player-outlook"), player, valuation);
   }
+}
+
+// Schedule and recent-form chips under a rostered player (after analysis).
+function scheduleLabel(rank, teams) {
+  if (!rank || !teams) return null;
+  if (rank <= 8) return "easy";
+  if (rank > teams - 8) return "hard";
+  return "average";
+}
+
+function chip(text, title, modifier) {
+  const el = document.createElement("span");
+  el.className = `chip${modifier ? ` chip-${modifier}` : ""}`;
+  el.textContent = text;
+  if (title) el.title = title;
+  return el;
+}
+
+function renderOutlook(container, player, valuation) {
+  const outlook = valuation?.outlook;
+  if (!outlook) {
+    container.replaceChildren();
+    return;
+  }
+  const chips = [];
+  const label = scheduleLabel(outlook.sos_rank, outlook.sos_teams);
+  if (label) {
+    const games = outlook.games_remaining;
+    chips.push(chip(
+      `${label[0].toUpperCase()}${label.slice(1)} schedule`,
+      `${games} game${games === 1 ? "" : "s"} left: ${outlook.remaining_opponents.join(", ")}. ` +
+        `Ranked ${outlook.sos_rank} of ${outlook.sos_teams} for ${player.position}s (1 = easiest).`,
+      label,
+    ));
+  }
+  if (outlook.recent_ppg !== null && outlook.recent_games > 0) {
+    chips.push(chip(
+      `Last ${outlook.recent_games}: ${outlook.recent_ppg.toFixed(1)} pts/game`,
+      "Average fantasy points over recent games",
+    ));
+  }
+  if (Math.abs(outlook.adjusted_projection - outlook.provider_projection) >= 0.05) {
+    chips.push(chip(
+      `Adj. proj. ${formatPoints(outlook.adjusted_projection)}`,
+      `Sleeper/ESPN projection ${formatPoints(outlook.provider_projection)}, ` +
+        "blended with recent form adjusted for the remaining schedule",
+    ));
+  }
+  container.replaceChildren(...chips);
 }
 
 // ---------- Actions ----------
 
-function addPlayer(side) {
-  const select = sideEl(side).querySelector(".player-select");
-  const id = select.value;
-  if (!id || inTrade(id)) return;
+function sideIsFull(side) {
+  return state.sides[side].length >= MAX_PER_SIDE;
+}
+
+function addPlayer(side, id) {
+  if (!id || inTrade(id) || !state.players.has(id) || sideIsFull(side)) return;
   state.sides[side].push(id);
-  select.value = "";
+  sideEl(side).querySelector(".player-search").value = "";
+  state.search[side].open = false;
+  state.search[side].active = -1;
   render();
-  select.focus();
 }
 
 function removePlayer(side, id) {
   state.sides[side] = state.sides[side].filter((x) => x !== id);
-  render();
   // Keep keyboard focus in the side the player was removed from.
-  sideEl(side).querySelector(".player-select").focus();
+  sideEl(side).querySelector(".player-search").focus();
+  render();
 }
 
 function swapSides() {
@@ -335,12 +775,19 @@ function clearTrade() {
 function bindEvents() {
   for (const side of SIDES) {
     const el = sideEl(side);
-    el.querySelector(".position-filter").addEventListener("change", () => renderPicker(side));
-    el.querySelector(".player-select").addEventListener("change", (e) => {
-      el.querySelector(".btn-add").disabled = !e.target.value;
+    const input = el.querySelector(".player-search");
+    input.addEventListener("input", () => {
+      state.search[side].open = true;
+      state.search[side].active = input.value.trim() ? 0 : -1;
+      renderSearch(side);
     });
-    el.querySelector(".btn-add").addEventListener("click", () => addPlayer(side));
-    el.querySelector(".team-name").addEventListener("change", onTradeChanged);
+    input.addEventListener("click", () => setSearchOpen(side, true));
+    input.addEventListener("blur", () => setSearchOpen(side, false));
+    input.addEventListener("keydown", (event) => onSearchKey(side, event));
+    for (const chipEl of el.querySelectorAll(".pos-chip")) {
+      chipEl.addEventListener("click", () => setPositionFilter(side, chipEl.dataset.pos));
+    }
+    el.querySelector(".team-name").addEventListener("input", onTradeChanged);
   }
   document.getElementById("swap").addEventListener("click", swapSides);
   document.getElementById("clear").addEventListener("click", clearTrade);
@@ -352,9 +799,38 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  renderLineupSettings();
+  // Close the lineup popover on an outside click or Escape.
+  const lineup = document.querySelector(".lineup-settings");
+  document.addEventListener("click", (event) => {
+    // composedPath() is captured when the click happens, so it still includes the popover
+    // even if the clicked stepper button was re-rendered (and detached) by then.
+    if (lineup.open && !event.composedPath().includes(lineup)) lineup.open = false;
+  });
+  lineup.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && lineup.open) {
+      lineup.open = false;
+      lineup.querySelector("summary").focus();
+    }
+  });
+  document.getElementById("lineup-reset").addEventListener("click", () => {
+    state.slots = { ...DEFAULT_SLOTS };
+    renderLineupSettings();
+    onTradeChanged();
+  });
+  document.getElementById("share").addEventListener("click", (e) => copyShareLink(e.currentTarget));
   try {
     await loadPlayers();
+    readUrl();
+    renderLineupSettings();
     render();
+    loadMeta();
+    // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
+    window.addEventListener("hashchange", () => {
+      readUrl();
+      renderLineupSettings();
+      render();
+    });
   } catch (error) {
     const result = document.getElementById("result");
     result.innerHTML = "";

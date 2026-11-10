@@ -34,4 +34,20 @@
   document.getElementById("theme-toggle")?.addEventListener("click", toggle);
   darkQuery.addEventListener("change", render);
   render();
+
+  // On narrow screens the nav scrolls sideways: keep the current page's tab in view, and
+  // fade the edge only while there are more tabs to scroll to.
+  const nav = document.querySelector(".nav-links");
+  if (nav) {
+    const current = nav.querySelector("[aria-current=page]");
+    if (current && nav.scrollWidth > nav.clientWidth) {
+      nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
+    }
+    const update = () => {
+      nav.classList.toggle("has-more", nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2);
+    };
+    nav.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+  }
 })();
