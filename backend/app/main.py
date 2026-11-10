@@ -28,6 +28,7 @@ limiter = RateLimiter(
         Rule("upstream", burst=10, per_second=0.2, matches=lambda path: path.endswith("/profile")),
     ],
     trust_proxy=settings.trust_proxy,
+    proxy_hops=settings.trusted_proxy_hops,
 )
 limiter.enabled = settings.rate_limit_enabled
 

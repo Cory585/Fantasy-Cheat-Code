@@ -60,9 +60,20 @@ def _request(headers=None, host="10.0.0.1"):
 
 
 def test_forwarded_for_is_ignored_unless_trusted():
-    spoofed = _request({"x-forwarded-for": "1.2.3.4"})
-    assert make()[0].client_key(spoofed) == "10.0.0.1"
-    assert make(trust_proxy=True)[0].client_key(spoofed) == "1.2.3.4"
+    forwarded = _request({"x-forwarded-for": "1.2.3.4"})
+    assert make()[0].client_key(forwarded) == "10.0.0.1"
+    assert make(trust_proxy=True)[0].client_key(forwarded) == "1.2.3.4"
+
+
+def test_client_supplied_forwarded_entries_are_ignored():
+    # The client sent "spoofed"; the proxy appended the address it actually saw.
+    request = _request({"x-forwarded-for": "spoofed, 1.2.3.4"})
+    assert make(trust_proxy=True)[0].client_key(request) == "1.2.3.4"
+    # Two proxies: the client is second from the right.
+    chained = _request({"x-forwarded-for": "spoofed, 5.6.7.8, 10.1.1.1"})
+    assert make(trust_proxy=True, proxy_hops=2)[0].client_key(chained) == "5.6.7.8"
+    # Fewer entries than hops: fall back to the connecting address.
+    assert make(trust_proxy=True, proxy_hops=3)[0].client_key(request) == "10.0.0.1"
 
 
 def test_api_returns_429_with_retry_after():
