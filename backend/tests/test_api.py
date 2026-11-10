@@ -150,3 +150,27 @@ def test_oversized_body_is_rejected():
     body = b'{"side_a": {"player_ids": ["rb1"]}, "junk": "' + b"x" * 300_000 + b'"}'
     resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
     assert resp.status_code == 413
+
+
+def test_corrupt_database_falls_back_to_projections_only(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    cache, database = tmp_path / "players.json", tmp_path / "fantasy.db"
+    write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
+                2026, range(10, 18), ScoringFormat.PPR)
+    database.write_bytes(b"this is not a sqlite database" * 100)
+    repo, outlooks = ReloadingPlayerData(cache, database).current()
+    assert repo.get("x1") is not None
+    assert outlooks == {}
+
+
+def test_cache_with_invalid_player_keeps_serving(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+
+    cache = tmp_path / "players.json"
+    cache.write_text('{"season": 2026, "players": [{"id": "x1", "name": "No position"}]}', encoding="utf-8")
+    repo, _ = ReloadingPlayerData(cache).current()
+    assert repo.get("rb1") is not None  # falls back to sample data instead of crashing
