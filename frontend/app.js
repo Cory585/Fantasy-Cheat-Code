@@ -12,6 +12,61 @@ const state = {
 
 const MAX_RESULTS = 8;
 
+// Starting lineup slots per team (FLEX = RB/WR/TE). Matches the backend default.
+const DEFAULT_SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
+const SLOT_LIMIT = 4;
+state.slots = { ...DEFAULT_SLOTS };
+
+function slotsSummary() {
+  return Object.entries(state.slots)
+    .filter(([, n]) => n > 0)
+    .map(([slot, n]) => `${n} ${slot}`)
+    .join(", ");
+}
+
+function renderLineupSettings() {
+  const grid = document.getElementById("lineup-slots");
+  grid.replaceChildren(...Object.keys(DEFAULT_SLOTS).map((slot) => {
+    const row = document.createElement("div");
+    row.className = "stepper";
+    const label = document.createElement("span");
+    label.className = "stepper-label";
+    label.textContent = slot;
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "stepper-btn";
+    minus.textContent = "−";
+    minus.setAttribute("aria-label", `Fewer ${slot} starters`);
+    minus.disabled = state.slots[slot] <= 0;
+    const count = document.createElement("output");
+    count.className = "stepper-count";
+    count.textContent = String(state.slots[slot]);
+    count.setAttribute("aria-label", `${slot} starters`);
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "stepper-btn";
+    plus.textContent = "+";
+    plus.setAttribute("aria-label", `More ${slot} starters`);
+    plus.disabled = state.slots[slot] >= SLOT_LIMIT;
+    minus.addEventListener("click", () => changeSlot(slot, -1, minus));
+    plus.addEventListener("click", () => changeSlot(slot, 1, plus));
+    row.append(label, minus, count, plus);
+    return row;
+  }));
+  const summary = document.querySelector(".lineup-settings summary");
+  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  summary.textContent = custom ? "Starting lineup (custom)" : "Starting lineup";
+}
+
+function changeSlot(slot, delta, button) {
+  state.slots[slot] = Math.min(SLOT_LIMIT, Math.max(0, state.slots[slot] + delta));
+  renderLineupSettings();
+  // Re-rendering replaced the button; keep focus on its replacement for keyboard users.
+  const label = button.getAttribute("aria-label");
+  document.querySelector(`#lineup-slots [aria-label="${label}"]`)?.focus();
+  onTradeChanged();
+}
+
 const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
 // ---------- Data ----------
@@ -298,7 +353,7 @@ async function analyze() {
   const body = {
     side_a: { team_name: teamName("a"), player_ids: state.sides.a },
     side_b: { team_name: teamName("b"), player_ids: state.sides.b },
-    league: { num_teams: state.numTeams },
+    league: { num_teams: state.numTeams, roster_slots: state.slots },
   };
   try {
     const response = await request("/trades/analyze", {
@@ -488,7 +543,8 @@ function renderAnalysis(analysis) {
     ${fieldMarkup(analysis)}
     <div class="summary"></div>
     <p class="value-note">Trade value is a player's projected rest-of-season points above a
-      replacement-level player at the same position in a ${state.numTeams}-team league. When
+      replacement-level player at the same position in a ${state.numTeams}-team league starting
+      ${slotsSummary()}. When
       schedule data is available, projections blend Sleeper and ESPN with recent form adjusted
       for each player's remaining opponents.</p>`;
   result.querySelector(".verdict h2").textContent = headline;
@@ -635,6 +691,23 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  renderLineupSettings();
+  // Close the lineup popover on an outside click or Escape.
+  const lineup = document.querySelector(".lineup-settings");
+  document.addEventListener("click", (event) => {
+    if (lineup.open && !lineup.contains(event.target)) lineup.open = false;
+  });
+  lineup.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && lineup.open) {
+      lineup.open = false;
+      lineup.querySelector("summary").focus();
+    }
+  });
+  document.getElementById("lineup-reset").addEventListener("click", () => {
+    state.slots = { ...DEFAULT_SLOTS };
+    renderLineupSettings();
+    onTradeChanged();
+  });
   try {
     await loadPlayers();
     render();
