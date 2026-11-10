@@ -113,3 +113,28 @@ def test_meta_reports_data_source():
     data = client.get("/meta").json()
     assert data["players"] == 12  # sample data in tests
     assert data["source"] in {"sample", "synced"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"side_a": {"player_ids": ["rb1"] * 41}, "side_b": {"player_ids": ["wr1"]}},  # too many players
+        {"side_a": {"player_ids": ["rb1"], "team_name": "A" * 51}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["rb1"], "roster_ids": ["x"] * 101}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["x" * 65]}, "side_b": {"player_ids": ["wr1"]}},  # absurd id
+        {"side_a": {"player_ids": [""]}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"num_teams": 33}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"FLEX": 11}}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"SUPERFLEX": 1}}},
+    ],
+)
+def test_analyze_rejects_out_of_range_input(body):
+    assert client.post("/trades/analyze", json=body).status_code == 422
+
+
+def test_duplicate_check_is_fast_at_the_limit():
+    import time
+
+    t = time.perf_counter()
+    resp = client.post("/trades/analyze", json={"side_a": {"player_ids": ["rb1"] * 40}, "side_b": {"player_ids": ["wr1"]}})
+    assert resp.status_code == 422 and time.perf_counter() - t < 1

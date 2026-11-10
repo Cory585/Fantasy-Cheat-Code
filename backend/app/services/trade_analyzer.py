@@ -1,5 +1,7 @@
 """Trade analyzer: compares the value each side gives and receives."""
 
+from collections import Counter
+
 from app.config import settings
 from app.data.repository import PlayerRepository
 from app.models.trade import (
@@ -85,7 +87,7 @@ class TradeAnalyzer:
         if missing:
             raise UnknownPlayerError(missing)
         for side in (request.side_a, request.side_b):
-            dupes = {pid for pid in side.player_ids if side.player_ids.count(pid) > 1}
+            dupes = {pid for pid, n in Counter(side.player_ids).items() if n > 1}
             if dupes:
                 raise ValueError(f"Player(s) listed more than once: {', '.join(sorted(dupes))}")
         overlap = set(request.side_a.player_ids) & set(request.side_b.player_ids)
