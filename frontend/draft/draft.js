@@ -36,6 +36,8 @@ function ordinal(n) {
   return `${n}${suffix}`;
 }
 
+const profileUrl = (playerId) => `/player/?id=${encodeURIComponent(playerId)}`;
+
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -260,7 +262,9 @@ function renderBoard() {
       if (player) {
         cell.classList.add(`pos-${player.position}`);
         const line = el("span", "pick-player");
-        line.append(el("span", "pos-tag", player.position), el("span", "pick-name", shortName(player.name)));
+        const name = el("a", "pick-name profile-link", shortName(player.name));
+        name.href = profileUrl(player.player_id);
+        line.append(el("span", "pos-tag", player.position), name);
         cell.append(line);
         cell.dataset.tip = `${pickLabel(round, pickInRound)}: ${player.name} (${player.position}, ${player.team}), ` +
           (player.adp != null ? `ADP ${player.adp.toFixed(1)}` : "no ADP");
@@ -340,7 +344,9 @@ function dotPlot(targets, overall) {
 function targetItem(target, overall) {
   const item = el("li", `target pos-${target.position}`);
   const name = el("span", "target-name");
-  name.append(el("span", "pos-tag", target.position), document.createTextNode(target.name));
+  const link = el("a", "profile-link", target.name);
+  link.href = profileUrl(target.player_id);
+  name.append(el("span", "pos-tag", target.position), link);
   const meta = el("span", "player-meta",
     `${target.team}, ${adpPhrase(target, overall)}, ${Math.round(target.projection)} proj. pts`);
   item.append(name, meta);

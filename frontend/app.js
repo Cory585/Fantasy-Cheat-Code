@@ -325,7 +325,11 @@ function rosterItem(side, player) {
   info.className = "player-info";
   const name = document.createElement("div");
   name.className = "player-name";
-  name.textContent = player.name;
+  const link = document.createElement("a");
+  link.className = "profile-link";
+  link.href = `/player/?id=${encodeURIComponent(player.id)}`;
+  link.textContent = player.name;
+  name.append(link);
   if (player.injury_status) {
     const tag = document.createElement("span");
     tag.className = "injury";
