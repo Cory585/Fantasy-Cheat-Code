@@ -36,6 +36,12 @@ class InMemoryPlayerRepository:
         return sorted(players, key=lambda p: p.ros_projection, reverse=True)
 
 
+def load_cache_metadata(path: Path) -> dict:
+    """Season, weeks, and scoring the cache was built for (everything except the players)."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {k: v for k, v in payload.items() if k != "players"}
+
+
 def load_player_cache(path: Path) -> list[Player] | None:
     """Players from the JSON cache written by `app.data.sync`, or None if there is no cache."""
     if not path.exists():

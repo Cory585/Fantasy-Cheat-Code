@@ -71,7 +71,7 @@ def test_reported_difference_drives_verdict(analyzer, monkeypatch):
     monkeypatch.setattr(
         analyzer._valuation,
         "value",
-        lambda p, league: PlayerValuation(player=p, value=values[p.id]),
+        lambda p, league: PlayerValuation(player=p, value=values[p.id], projection=p.ros_projection),
     )
     result = analyzer.analyze(trade(["rb1"], ["wr1"]))
     assert result.value_difference_pct == 10.0

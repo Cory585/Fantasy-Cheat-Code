@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from app.models.player import Player
+from app.models.player import Player, PlayerOutlook
 
 
 class ScoringFormat(str, Enum):
@@ -47,6 +47,10 @@ class Verdict(str, Enum):
 class PlayerValuation(BaseModel):
     player: Player
     value: float
+    # Rest-of-season projection the value is based on (provider projection blended with
+    # schedule-adjusted form when the outlook is available).
+    projection: float
+    outlook: PlayerOutlook | None = None
     notes: list[str] = Field(default_factory=list)
 
 

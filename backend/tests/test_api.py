@@ -78,32 +78,32 @@ def test_shared_assets_served():
 
 
 def test_player_repository_reloads_when_cache_changes(tmp_path):
-    from app.api.dependencies import ReloadingPlayerRepository
+    from app.api.dependencies import ReloadingPlayerData
     from app.data.sync import write_cache
     from app.models.player import Player, Position
     from app.models.trade import ScoringFormat
 
     path = tmp_path / "players.json"
-    repo = ReloadingPlayerRepository(path)
-    assert repo.current().get("rb1") is not None  # no cache yet -> sample data
+    data = ReloadingPlayerData(path)
+    assert data.current()[0].get("rb1") is not None  # no cache yet -> sample data
 
     one = Player(id="x1", name="First", position=Position.QB, team="KC", ros_projection=100.0)
     write_cache(path, [one], 2026, range(10, 18), ScoringFormat.PPR)
-    assert repo.current().get("x1").name == "First"
+    assert data.current()[0].get("x1").name == "First"
 
     two = Player(id="x2", name="Second", position=Position.QB, team="KC", ros_projection=90.0)
     write_cache(path, [two], 2026, range(10, 18), ScoringFormat.PPR)
     import os
     os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))  # filesystems with coarse mtimes
-    assert repo.current().get("x2") is not None
-    assert repo.current().get("x1") is None
+    assert data.current()[0].get("x2") is not None
+    assert data.current()[0].get("x1") is None
 
 
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
-    from app.api.dependencies import ReloadingPlayerRepository
+    from app.api.dependencies import ReloadingPlayerData
 
     path = tmp_path / "players.json"
-    repo = ReloadingPlayerRepository(path)
-    sample = repo.current()
+    data = ReloadingPlayerData(path)
+    sample = data.current()[0]
     path.write_text("{not json", encoding="utf-8")
-    assert repo.current() is sample
+    assert data.current()[0] is sample
