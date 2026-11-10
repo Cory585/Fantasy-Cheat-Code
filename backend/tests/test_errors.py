@@ -71,7 +71,7 @@ def test_docs_skip_the_csp_but_keep_other_headers():
 
 
 def test_pages_have_no_inline_scripts():
-    for path in ["/", "/draft/", "/tiers/", "/start-sit/"]:
+    for path in ["/", "/draft/", "/tiers/", "/start-sit/", "/player/"]:
         assert "<script>" not in client.get(path).text, path
 
 
