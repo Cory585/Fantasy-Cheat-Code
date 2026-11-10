@@ -33,3 +33,9 @@ def test_analyze_trade_unknown_player_404():
         json={"side_a": {"player_ids": ["nope"]}, "side_b": {"player_ids": ["rb1"]}},
     )
     assert resp.status_code == 404
+
+
+def test_frontend_served_at_root():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Trade Analyzer" in resp.text
