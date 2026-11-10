@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trade Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>Trade Analyzer</h1>
+      <p class="lede">Build both sides of a trade and see who comes out ahead on rest-of-season value.</p>
+    </div>
+    <div class="masthead-controls">
+      <label class="inline-field">
+        <span>League size</span>
+        <select id="league-size">
+          <option value="8">8 teams</option>
+          <option value="10">10 teams</option>
+          <option value="12" selected>12 teams</option>
+          <option value="14">14 teams</option>
+          <option value="16">16 teams</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <section class="sides" aria-label="Trade sides">
+      <article class="side" data-side="a">
+        <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
+        <p class="side-hint">Sends these players</p>
+        <div class="picker">
+          <select class="position-filter" aria-label="Filter Team A players by position">
+            <option value="">All positions</option>
+            <option>QB</option><option>RB</option><option>WR</option>
+            <option>TE</option><option>K</option><option>DST</option>
+          </select>
+          <select class="player-select" aria-label="Choose a player for Team A"></select>
+          <button class="btn btn-add" type="button">Add player</button>
+        </div>
+        <ul class="roster" aria-live="polite"></ul>
+        <p class="side-total"></p>
+      </article>
+
+      <div class="swap-col">
+        <button id="swap" class="btn btn-quiet" type="button" title="Swap sides">
+          <span aria-hidden="true">&#8644;</span> Swap sides
+        </button>
+      </div>
+
+      <article class="side" data-side="b">
+        <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
+        <p class="side-hint">Sends these players</p>
+        <div class="picker">
+          <select class="position-filter" aria-label="Filter Team B players by position">
+            <option value="">All positions</option>
+            <option>QB</option><option>RB</option><option>WR</option>
+            <option>TE</option><option>K</option><option>DST</option>
+          </select>
+          <select class="player-select" aria-label="Choose a player for Team B"></select>
+          <button class="btn btn-add" type="button">Add player</button>
+        </div>
+        <ul class="roster" aria-live="polite"></ul>
+        <p class="side-total"></p>
+      </article>
+    </section>
+
+    <section class="result" id="result" aria-live="polite">
+      <p class="result-empty">Add at least one player to each side to see who wins the trade.</p>
+    </section>
+
+    <div class="actions">
+      <button id="clear" class="btn btn-quiet" type="button">Clear trade</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
