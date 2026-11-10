@@ -89,7 +89,7 @@ INLINE_HANDLER = re.compile(r"<[^>]+\son[a-z]+\s*=", re.I)
 
 
 def test_pages_have_no_inline_scripts():
-    for path in ["/", "/draft/", "/tiers/", "/start-sit/", "/no/such/page"]:
+    for path in ["/", "/draft/", "/tiers/", "/start-sit/", "/player/", "/no/such/page"]:
         html = client.get(path, headers={"accept": "text/html"}).text
         assert not INLINE_SCRIPT.search(html), path
         assert not INLINE_HANDLER.search(html), path
