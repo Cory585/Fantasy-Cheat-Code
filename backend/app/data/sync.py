@@ -156,6 +156,7 @@ def espn_projections(
     season: int,
     weeks: range,
     scoring: ScoringFormat,
+    played_first_week: frozenset[str] = frozenset(),
 ) -> list[EspnProjection]:
     projections = []
     for p in espn_players:
@@ -169,7 +170,10 @@ def espn_projections(
                 name=p.get("fullName", ""),
                 position=position,
                 team=team.abbrev if team else None,
-                points=espn.ros_points(p, season, weeks, scoring),
+                points=espn.ros_points(
+                    p, season, weeks, scoring,
+                    skip_week=weeks.start if team and team.abbrev in played_first_week else None,
+                ),
             )
         )
     return projections
@@ -191,10 +195,14 @@ def sync(
         weeks = range(start_week, end_week + 1)
         log.info("Syncing %s season, weeks %d-%d, %s scoring", season, start_week, end_week, scoring.value)
 
+        # Games already played in the first week shouldn't count toward rest of season.
+        played = espn.teams_with_completed_games(client, season, start_week)
+        log.info("%d teams have already played week %d; skipping those games", len(played), start_week)
+
         log.info("Fetching Sleeper players...")
         sleeper_players = sleeper_src.players()
         log.info("Fetching Sleeper projections (%d weekly requests)...", len(weeks))
-        sleeper_ros = sleeper_src.ros_projections(season, weeks, scoring)
+        sleeper_ros = sleeper_src.ros_projections(season, weeks, scoring, played_first_week=played)
 
         espn_proj: list[EspnProjection] = []
         bye_weeks: dict[str, int | None] = {}
@@ -203,7 +211,9 @@ def sync(
             log.info("Fetching ESPN teams and player projections...")
             teams = espn_src.pro_teams(season)
             bye_weeks = {t.abbrev: t.bye_week for t in teams.values()}
-            espn_proj = espn_projections(espn_src.players(season, scoring), teams, season, weeks, scoring)
+            espn_proj = espn_projections(
+                espn_src.players(season, scoring), teams, season, weeks, scoring, played_first_week=played
+            )
 
     players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks)
     write_cache(output, players, season=season, weeks=weeks, scoring=scoring)

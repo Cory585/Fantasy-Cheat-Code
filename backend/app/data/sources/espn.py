@@ -73,8 +73,11 @@ class EspnSource:
         return [entry["player"] for entry in data["players"]]
 
 
-def ros_points(player: dict, season: int, weeks: range, scoring: ScoringFormat) -> float:
-    """Sum of a player's weekly ESPN projections over `weeks`."""
+def ros_points(
+    player: dict, season: int, weeks: range, scoring: ScoringFormat, skip_week: int | None = None
+) -> float:
+    """Sum of a player's weekly ESPN projections over `weeks`, optionally skipping one week
+    (used when the player's game that week is already final)."""
     total = 0.0
     for stat in player.get("stats") or []:
         if (
@@ -82,12 +85,30 @@ def ros_points(player: dict, season: int, weeks: range, scoring: ScoringFormat) 
             and stat.get("statSplitTypeId") == STAT_SPLIT_WEEKLY
             and stat.get("seasonId") == season
             and stat.get("scoringPeriodId") in weeks
+            and stat.get("scoringPeriodId") != skip_week
         ):
             points = stat.get("appliedTotal") or 0.0
             if scoring == ScoringFormat.HALF_PPR:
                 points -= 0.5 * (stat.get("stats") or {}).get(STAT_RECEPTIONS, 0.0)
             total += points
     return total
+
+
+def teams_with_completed_games(client: RateLimitedClient, season: int, week: int) -> frozenset[str]:
+    """Teams whose regular-season game in `week` is final, from ESPN's public scoreboard."""
+    data = client.get_json(f"{SITE_API}/scoreboard", params={"seasontype": 2, "week": week, "dates": season})
+    return parse_completed_teams(data)
+
+
+def parse_completed_teams(data: dict) -> frozenset[str]:
+    teams = set()
+    for event in data.get("events", []):
+        competition = event["competitions"][0]
+        if competition["status"]["type"].get("completed"):
+            for competitor in competition["competitors"]:
+                abbrev = competitor["team"]["abbreviation"]
+                teams.add(TEAM_ALIASES.get(abbrev, abbrev))
+    return frozenset(teams)
 
 
 def fetch_site_teams(client: RateLimitedClient) -> list[dict]:

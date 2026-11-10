@@ -138,3 +138,24 @@ def test_cache_round_trip(tmp_path):
     write_cache(path, players, SEASON, WEEKS, ScoringFormat.PPR)
     assert load_player_cache(path) == players
     assert load_player_cache(tmp_path / "missing.json") is None
+
+
+def test_sleeper_skips_teams_that_already_played():
+    rows = [
+        {"player_id": "1", "team": "DET", "stats": {"pts_ppr": 20.0}},
+        {"player_id": "2", "team": "CHI", "stats": {"pts_ppr": 10.0}},
+    ]
+    assert sleeper.parse_weekly_points(rows, ScoringFormat.PPR, skip_teams=frozenset({"DET"})) == {"2": 10.0}
+
+
+def test_espn_ros_points_skips_completed_week():
+    player = {"stats": [espn_stat(10, 20.0), espn_stat(11, 10.0)]}
+    assert espn.ros_points(player, SEASON, WEEKS, ScoringFormat.PPR, skip_week=10) == 10.0
+
+
+def test_parse_completed_teams_only_counts_final_games():
+    def event(completed, away, home):
+        return {"competitions": [{"status": {"type": {"completed": completed}},
+                                  "competitors": [{"team": {"abbreviation": away}}, {"team": {"abbreviation": home}}]}]}
+    data = {"events": [event(True, "WSH", "NYG"), event(False, "SEA", "LAR")]}
+    assert espn.parse_completed_teams(data) == {"WAS", "NYG"}
