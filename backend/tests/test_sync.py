@@ -114,6 +114,21 @@ def test_build_players_merges_sources():
     assert by_id["DET"].position == Position.DST
 
 
+def test_build_players_does_not_give_namesake_another_players_espn_projection():
+    # Two active Sleeper WRs share a name; ESPN only lists the one on PIT.
+    sleeper_players = {
+        "20": {"full_name": "Mike Williams", "position": "WR", "team": "PIT"},
+        "21": {"full_name": "Mike Williams", "position": "WR", "team": "LAC"},
+    }
+    index = EspnIndex([EspnProjection(201, "Mike Williams", Position.WR, "PIT", 40.0)])
+    players = build_players(sleeper_players, {"20": 30.0, "21": 10.0}, index, {})
+
+    by_id = {p.id: p for p in players}
+    assert by_id["20"].projection_sources == {"sleeper": 30.0, "espn": 40.0}
+    assert by_id["21"].projection_sources == {"sleeper": 10.0}
+    assert by_id["21"].espn_id is None
+
+
 def test_cache_round_trip(tmp_path):
     index = EspnIndex([])
     players = build_players(
