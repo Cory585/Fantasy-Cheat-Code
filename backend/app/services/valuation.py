@@ -18,18 +18,46 @@ from app.models.trade import LeagueSettings, PlayerValuation
 INJURY_DISCOUNT = {"Q": 0.9, "D": 0.75, "O": 0.6, "IR": 0.2}
 
 
+# Positions that can fill a FLEX lineup slot.
+FLEX_POSITIONS = (Position.RB, Position.WR, Position.TE)
+
+
 class ValuationService:
     def __init__(self, repo: PlayerRepository):
         self._repo = repo
+        self._levels: dict[tuple, dict[Position, float]] = {}
 
     def replacement_level(self, position: Position, league: LeagueSettings) -> float:
-        """Projection of the first player at `position` not expected to be rostered as a starter."""
-        starters = league.roster_slots.get(position.value, 0) * league.num_teams
-        pool = self._repo.list(position)
-        if starters < len(pool):
-            return pool[starters].ros_projection
-        # Sample pool is too small to find a real baseline; treat replacement as 0.
-        return 0.0
+        """Projection of the best player at `position` not expected to start in this league."""
+        key = (league.num_teams, tuple(sorted(league.roster_slots.items())))
+        if key not in self._levels:
+            self._levels[key] = self._replacement_levels(league)
+        return self._levels[key][position]
+
+    def _replacement_levels(self, league: LeagueSettings) -> dict[Position, float]:
+        """Fill every team's lineup with the best available players, then take the best
+        leftover at each position as its replacement level.
+
+        Dedicated slots fill first (e.g. 2 RB x 12 teams = the top 24 RBs). FLEX slots then
+        go to the best remaining RB/WR/TE, so a WR3 who starts at flex has value instead of
+        sitting below the replacement line with the waiver wire.
+        """
+        pools = {pos: self._repo.list(pos) for pos in Position}
+        taken = {pos: min(league.roster_slots.get(pos.value, 0) * league.num_teams, len(pools[pos])) for pos in Position}
+
+        flex_slots = league.roster_slots.get("FLEX", 0) * league.num_teams
+        for _ in range(flex_slots):
+            candidates = [pos for pos in FLEX_POSITIONS if taken[pos] < len(pools[pos])]
+            if not candidates:
+                break
+            best = max(candidates, key=lambda pos: pools[pos][taken[pos]].ros_projection)
+            taken[best] += 1
+
+        # A pool too small to have anyone left over (e.g. the sample data) gets a 0 baseline.
+        return {
+            pos: pools[pos][taken[pos]].ros_projection if taken[pos] < len(pools[pos]) else 0.0
+            for pos in Position
+        }
 
     def value(self, player: Player, league: LeagueSettings) -> PlayerValuation:
         notes: list[str] = []

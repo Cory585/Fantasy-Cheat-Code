@@ -13,9 +13,18 @@ const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
 // ---------- Data ----------
 
+// fetch() that turns network failures into a plain-language error.
+async function request(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch {
+    throw new Error("Couldn't reach the server.");
+  }
+}
+
 async function loadPlayers() {
-  const response = await fetch("/players");
-  if (!response.ok) throw new Error(`Couldn't load players (HTTP ${response.status}).`);
+  const response = await request("/players");
+  if (!response.ok) throw new Error(`Couldn't load players (the server returned HTTP ${response.status}).`);
   for (const player of await response.json()) state.players.set(player.id, player);
 }
 
@@ -156,14 +165,15 @@ async function analyze() {
     league: { num_teams: state.numTeams },
   };
   try {
-    const response = await fetch("/trades/analyze", {
+    const response = await request("/trades/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => null); // error pages may not be JSON
     if (seq !== analysisSeq) return; // a newer request superseded this one
-    if (!response.ok) throw new Error(errorDetail(data));
+    if (!response.ok) throw new Error(errorDetail(data) || `the server returned HTTP ${response.status}.`);
+    if (!data) throw new Error("the server sent a response the page couldn't read.");
     renderAnalysis(data);
   } catch (error) {
     if (seq !== analysisSeq) return;
@@ -172,9 +182,9 @@ async function analyze() {
 }
 
 function errorDetail(data) {
-  if (typeof data.detail === "string") return data.detail;
-  if (Array.isArray(data.detail)) return data.detail.map((d) => d.msg).join("; ");
-  return "unexpected response from the server.";
+  if (typeof data?.detail === "string") return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map((d) => d.msg).join("; ");
+  return null;
 }
 
 function renderEmptyResult() {
@@ -340,7 +350,7 @@ function bindEvents() {
       el.querySelector(".btn-add").disabled = !e.target.value;
     });
     el.querySelector(".btn-add").addEventListener("click", () => addPlayer(side));
-    el.querySelector(".team-name").addEventListener("change", onTradeChanged);
+    el.querySelector(".team-name").addEventListener("input", onTradeChanged);
   }
   document.getElementById("swap").addEventListener("click", swapSides);
   document.getElementById("clear").addEventListener("click", clearTrade);
