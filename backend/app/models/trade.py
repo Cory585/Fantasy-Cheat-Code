@@ -1,6 +1,7 @@
 """Trade request/response models."""
 
 from enum import Enum
+from typing import Annotated
 
 from pydantic import BaseModel, Field
 
@@ -15,9 +16,9 @@ class ScoringFormat(str, Enum):
 
 class LeagueSettings(BaseModel):
     scoring: ScoringFormat = ScoringFormat.PPR
-    num_teams: int = 12
+    num_teams: int = Field(default=12, ge=1)
     # Starting lineup slots, e.g. {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
-    roster_slots: dict[str, int] = Field(
+    roster_slots: dict[str, Annotated[int, Field(ge=0)]] = Field(
         default_factory=lambda: {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "K": 1, "DST": 1}
     )
 

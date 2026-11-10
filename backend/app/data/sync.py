@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import re
+from collections.abc import Container
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -73,13 +74,32 @@ class EspnIndex:
             by_name_pos.setdefault((normalize_name(p.name), p.position), []).append(p)
         self._by_name_pos = {k: v[0] for k, v in by_name_pos.items() if len(v) == 1}
 
-    def find(self, name: str, position: Position, team: str, espn_id: int | None) -> EspnProjection | None:
+    def find(
+        self,
+        name: str,
+        position: Position,
+        team: str,
+        espn_id: int | None,
+        sleeper_keys: Container[tuple] = (),
+    ) -> EspnProjection | None:
+        """`sleeper_keys` holds every Sleeper (normalized name, position, team), so the
+        name-only fallback never hands one player's projection to a namesake on another team."""
         if position == Position.DST:
             return self._dst_by_team.get(team)
         if espn_id and espn_id in self._by_id:
             return self._by_id[espn_id]
         key = normalize_name(name)
-        return self._by_name_pos_team.get((key, position, team)) or self._by_name_pos.get((key, position))
+        exact = self._by_name_pos_team.get((key, position, team))
+        if exact:
+            return exact
+        fallback = self._by_name_pos.get((key, position))
+        if fallback and (key, position, fallback.team) in sleeper_keys:
+            return None  # that ESPN entry belongs to the namesake on fallback.team
+        return fallback
+
+
+def _full_name(raw: dict) -> str:
+    return raw.get("full_name") or f"{raw.get('first_name', '')} {raw.get('last_name', '')}".strip()
 
 
 def build_players(
@@ -89,19 +109,22 @@ def build_players(
     bye_weeks: dict[str, int | None],
 ) -> list[Player]:
     """Merge provider data into Players. Skips anyone with no projection from any source."""
+    relevant = {sid: raw for sid, raw in sleeper_players.items() if sleeper.is_fantasy_relevant(raw)}
+    sleeper_keys = {
+        (normalize_name(_full_name(raw)), sleeper.POSITION_MAP[raw["position"]], raw["team"])
+        for raw in relevant.values()
+    }
     players: list[Player] = []
-    for sleeper_id, raw in sleeper_players.items():
-        if not sleeper.is_fantasy_relevant(raw):
-            continue
+    for sleeper_id, raw in relevant.items():
         position = sleeper.POSITION_MAP[raw["position"]]
         team = raw["team"]
-        name = raw.get("full_name") or f"{raw.get('first_name', '')} {raw.get('last_name', '')}".strip()
+        name = _full_name(raw)
         espn_id = int(raw["espn_id"]) if raw.get("espn_id") else None
 
         sources: dict[str, float] = {}
         if sleeper_ros.get(sleeper_id):
             sources["sleeper"] = round(sleeper_ros[sleeper_id], 2)
-        espn_match = espn_index.find(name, position, team, espn_id)
+        espn_match = espn_index.find(name, position, team, espn_id, sleeper_keys)
         if espn_match:
             espn_id = espn_id or espn_match.espn_id
             if espn_match.points:

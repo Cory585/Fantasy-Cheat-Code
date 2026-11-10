@@ -39,3 +39,21 @@ def test_frontend_served_at_root():
     resp = client.get("/")
     assert resp.status_code == 200
     assert "Trade Analyzer" in resp.text
+
+
+def test_analyze_trade_duplicate_player_on_one_side_422():
+    resp = client.post(
+        "/trades/analyze",
+        json={"side_a": {"player_ids": ["rb1", "rb1"]}, "side_b": {"player_ids": ["wr1"]}},
+    )
+    assert resp.status_code == 422
+
+
+def test_analyze_trade_rejects_invalid_league_size():
+    # A negative league size used to index the position pool from the end (wrong baseline).
+    for league in ({"num_teams": -1}, {"num_teams": 0}, {"roster_slots": {"QB": -1}}):
+        resp = client.post(
+            "/trades/analyze",
+            json={"side_a": {"player_ids": ["qb1"]}, "side_b": {"player_ids": ["qb2"]}, "league": league},
+        )
+        assert resp.status_code == 422, league
