@@ -141,4 +141,13 @@ At each pick, every player ranked ahead of it is assumed to be gone, and the nex
 players are suggested. Without a collected database, the whole board is ranked by projection
 (`adp_source` in the response says which).
 
+The response also includes what the page's diagrams use:
+
+- `board`: a mock draft for every pick in the draft (`teams x rounds`), assuming each team takes
+  the top-ranked player left. The page colors it by position, so position runs stand out.
+- `picks[].picks_until_next`: how many picks other teams make before your next one (0 at the turn,
+  `null` after your last pick). The page draws these as arcs on the pick timeline.
+- `picks[].position_mix`: the positions of the players other teams likely take before your next
+  pick, assuming you take the top-ranked player. The page shows it as a stacked bar on each pick.
+
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
