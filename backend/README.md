@@ -151,3 +151,41 @@ The response also includes what the page's diagrams use:
   pick, assuming you take the top-ranked player. The page shows it as a stacked bar on each pick.
 
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
+
+## Errors, limits, and security
+
+**Errors.** Every error response is JSON shaped as `{"detail": "...", "code": "..."}`.
+`detail` is a readable message (a list of field errors for `422 invalid_request`); `code` is
+stable for clients to branch on:
+
+| Status | Codes |
+|---|---|
+| 400 | `bad_request` (including unparseable bodies) |
+| 404 | `not_found`, `player_not_found` |
+| 405 | `method_not_allowed` |
+| 413 | `payload_too_large` (bodies over 256 KB) |
+| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot` |
+| 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
+| 500 | `internal_error` (details are logged on the server, never returned) |
+| 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `upstream_timeout` |
+
+Validation errors don't echo the submitted input back. Browsers that hit a missing page get
+`frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
+
+**Rate limits.** Per client IP, in memory (`app/api/ratelimit.py`):
+
+| Bucket | Applies to | Burst | Sustained |
+|---|---|---|---|
+| `all` | every request | 300 | 5 per second |
+| `upstream` | endpoints that call outside providers (`.../profile`) | 10 | 1 every 5 seconds |
+
+Set `RATE_LIMIT_ENABLED=0` to turn them off. Behind a reverse proxy, set `TRUST_PROXY=1` so
+clients are keyed on `X-Forwarded-For`. Proxies append the address they saw, so the client is
+taken from the right: set `TRUSTED_PROXY_HOPS` to the number of proxies in front of the app
+(default 1). Anything further left was sent by the client and is ignored. Limits are per
+process, so several workers multiply them.
+
+**Headers.** Every response sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+a referrer policy, a permissions policy, and (except on `/docs` and `/redoc`) a Content Security
+Policy: scripts only from this app (no inline scripts), images only from here and
+`a.espncdn.com`, fonts from Google Fonts, and API calls only to this app.

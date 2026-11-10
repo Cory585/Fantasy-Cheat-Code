@@ -1,7 +1,7 @@
 "use strict";
 
 // Light/dark mode switch shared by every page. The saved choice is applied before
-// first paint by a small inline script in each page's <head>.
+// first paint by /theme-boot.js, loaded in each page's <head>.
 (() => {
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
