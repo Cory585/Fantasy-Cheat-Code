@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api import players, trades
+from app.api import meta, players, trades
 from app.config import settings
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -13,6 +13,7 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title=settings.app_name, version=settings.version)
 app.include_router(players.router)
 app.include_router(trades.router)
+app.include_router(meta.router)
 
 
 @app.get("/health", tags=["meta"])

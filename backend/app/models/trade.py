@@ -64,6 +64,14 @@ class SideAnalysis(BaseModel):
     lineup_impact: float | None = None
 
 
+class BalanceSuggestion(BaseModel):
+    """Players the winning side could add to even out a lopsided trade."""
+
+    side: str = Field(description="'a' or 'b': the side that should add a player")
+    value_gap: float
+    players: list[PlayerValuation]
+
+
 class TradeAnalysis(BaseModel):
     verdict: Verdict
     value_difference_pct: float
@@ -71,3 +79,4 @@ class TradeAnalysis(BaseModel):
     side_b: SideAnalysis
     summary: str
     warnings: list[str] = Field(default_factory=list)
+    balance: BalanceSuggestion | None = None

@@ -107,3 +107,9 @@ def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     sample = data.current()[0]
     path.write_text("{not json", encoding="utf-8")
     assert data.current()[0] is sample
+
+
+def test_meta_reports_data_source():
+    data = client.get("/meta").json()
+    assert data["players"] == 12  # sample data in tests
+    assert data["source"] in {"sample", "synced"}

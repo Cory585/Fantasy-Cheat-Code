@@ -38,6 +38,7 @@
     <div class="masthead-title">
       <h1>Trade Analyzer</h1>
       <p class="lede">Build both sides of a trade and see who comes out ahead on rest-of-season value.</p>
+      <p class="data-status" id="data-status"></p>
     </div>
     <div class="masthead-controls">
       <label class="inline-field">
@@ -50,6 +51,14 @@
           <option value="16">16 teams</option>
         </select>
       </label>
+      <details class="lineup-settings">
+        <summary class="btn btn-quiet">Starting lineup</summary>
+        <div class="lineup-panel">
+          <p class="lineup-hint">Starters per team. Players who wouldn't start in your league are worth less.</p>
+          <div class="lineup-grid" id="lineup-slots"></div>
+          <button type="button" class="btn btn-quiet btn-small" id="lineup-reset">Reset to default</button>
+        </div>
+      </details>
     </div>
   </header>
 
@@ -59,13 +68,21 @@
         <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <select class="position-filter" aria-label="Filter Team A players by position">
-            <option value="">All positions</option>
-            <option>QB</option><option>RB</option><option>WR</option>
-            <option>TE</option><option>K</option><option>DST</option>
-          </select>
-          <select class="player-select" aria-label="Choose a player for Team A"></select>
-          <button class="btn btn-add" type="button">Add player</button>
+          <div class="pos-chips" role="group" aria-label="Filter Team A search by position">
+            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
+            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          </div>
+          <div class="search">
+            <input type="search" class="player-search" placeholder="Search players or teams"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-a"
+              aria-label="Search players to add to Team A" autocomplete="off" spellcheck="false">
+            <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
         </div>
         <ul class="roster" aria-live="polite"></ul>
         <p class="side-total"></p>
@@ -81,13 +98,21 @@
         <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <select class="position-filter" aria-label="Filter Team B players by position">
-            <option value="">All positions</option>
-            <option>QB</option><option>RB</option><option>WR</option>
-            <option>TE</option><option>K</option><option>DST</option>
-          </select>
-          <select class="player-select" aria-label="Choose a player for Team B"></select>
-          <button class="btn btn-add" type="button">Add player</button>
+          <div class="pos-chips" role="group" aria-label="Filter Team B search by position">
+            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
+            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          </div>
+          <div class="search">
+            <input type="search" class="player-search" placeholder="Search players or teams"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-b"
+              aria-label="Search players to add to Team B" autocomplete="off" spellcheck="false">
+            <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
+          </div>
         </div>
         <ul class="roster" aria-live="polite"></ul>
         <p class="side-total"></p>
@@ -99,6 +124,8 @@
     </section>
 
     <div class="actions">
+      <span id="share-status" class="share-status" role="status"></span>
+      <button id="share" class="btn btn-quiet" type="button">Copy link to this trade</button>
       <button id="clear" class="btn btn-quiet" type="button">Clear trade</button>
     </div>
   </main>

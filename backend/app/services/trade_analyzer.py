@@ -3,6 +3,7 @@
 from app.config import settings
 from app.data.repository import PlayerRepository
 from app.models.trade import (
+    BalanceSuggestion,
     LeagueSettings,
     PlayerValuation,
     SideAnalysis,
@@ -49,9 +50,34 @@ class TradeAnalyzer:
             side_b=side_b,
             summary=self._summary(verdict, diff_pct),
             warnings=self._warnings(a_gives + b_gives, request),
+            balance=self._balance(request, verdict, a_total, b_total),
         )
 
     # --- helpers -------------------------------------------------------------
+
+    def _balance(
+        self, request: TradeRequest, verdict: Verdict, a_total: float, b_total: float, limit: int = 5
+    ) -> BalanceSuggestion | None:
+        """Players closest in value to the gap that the winning side could add.
+
+        The winner is the side that receives more, so it's the one that should give more.
+        If the winner's `roster_ids` were sent, suggestions come from that roster; otherwise
+        from every player not already in the trade.
+        """
+        if verdict == Verdict.FAIR:
+            return None
+        side_key, side = ("a", request.side_a) if verdict == Verdict.FAVORS_A else ("b", request.side_b)
+        gap = abs(a_total - b_total)
+        in_trade = set(request.side_a.player_ids) | set(request.side_b.player_ids)
+        if side.roster_ids:
+            pool = [p for p in self._repo.get_many(side.roster_ids) if p.id not in in_trade]
+        else:
+            pool = [p for p in self._repo.list() if p.id not in in_trade]
+        valued = [v for v in (self._valuation.value(p, request.league) for p in pool) if v.value > 0]
+        valued.sort(key=lambda v: abs(v.value - gap))
+        if not valued:
+            return None
+        return BalanceSuggestion(side=side_key, value_gap=round(gap, 2), players=valued[:limit])
 
     def _validate(self, request: TradeRequest) -> None:
         ids = request.side_a.player_ids + request.side_b.player_ids
