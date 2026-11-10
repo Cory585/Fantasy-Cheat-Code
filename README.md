@@ -35,6 +35,7 @@ Interactive docs at http://localhost:8000/docs.
 - `GET /health`
 - `GET /players?position=RB` and `GET /players/{id}`
 - `POST /trades/analyze`
+- `GET /draft/plan?teams=12&slot=5&rounds=15`: your snake-draft picks and who's likely available at each
 
 ```json
 {
