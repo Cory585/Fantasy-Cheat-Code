@@ -8,6 +8,10 @@ from app.models.draft import DraftPick, DraftPlan, DraftTarget, PlannedPick
 from app.models.player import Player
 
 
+FLOOR_WINDOW = 1.0  # picks below ESPN's maximum ADP that count as "undrafted"
+FLOOR_MIN_PLAYERS = 25  # how many players must cluster there before it's treated as a floor
+
+
 def pick_label(round_: int, pick_in_round: int) -> str:
     return f"{round_}.{pick_in_round:02d}"
 
@@ -33,15 +37,45 @@ class DraftPlanner:
         self._adp = adp or {}
         self._board = self._rank(players)
 
-    def _player_adp(self, player: Player) -> float | None:
-        return self._adp.get(player.espn_id) if player.espn_id is not None else None
+    def _player_adp(self, player: Player, floor: float | None) -> float | None:
+        adp = self._adp.get(player.espn_id) if player.espn_id is not None else None
+        if adp is not None and floor is not None and adp >= floor:
+            return None  # parked at ESPN's "undrafted" value, which says nothing about order
+        return adp
+
+    def _undrafted_floor(self) -> float | None:
+        """ESPN gives undrafted players an ADP just above the last real pick (about 170), so
+        hundreds of players share it. If many players cluster within a pick of the maximum,
+        everything from there down is treated as having no ADP."""
+        if not self._adp:
+            return None
+        top = max(self._adp.values())
+        clustered = sum(1 for adp in self._adp.values() if adp >= top - FLOOR_WINDOW)
+        return top - FLOOR_WINDOW if clustered >= FLOOR_MIN_PLAYERS else None
 
     def _rank(self, players: list[Player]) -> list[tuple[Player, float | None]]:
-        """Players with ADP in ADP order, then everyone else by projection."""
-        with_adp = [(p, self._player_adp(p)) for p in players]
+        """Players in ADP order. Players without a usable ADP are slotted in where their
+        projection ranks among everyone, so a high-projection player with a missing ESPN
+        mapping isn't buried behind hundreds of drafted players."""
+        floor = self._undrafted_floor()
+        with_adp = [(p, self._player_adp(p, floor)) for p in players]
         drafted = sorted((t for t in with_adp if t[1] is not None), key=lambda t: (t[1], -t[0].ros_projection))
-        rest = sorted((t for t in with_adp if t[1] is None), key=lambda t: -t[0].ros_projection)
-        return drafted + rest
+        if not drafted:
+            return sorted(with_adp, key=lambda t: -t[0].ros_projection)
+
+        by_projection = sorted(with_adp, key=lambda t: -t[0].ros_projection)
+        projection_rank = {id(t[0]): i for i, t in enumerate(by_projection)}
+
+        def sort_key(t):
+            player, adp = t
+            if adp is not None:
+                return (adp, 0, -player.ros_projection)
+            # Stand-in ADP: the ADP of the drafted player at the same projection rank.
+            i = projection_rank[id(player)]
+            stand_in = drafted[i][1] if i < len(drafted) else float("inf")
+            return (stand_in, 1, -player.ros_projection)
+
+        return sorted(with_adp, key=sort_key)
 
     @property
     def adp_source(self) -> str:

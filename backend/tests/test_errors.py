@@ -1,5 +1,7 @@
 """Every error response has {"detail", "code"}, and internals never leak."""
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -32,9 +34,14 @@ def test_bad_draft_slot_code():
     assert client.get("/draft/plan", params={"teams": 8, "slot": 9}).json()["code"] == "invalid_draft_slot"
 
 
-@pytest.mark.parametrize("player_id", ["a" * 33, "bad id", "..%2F..%2Fetc"])
+@pytest.mark.parametrize("player_id", ["a" * 33, "bad id", "semi;colon", "dot.dot"])
 def test_player_ids_outside_the_allowed_pattern_are_rejected(player_id):
-    assert client.get(f"/players/{player_id}").status_code in (404, 422)
+    resp = client.get(f"/players/{player_id}")
+    assert resp.status_code == 422 and resp.json()["code"] == "invalid_request"
+
+
+def test_encoded_slashes_never_reach_a_player_lookup():
+    assert client.get("/players/..%2F..%2Fetc").status_code in (404, 422)
 
 
 def test_method_not_allowed_has_code():
@@ -51,6 +58,8 @@ def test_unexpected_errors_are_generic_500s():
     assert resp.status_code == 500
     assert resp.json()["code"] == "internal_error"
     assert "hunter2" not in resp.text
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert "Content-Security-Policy" in resp.headers
 
 
 # ---------- Security headers ----------
@@ -70,9 +79,26 @@ def test_docs_skip_the_csp_but_keep_other_headers():
     assert headers["X-Content-Type-Options"] == "nosniff"
 
 
+@pytest.mark.parametrize("path", ["/docsx", "/redoc-anything", "/openapi.jsonfoo", "/docs-guide/"])
+def test_csp_exemption_is_exact(path):
+    assert "Content-Security-Policy" in client.get(path).headers
+
+
+INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>", re.I)
+INLINE_HANDLER = re.compile(r"<[^>]+\son[a-z]+\s*=", re.I)
+
+
 def test_pages_have_no_inline_scripts():
-    for path in ["/", "/draft/", "/tiers/", "/start-sit/", "/player/"]:
-        assert "<script>" not in client.get(path).text, path
+    for path in ["/", "/draft/", "/tiers/", "/start-sit/", "/player/", "/no/such/page"]:
+        html = client.get(path, headers={"accept": "text/html"}).text
+        assert not INLINE_SCRIPT.search(html), path
+        assert not INLINE_HANDLER.search(html), path
+
+
+def test_inline_script_checks_catch_variants():
+    for html in ['<script type="module">x()</script>', "<script defer>x()</script>", '<a onclick="x()">']:
+        assert INLINE_SCRIPT.search(html) or INLINE_HANDLER.search(html), html
+    assert not INLINE_SCRIPT.search('<script src="/app.js"></script>')
 
 
 # ---------- 404 pages ----------
@@ -82,6 +108,11 @@ def test_browsers_get_the_404_page():
     assert resp.status_code == 404
     assert "Page not found" in resp.text
     assert resp.headers["content-type"].startswith("text/html")
+
+
+def test_html_with_zero_quality_is_not_html():
+    resp = client.get("/no/such/page", headers={"accept": "application/json, text/html;q=0"})
+    assert resp.json()["code"] == "not_found"
 
 
 def test_api_clients_get_json_404s():

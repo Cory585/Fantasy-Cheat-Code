@@ -5,8 +5,10 @@ Each rule is a bucket per client: it holds up to `burst` requests and refills at
 rejected with 429 (and a `Retry-After` header) when any of them is empty.
 
 Clients are keyed by IP address. Behind a reverse proxy every request comes from the
-proxy, so set TRUST_PROXY=1 to key on the first `X-Forwarded-For` address instead
-(only do that when a proxy you control sets the header; otherwise clients can spoof it).
+proxy, so set TRUST_PROXY=1 to key on `X-Forwarded-For` instead. Proxies append the
+address they saw to whatever the client sent, so only the rightmost entries are
+trustworthy: with N proxies in front of the app (TRUSTED_PROXY_HOPS, default 1), the
+client is the Nth entry from the right. Entries further left are client-controlled.
 
 Buckets live in a bounded LRU map, so a flood of distinct addresses can't exhaust memory.
 State is per process; running several workers multiplies the effective limit.
@@ -44,11 +46,13 @@ class RateLimiter:
         rules: list[Rule],
         max_clients: int = 10_000,
         trust_proxy: bool = False,
+        proxy_hops: int = 1,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.rules = rules
         self.max_clients = max_clients
         self.trust_proxy = trust_proxy
+        self.proxy_hops = max(1, proxy_hops)
         self.enabled = True
         self._clock = clock
         self._buckets: OrderedDict[tuple[str, str], _Bucket] = OrderedDict()
@@ -56,10 +60,9 @@ class RateLimiter:
 
     def client_key(self, request: Request) -> str:
         if self.trust_proxy:
-            forwarded = request.headers.get("x-forwarded-for", "")
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first[:64]
+            entries = [e.strip() for e in request.headers.get("x-forwarded-for", "").split(",") if e.strip()]
+            if len(entries) >= self.proxy_hops:
+                return entries[-self.proxy_hops][:64]
         return request.client.host if request.client else "unknown"
 
     def check(self, client: str, path: str) -> float | None:

@@ -42,6 +42,8 @@ class Settings:
     rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
     # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
     trust_proxy: bool = field(default_factory=lambda: os.getenv("TRUST_PROXY", "0") == "1")
+    # Number of proxies in front of the app that each append to X-Forwarded-For.
+    trusted_proxy_hops: int = field(default_factory=lambda: int(os.getenv("TRUSTED_PROXY_HOPS", "1")))
 
 
 settings = Settings()

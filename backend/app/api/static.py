@@ -13,9 +13,22 @@ from app.api.errors import ApiError
 
 
 def wants_html(scope: Scope) -> bool:
+    """True if the Accept header lists text/html (or */* from a browser-style list) with q > 0."""
     for name, value in scope.get("headers", []):
-        if name == b"accept":
-            return b"text/html" in value
+        if name != b"accept":
+            continue
+        for part in value.decode("latin-1").split(","):
+            media, *params = [p.strip() for p in part.split(";")]
+            q = 1.0
+            for param in params:
+                key, _, val = param.partition("=")
+                if key.strip() == "q":
+                    try:
+                        q = float(val)
+                    except ValueError:
+                        q = 0.0
+            if media.lower() == "text/html" and q > 0:
+                return True
     return False
 
 

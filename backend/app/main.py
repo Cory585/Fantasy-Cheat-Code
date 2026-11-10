@@ -28,6 +28,7 @@ limiter = RateLimiter(
         Rule("upstream", burst=10, per_second=0.2, matches=lambda path: path.endswith("/profile")),
     ],
     trust_proxy=settings.trust_proxy,
+    proxy_hops=settings.trusted_proxy_hops,
 )
 limiter.enabled = settings.rate_limit_enabled
 
@@ -53,11 +54,14 @@ async def limit_body_size(request: Request, call_next):
 
 @app.exception_handler(RecursionError)
 async def too_deeply_nested(request: Request, exc: RecursionError):
-    # Python's JSON parser recurses per nesting level, so e.g. 5,000 nested arrays overflow it.
+    # A safety net: deeply nested bodies are normally rejected as 422 (validation) or 400
+    # (unparseable) before anything recurses this far, but nothing else should turn a stack
+    # overflow into a 500.
     return error_response(400, "Request body is nested too deeply.", "body_too_deep")
 
 
-# Registered last so it's the outermost middleware: even 413s and 429s get the headers.
+# Registered last so it's the outermost middleware: 413s and 429s get the headers too. (500s are
+# produced outside the middleware stack, so the error handler adds them itself.)
 app.middleware("http")(add_security_headers)
 
 app.include_router(players.router)

@@ -160,7 +160,7 @@ stable for clients to branch on:
 
 | Status | Codes |
 |---|---|
-| 400 | `bad_request`, `body_too_deep` |
+| 400 | `bad_request` (including unparseable bodies) |
 | 404 | `not_found`, `player_not_found` |
 | 405 | `method_not_allowed` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
@@ -180,8 +180,10 @@ Validation errors don't echo the submitted input back. Browsers that hit a missi
 | `upstream` | endpoints that call outside providers (`.../profile`) | 10 | 1 every 5 seconds |
 
 Set `RATE_LIMIT_ENABLED=0` to turn them off. Behind a reverse proxy, set `TRUST_PROXY=1` so
-clients are keyed on `X-Forwarded-For` (only when your proxy sets that header). Limits are
-per process, so several workers multiply them.
+clients are keyed on `X-Forwarded-For`. Proxies append the address they saw, so the client is
+taken from the right: set `TRUSTED_PROXY_HOPS` to the number of proxies in front of the app
+(default 1). Anything further left was sent by the client and is ignored. Limits are per
+process, so several workers multiply them.
 
 **Headers.** Every response sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
 a referrer policy, a permissions policy, and (except on `/docs` and `/redoc`) a Content Security

@@ -63,7 +63,12 @@ async def validation_error(request: Request, exc: RequestValidationError) -> JSO
 
 async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     log.exception("Unhandled error on %s %s", request.method, request.url.path)
-    return error_response(500, "Something went wrong on the server. Try again in a moment.", "internal_error")
+    response = error_response(500, "Something went wrong on the server. Try again in a moment.", "internal_error")
+    # This handler runs outside the app's middleware stack, so add the security headers here.
+    from app.api.security import apply_security_headers
+
+    apply_security_headers(response.headers, request.url.path)
+    return response
 
 
 def install(app: FastAPI) -> None:
