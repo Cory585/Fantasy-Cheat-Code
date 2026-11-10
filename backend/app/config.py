@@ -1,6 +1,10 @@
 """Application settings. Extend with env-driven config (API keys, DB URLs) as needed."""
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "players.json"
 
 
 @dataclass(frozen=True)
@@ -11,6 +15,14 @@ class Settings:
     default_scoring: str = "ppr"
     # A trade is considered "fair" if value difference is within this percentage.
     fair_trade_threshold_pct: float = 10.0
+    # Player cache written by `python -m app.data.sync`. Sample data is used if it doesn't exist.
+    player_cache_path: Path = field(
+        default_factory=lambda: Path(os.getenv("PLAYER_CACHE_PATH", str(DEFAULT_CACHE_PATH)))
+    )
+    # Minimum seconds between requests to the same external host (rate limiting).
+    request_interval_seconds: float = field(
+        default_factory=lambda: float(os.getenv("REQUEST_INTERVAL_SECONDS", "1.0"))
+    )
 
 
 settings = Settings()

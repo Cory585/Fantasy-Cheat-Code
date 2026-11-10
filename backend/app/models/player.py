@@ -23,3 +23,9 @@ class Player(BaseModel):
     # Rest-of-season projected fantasy points (scoring-format specific).
     ros_projection: float = 0.0
     injury_status: str | None = None  # e.g. "Q", "O", "IR"
+    # External IDs, used to join data across providers.
+    sleeper_id: str | None = None
+    espn_id: int | None = None
+    # Per-provider rest-of-season projections, e.g. {"sleeper": 150.2, "espn": 161.0}.
+    # `ros_projection` is the consensus (mean) of these when real data is loaded.
+    projection_sources: dict[str, float] = Field(default_factory=dict)
