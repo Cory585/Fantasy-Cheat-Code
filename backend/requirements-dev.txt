@@ -1,0 +1,5 @@
+# Test tooling (on top of requirements.txt): pip install -r requirements-dev.txt
+-r requirements.txt
+hypothesis>=6.100
+pytest-cov>=5.0
+playwright>=1.45  # browser tests drive an installed Edge or Chrome; no browser download needed
