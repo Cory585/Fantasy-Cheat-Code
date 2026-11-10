@@ -15,6 +15,8 @@ from app.models.player import Position
 from app.models.trade import ScoringFormat
 
 API = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl"
+# ESPN's public sports API (no auth): teams, rosters, schedules, injuries, news, game logs.
+SITE_API = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 
 POSITION_MAP = {
     1: Position.QB,
@@ -86,3 +88,61 @@ def ros_points(player: dict, season: int, weeks: range, scoring: ScoringFormat) 
                 points -= 0.5 * (stat.get("stats") or {}).get(STAT_RECEPTIONS, 0.0)
             total += points
     return total
+
+
+def fetch_site_teams(client: RateLimitedClient) -> list[dict]:
+    """All 32 NFL teams from ESPN's public sports API, as rows for the `teams` table."""
+    data = client.get_json(f"{SITE_API}/teams")
+    return parse_site_teams(data)
+
+
+def parse_site_teams(data: dict) -> list[dict]:
+    rows = []
+    for entry in data["sports"][0]["leagues"][0]["teams"]:
+        team = entry["team"]
+        logos = team.get("logos") or []
+        rows.append(
+            {
+                "abbrev": TEAM_ALIASES.get(team["abbreviation"], team["abbreviation"]),
+                "espn_id": int(team["id"]),
+                "location": team.get("location"),
+                "name": team.get("name"),
+                "display_name": team.get("displayName"),
+                "color": team.get("color"),
+                "logo_url": logos[0]["href"] if logos else None,
+            }
+        )
+    return rows
+
+
+def parse_market(players: list[dict], teams: dict[int, ProTeam], snapshot_date: str) -> list[dict]:
+    """Rostered/started %, ADP, auction value, and draft ranks from the fantasy player feed.
+
+    These come back in the same response as projections (`EspnSource.players`), so
+    collecting them costs no extra requests.
+    """
+    rows = []
+    for p in players:
+        position = POSITION_MAP.get(p.get("defaultPositionId"))
+        if position is None:
+            continue
+        ownership = p.get("ownership") or {}
+        ranks = p.get("draftRanksByRankType") or {}
+        team = teams.get(p.get("proTeamId"))
+        rows.append(
+            {
+                "espn_id": p["id"],
+                "snapshot_date": snapshot_date,
+                "name": p.get("fullName"),
+                "position": position.value,
+                "team": team.abbrev if team else None,
+                "percent_owned": ownership.get("percentOwned"),
+                "percent_started": ownership.get("percentStarted"),
+                "percent_change": ownership.get("percentChange"),
+                "adp": ownership.get("averageDraftPosition"),
+                "auction_value": ownership.get("auctionValueAverage"),
+                "rank_standard": (ranks.get("STANDARD") or {}).get("rank"),
+                "rank_ppr": (ranks.get("PPR") or {}).get("rank"),
+            }
+        )
+    return rows
