@@ -6,7 +6,9 @@ When a profile is requested:
    doesn't know are cached too (for `not_found_ttl`), so they aren't re-fetched.
 2. Otherwise it's fetched (bio, NFL stats, college stats: three requests through the
    rate-limited client) and cached.
-3. Concurrent requests for the same player share one fetch (single-flight).
+3. Concurrent requests for the same player share one fetch (single-flight): later
+   requests wait (up to `wait_timeout`) for the first one's result or failure instead of
+   calling ESPN themselves.
 4. At most `max_concurrent` fetches run at once. Beyond that, and for `failure_backoff`
    seconds after a player's fetch fails, the stale cached copy is served if there is one;
    otherwise the caller is told ESPN is unavailable. A slow or failing ESPN never queues
@@ -45,6 +47,15 @@ class ProfileResult:
     freshness: str  # "fresh" (just fetched), "cached", or "stale" (ESPN failed, older copy)
 
 
+class _Flight:
+    """One in-progress fetch that other requests for the same player wait on."""
+
+    def __init__(self):
+        self.done = threading.Event()
+        self.profile: CachedProfile | None = None
+        self.failed = False
+
+
 class ProfileService:
     def __init__(
         self,
@@ -54,6 +65,7 @@ class ProfileService:
         not_found_ttl: float = 7 * 24 * 3600,
         failure_backoff: float = 600,
         max_concurrent: int = 2,
+        wait_timeout: float = 10.0,
         clock: Callable[[], float] = time.time,
     ):
         self._source = source
@@ -61,10 +73,11 @@ class ProfileService:
         self._ttl = ttl
         self._not_found_ttl = not_found_ttl
         self._failure_backoff = failure_backoff
+        self._wait_timeout = wait_timeout
         self._clock = clock
         self._slots = threading.BoundedSemaphore(max_concurrent)
-        self._locks: dict[int, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
+        self._guard = threading.Lock()  # protects _flights and _failures
+        self._flights: dict[int, _Flight] = {}
         self._failures: dict[int, float] = {}
 
     def get(self, espn_id: int) -> ProfileResult:
@@ -74,28 +87,70 @@ class ProfileService:
         if cached and self._is_fresh(cached):
             return ProfileResult(cached, "cached")
 
-        failed_at = self._failures.get(espn_id)
-        if failed_at is not None and self._clock() - failed_at < self._failure_backoff:
-            return self._fallback(cached, "upstream_error", self._failure_backoff - (self._clock() - failed_at))
+        with self._guard:
+            backoff = self._backoff_left(espn_id)
+            if backoff:
+                return self._fallback(cached, "upstream_error", backoff)
+            flight = self._flights.get(espn_id)
+            leader = flight is None
+            if leader:
+                flight = self._flights[espn_id] = _Flight()
 
-        with self._lock_for(espn_id):
-            # Another request may have fetched it while this one waited for the lock.
-            cached = self._cache.get(espn_id) or cached
-            if cached and self._is_fresh(cached):
-                return ProfileResult(cached, "cached")
-            if not self._slots.acquire(blocking=False):
+        if not leader:
+            # Someone is already fetching this player: share their result instead of
+            # calling ESPN again, and never wait longer than `wait_timeout`.
+            if not flight.done.wait(self._wait_timeout):
                 return self._fallback(cached, "busy", 5)
-            try:
-                profile = self._fetch(espn_id)
-            except (httpx.HTTPError, ValueError) as error:
-                log.warning("ESPN profile fetch failed for %s: %s", espn_id, error)
-                self._failures[espn_id] = self._clock()
-                return self._fallback(cached, "upstream_error", self._failure_backoff)
-            finally:
-                self._slots.release()
-        self._failures.pop(espn_id, None)
+            if flight.profile is not None:
+                return ProfileResult(flight.profile, "fresh")
+            backoff = self._backoff_left(espn_id)
+            return self._fallback(cached, "upstream_error" if backoff else "busy", backoff or 5)
+
+        try:
+            return self._lead(espn_id, cached, flight)
+        finally:
+            with self._guard:
+                self._flights.pop(espn_id, None)
+            flight.done.set()  # after the cache write, so waiters and later requests agree
+
+    def _lead(self, espn_id: int, cached: CachedProfile | None, flight: _Flight) -> ProfileResult:
+        # The cache may have been filled between the first check and becoming the leader.
+        latest = self._cache.get(espn_id)
+        if latest and self._is_fresh(latest):
+            flight.profile = latest
+            return ProfileResult(latest, "cached")
+        cached = latest or cached
+        if not self._slots.acquire(blocking=False):
+            flight.failed = True
+            return self._fallback(cached, "busy", 5)
+        try:
+            profile = self._fetch(espn_id)
+        except (httpx.HTTPError, ValueError) as error:
+            log.warning("ESPN profile fetch failed for %s: %s", espn_id, error)
+            flight.failed = True
+            self._record_failure(espn_id)
+            return self._fallback(cached, "upstream_error", self._failure_backoff)
+        finally:
+            self._slots.release()
         self._cache.put(profile)
+        with self._guard:
+            self._failures.pop(espn_id, None)
+        flight.profile = profile
         return ProfileResult(profile, "fresh")
+
+    def _backoff_left(self, espn_id: int) -> float:
+        failed_at = self._failures.get(espn_id)
+        if failed_at is None:
+            return 0.0
+        left = self._failure_backoff - (self._clock() - failed_at)
+        return left if left > 0 else 0.0
+
+    def _record_failure(self, espn_id: int) -> None:
+        with self._guard:
+            now = self._clock()
+            self._failures[espn_id] = now
+            if len(self._failures) > 1000:  # drop expired entries so the map stays bounded
+                self._failures = {k: t for k, t in self._failures.items() if now - t < self._failure_backoff}
 
     def _is_fresh(self, cached: CachedProfile) -> bool:
         ttl = self._not_found_ttl if cached.status == "not_found" else self._ttl
@@ -105,12 +160,6 @@ class ProfileService:
         if cached:
             return ProfileResult(cached, "stale")
         raise ProfileUnavailable(reason, retry_after)
-
-    def _lock_for(self, espn_id: int) -> threading.Lock:
-        with self._locks_guard:
-            if len(self._locks) > 1000:  # bounded; idle locks are cheap to recreate
-                self._locks = {k: v for k, v in self._locks.items() if v.locked()}
-            return self._locks.setdefault(espn_id, threading.Lock())
 
     def _fetch(self, espn_id: int) -> CachedProfile:
         now = self._clock()

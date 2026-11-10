@@ -1,4 +1,5 @@
 import threading
+import time
 
 import httpx
 import pytest
@@ -99,18 +100,61 @@ def test_failure_with_cache_serves_stale(setup):
     assert result.freshness == "stale" and result.profile.bio == {"name": "Player 4"}
 
 
-def test_concurrent_requests_for_one_player_share_a_fetch(setup):
-    service, source, clock = setup
+def _run_overlapping(service, source, espn_id, n=4):
+    """Start n requests for one player and hold the first fetch open until the others
+    are waiting on it, so the requests genuinely overlap."""
     source.gate = threading.Event()
-    results = []
-    threads = [threading.Thread(target=lambda: results.append(service.get(5))) for _ in range(4)]
+    results, errors = [], []
+
+    def call():
+        try:
+            results.append(service.get(espn_id))
+        except ProfileUnavailable as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=call) for _ in range(n)]
     for t in threads:
         t.start()
+    deadline = time.monotonic() + 5
+    while ("bio", espn_id) not in source.calls and time.monotonic() < deadline:
+        time.sleep(0.005)
+    time.sleep(0.2)  # let the other requests reach the wait
     source.gate.set()
     for t in threads:
         t.join(5)
-    assert len(results) == 4
+    return results, errors
+
+
+def test_concurrent_requests_for_one_player_share_a_fetch(setup):
+    service, source, clock = setup
+    results, errors = _run_overlapping(service, source, 5)
+    assert len(results) == 4 and not errors
     assert source.calls.count(("bio", 5)) == 1
+    assert all(r.profile.bio == {"name": "Player 5"} for r in results)
+
+
+def test_concurrent_requests_share_a_failure_too(setup):
+    service, source, clock = setup
+    source.fail = httpx.ReadTimeout("slow")
+    results, errors = _run_overlapping(service, source, 9)
+    assert not results and len(errors) == 4
+    assert source.calls.count(("bio", 9)) == 1  # waiters don't retry ESPN one after another
+    assert {e.reason for e in errors} == {"upstream_error"}
+
+
+def test_waiters_give_up_after_wait_timeout(tmp_path):
+    source, clock = FakeSource(), Clock()
+    service = ProfileService(source, ProfileCache(tmp_path / "p.db"), wait_timeout=0.05, clock=clock)
+    source.gate = threading.Event()
+    leader = threading.Thread(target=lambda: service.get(11))
+    leader.start()
+    while ("bio", 11) not in source.calls:
+        time.sleep(0.005)
+    with pytest.raises(ProfileUnavailable) as info:
+        service.get(11)
+    assert info.value.reason == "busy"
+    source.gate.set()
+    leader.join(5)
 
 
 def test_busy_when_too_many_fetches(tmp_path):
