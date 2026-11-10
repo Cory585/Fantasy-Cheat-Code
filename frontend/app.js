@@ -395,6 +395,43 @@ function sideSummary(side, analysis) {
   return wrap;
 }
 
+// Two stacked bars (one per side), each split into the players that side sends.
+// Widths are relative to the bigger side, so the gap between the bars is the value gap.
+function valueBars(analysis) {
+  const totals = SIDES.map((side) => analysis[`side_${side}`].total_value_given);
+  const max = Math.max(...totals, 1);
+  const wrap = document.createElement("div");
+  wrap.className = "value-bars";
+  const heading = document.createElement("h3");
+  heading.textContent = "Value sent";
+  wrap.append(heading);
+
+  SIDES.forEach((side, i) => {
+    const row = document.createElement("div");
+    row.className = `value-row value-row-${side}`;
+    const label = document.createElement("span");
+    label.className = "value-row-label";
+    label.textContent = teamName(side);
+    const track = document.createElement("div");
+    track.className = "value-track";
+    const gives = [...analysis[`side_${side}`].gives].sort((x, y) => y.value - x.value);
+    for (const v of gives) {
+      const seg = document.createElement("span");
+      seg.className = "value-seg";
+      seg.style.width = `${(v.value / max) * 100}%`;
+      seg.title = `${v.player.name}: ${formatPoints(v.value)}`;
+      seg.textContent = v.value / max > 0.14 ? v.player.name.split(" ").slice(-1)[0] : "";
+      track.append(seg);
+    }
+    const total = document.createElement("span");
+    total.className = "value-row-total";
+    total.textContent = formatPoints(totals[i]);
+    row.append(label, track, total);
+    wrap.append(row);
+  });
+  return wrap;
+}
+
 function renderAnalysis(analysis) {
   state.values = new Map();
   for (const side of SIDES) {
@@ -422,6 +459,7 @@ function renderAnalysis(analysis) {
   result.querySelector(".field").setAttribute("role", "img");
   result.querySelector(".field").setAttribute("aria-label", `${headline}. ${detail}`);
   result.querySelector(".summary").append(sideSummary("a", analysis), sideSummary("b", analysis));
+  result.querySelector(".summary").after(valueBars(analysis));
 
   if (analysis.warnings.length) {
     const list = document.createElement("ul");
