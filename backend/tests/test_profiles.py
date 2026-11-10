@@ -1,0 +1,147 @@
+import threading
+
+import httpx
+import pytest
+
+from app.data.profile_cache import CachedProfile, ProfileCache
+from app.data.sources.espn_athletes import AthleteNotFound
+from app.services.profiles import ProfileService, ProfileUnavailable
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1_000_000.0
+
+    def __call__(self):
+        return self.now
+
+
+class FakeSource:
+    def __init__(self):
+        self.calls = []
+        self.fail = None  # exception to raise from bio()
+        self.missing = set()  # ids ESPN doesn't know
+        self.gate = None  # threading.Event to hold a fetch open
+
+    def bio(self, espn_id):
+        self.calls.append(("bio", espn_id))
+        if self.gate:
+            self.gate.wait(2)
+        if self.fail:
+            raise self.fail
+        if espn_id in self.missing:
+            raise AthleteNotFound(str(espn_id))
+        return {"name": f"Player {espn_id}"}
+
+    def stats(self, espn_id, league):
+        self.calls.append((league, espn_id))
+        if league == "college":
+            raise AthleteNotFound("no college record")
+        return [{"label": "Rushing"}]
+
+
+@pytest.fixture
+def setup(tmp_path):
+    source, clock = FakeSource(), Clock()
+    service = ProfileService(source, ProfileCache(tmp_path / "p.db"), ttl=100, not_found_ttl=1000,
+                             failure_backoff=50, clock=clock)
+    return service, source, clock
+
+
+def test_fetches_once_then_serves_from_cache(setup):
+    service, source, clock = setup
+    first = service.get(1)
+    assert first.freshness == "fresh"
+    assert first.profile.bio == {"name": "Player 1"}
+    assert first.profile.nfl_stats == [{"label": "Rushing"}] and first.profile.college_stats == []
+    assert service.get(1).freshness == "cached"
+    assert len(source.calls) == 3  # bio, nfl, college: no second fetch
+
+
+def test_refetches_after_ttl(setup):
+    service, source, clock = setup
+    service.get(1)
+    clock.now += 101
+    assert service.get(1).freshness == "fresh"
+    assert len(source.calls) == 6
+
+
+def test_not_found_is_cached_longer(setup):
+    service, source, clock = setup
+    source.missing.add(2)
+    assert service.get(2).profile.status == "not_found"
+    clock.now += 500  # past ttl, within not_found_ttl
+    assert service.get(2).freshness == "cached"
+    assert source.calls == [("bio", 2)]
+
+
+def test_failure_without_cache_raises_and_backs_off(setup):
+    service, source, clock = setup
+    source.fail = httpx.ConnectError("down")
+    with pytest.raises(ProfileUnavailable) as info:
+        service.get(3)
+    assert info.value.reason == "upstream_error"
+    calls = len(source.calls)
+    with pytest.raises(ProfileUnavailable):
+        service.get(3)  # within the backoff: ESPN isn't contacted again
+    assert len(source.calls) == calls
+    clock.now += 51
+    source.fail = None
+    assert service.get(3).freshness == "fresh"
+
+
+def test_failure_with_cache_serves_stale(setup):
+    service, source, clock = setup
+    service.get(4)
+    clock.now += 101
+    source.fail = httpx.ReadTimeout("slow")
+    result = service.get(4)
+    assert result.freshness == "stale" and result.profile.bio == {"name": "Player 4"}
+
+
+def test_concurrent_requests_for_one_player_share_a_fetch(setup):
+    service, source, clock = setup
+    source.gate = threading.Event()
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(service.get(5))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    source.gate.set()
+    for t in threads:
+        t.join(5)
+    assert len(results) == 4
+    assert source.calls.count(("bio", 5)) == 1
+
+
+def test_busy_when_too_many_fetches(tmp_path):
+    source, clock = FakeSource(), Clock()
+    source.gate = threading.Event()
+    service = ProfileService(source, ProfileCache(tmp_path / "p.db"), max_concurrent=1, clock=clock)
+    holder = threading.Thread(target=lambda: service.get(6))
+    holder.start()
+    while ("bio", 6) not in source.calls:
+        pass
+    with pytest.raises(ProfileUnavailable) as info:
+        service.get(7)
+    assert info.value.reason == "busy"
+    source.gate.set()
+    holder.join(5)
+
+
+def test_corrupt_cache_row_is_a_miss(tmp_path):
+    cache = ProfileCache(tmp_path / "p.db")
+    cache.put(CachedProfile(8, "ok", 0, {"a": 1}, [], []))
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "p.db")
+    with conn:
+        conn.execute("UPDATE player_profiles SET bio = '{not json' WHERE espn_id = 8")
+    conn.close()
+    assert cache.get(8) is None
+
+
+def test_rejects_invalid_ids(setup):
+    service, source, _ = setup
+    with pytest.raises(ValueError):
+        service.get(-1)
+    assert source.calls == []
