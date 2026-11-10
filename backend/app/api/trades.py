@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
+from app.api.errors import ApiError
 
 from app.api.dependencies import get_trade_analyzer
 from app.models.trade import TradeAnalysis, TradeRequest
@@ -15,6 +17,6 @@ def analyze_trade(
     try:
         return analyzer.analyze(request)
     except UnknownPlayerError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise ApiError(404, "player_not_found", str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise ApiError(422, "invalid_trade", str(e)) from e
