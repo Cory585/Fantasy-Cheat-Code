@@ -160,7 +160,7 @@ stable for clients to branch on:
 
 | Status | Codes |
 |---|---|
-| 400 | `bad_request`, `body_too_deep` |
+| 400 | `bad_request` (including unparseable bodies) |
 | 404 | `not_found`, `player_not_found` |
 | 405 | `method_not_allowed` |
 | 413 | `payload_too_large` (bodies over 256 KB) |

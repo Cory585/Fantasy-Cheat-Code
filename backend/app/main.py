@@ -54,7 +54,9 @@ async def limit_body_size(request: Request, call_next):
 
 @app.exception_handler(RecursionError)
 async def too_deeply_nested(request: Request, exc: RecursionError):
-    # Python's JSON parser recurses per nesting level, so e.g. 5,000 nested arrays overflow it.
+    # A safety net: deeply nested bodies are normally rejected as 422 (validation) or 400
+    # (unparseable) before anything recurses this far, but nothing else should turn a stack
+    # overflow into a 500.
     return error_response(400, "Request body is nested too deeply.", "body_too_deep")
 
 

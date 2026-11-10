@@ -144,7 +144,8 @@ def test_deeply_nested_json_is_a_client_error():
     body = ("[" * 5000 + "]" * 5000).encode()
     resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
     # Rejected as invalid without echoing the input back (echoing it used to overflow the stack).
-    assert resp.status_code in (400, 422)
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "invalid_request"
     assert "[[[[" not in resp.text
 
 
