@@ -27,6 +27,13 @@ class DraftTarget(BaseModel):
 class PlannedPick(BaseModel):
     pick: DraftPick
     targets: list[DraftTarget] = Field(default_factory=list)
+    picks_until_next: int | None = Field(
+        default=None, description="Picks made by other teams before your next pick (None after your last)"
+    )
+    position_mix: dict[Position, int] = Field(
+        default_factory=dict,
+        description="Positions of the players other teams likely take before your next pick",
+    )
 
 
 class DraftPlan(BaseModel):
@@ -35,3 +42,7 @@ class DraftPlan(BaseModel):
     rounds: int
     adp_source: str = Field(description="'espn' when ADP was available, else 'projection'")
     picks: list[PlannedPick]
+    board: list[DraftTarget] = Field(
+        default_factory=list,
+        description="Mock draft: the board order for every pick (index 0 = pick 1), assuming each team takes the top-ranked player",
+    )
