@@ -54,7 +54,7 @@ the full schedule history). A full run is 9 requests and takes about 10 seconds.
 
 ```
 python -m app.data.collect                                   # everything, current season
-python -m app.data.collect --season 2025                     # a past season
+python -m app.data.collect --seasons 2022-2026               # history (used to train the defense model)
 python -m app.data.collect --datasets player_week_stats,injuries
 ```
 
@@ -71,6 +71,8 @@ one snapshot per day, so trends in rostered % and ADP build up over time.
 | `snap_counts` | nflverse | Offense, defense, and special teams snaps and share |
 | `injuries` | nflverse | Weekly injury report status and practice participation |
 | `espn_player_market` | ESPN Fantasy | Rostered %, started %, ADP, auction value, standard and PPR draft rank |
+| `team_game_offense` | nflverse play-by-play | Per offense per game: neutral pass rate over expected (coaching tendency), plays, dropbacks, sacks taken, turnovers, EPA per dropback |
+| `game_weather` | ESPN venues + [Open-Meteo](https://open-meteo.com) | Forecast temperature, wind, and precipitation for the 3 hours from kickoff, for unplayed games (Open-Meteo data is CC BY 4.0, free for non-commercial use) |
 | `collection_runs` | | When each dataset was last collected |
 
 ### Linking players across sources
