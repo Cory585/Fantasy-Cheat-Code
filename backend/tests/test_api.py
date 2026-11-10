@@ -1,3 +1,5 @@
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -57,3 +59,19 @@ def test_analyze_trade_rejects_invalid_league_size():
             json={"side_a": {"player_ids": ["qb1"]}, "side_b": {"player_ids": ["qb2"]}, "league": league},
         )
         assert resp.status_code == 422, league
+
+
+@pytest.mark.parametrize(
+    "path, heading",
+    [("/tiers/", "Player Tier Lists"), ("/start-sit/", "Start/Sit Guide"), ("/draft/", "Draft Masterclass")],
+)
+def test_feature_pages_served(path, heading):
+    resp = client.get(path)
+    assert resp.status_code == 200
+    assert heading in resp.text
+    assert 'aria-current="page"' in resp.text
+
+
+def test_shared_assets_served():
+    for asset in ("/styles.css", "/theme.js", "/app.js"):
+        assert client.get(asset).status_code == 200
