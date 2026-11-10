@@ -16,8 +16,9 @@ Datasets:
     injuries           nflverse: weekly injury report and practice participation
     playcalling        nflverse play-by-play, summarized per offense per game: neutral pass rate
                        over expected (coaching tendency), pace, sacks, turnovers, EPA per dropback
+    weather            ESPN venues + Open-Meteo forecasts for unplayed games this week and next
 
-teams, espn_market, players, and games cover every season, so they're only collected once
+teams, espn_market, players, games, and weather cover every season (or only the current one), so they're only collected once
 per run. A one-season run is about 10 requests. All of them go through the rate-limited client.
 This complements `app.data.sync`, which builds the projections the API uses today.
 """
@@ -36,14 +37,15 @@ from app.data.sources.http import RateLimitedClient
 from app.data.sources.nflverse import PARSERS as NFLVERSE_DATASETS
 from app.data.sources.nflverse import NflverseSource
 from app.data.sources.playcalling import fetch_team_game_offense
+from app.data.sources.weather import fetch_upcoming_weather
 from app.models.trade import ScoringFormat
 
 log = logging.getLogger(__name__)
 
 ESPN_DATASETS = ("teams", "espn_market")
-ALL_DATASETS = ESPN_DATASETS + tuple(NFLVERSE_DATASETS) + ("playcalling",)
+ALL_DATASETS = ESPN_DATASETS + tuple(NFLVERSE_DATASETS) + ("playcalling", "weather")
 # Datasets that aren't per season (or only make sense for the current one).
-SEASONLESS_DATASETS = {"teams", "espn_market", "players", "games"}
+SEASONLESS_DATASETS = {"teams", "espn_market", "players", "games", "weather"}
 
 
 def current_season(today: date | None = None) -> int:
@@ -65,6 +67,8 @@ def collect_dataset(client: RateLimitedClient, dataset: str, season: int) -> tup
         return dataset, NflverseSource(client).fetch(dataset, season)
     if dataset == "playcalling":
         return "team_game_offense", fetch_team_game_offense(client, season)
+    if dataset == "weather":
+        return "game_weather", fetch_upcoming_weather(client, season)
     raise ValueError(f"Unknown dataset '{dataset}'. Choose from: {', '.join(ALL_DATASETS)}")
 
 

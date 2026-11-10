@@ -167,9 +167,13 @@ CREATE TABLE IF NOT EXISTS team_game_offense (
 );
 CREATE INDEX IF NOT EXISTS team_game_offense_season ON team_game_offense (season, week);
 
--- Forecast (or observed) weather at kickoff for upcoming games.
+-- Forecast weather during upcoming games (kickoff + 3 hours). Joins to games.espn_id.
 CREATE TABLE IF NOT EXISTS game_weather (
-    game_id            TEXT PRIMARY KEY,
+    espn_event_id      TEXT PRIMARY KEY,
+    season             INTEGER,
+    week               INTEGER,
+    away_team          TEXT,
+    home_team          TEXT,
     kickoff            TEXT,
     venue              TEXT,
     city               TEXT,
