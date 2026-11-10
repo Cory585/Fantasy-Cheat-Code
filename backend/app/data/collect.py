@@ -14,6 +14,7 @@ Datasets:
     team_week_stats    nflverse: team offense/defense/special teams per week
     snap_counts        nflverse: offense/defense/special teams snaps and share
     injuries           nflverse: weekly injury report and practice participation
+    combine            nflverse: NFL Scouting Combine results since 2000 (40, bench, jumps, agility)
 
 A full run is about 9 requests. All of them go through the rate-limited client.
 This complements `app.data.sync`, which builds the projections the API uses today.
