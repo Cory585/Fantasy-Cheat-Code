@@ -10,6 +10,7 @@ The `parse_*` functions turn CSV text into rows for the tables in `app.data.db`.
 import csv
 import io
 import json
+import math
 from collections.abc import Callable
 
 from app.data.sources.http import RateLimitedClient
@@ -50,6 +51,8 @@ def _num(value: str | None) -> float | int | None:
     try:
         number = float(value)
     except ValueError:
+        return None
+    if not math.isfinite(number):  # float() also accepts "inf" and "nan"
         return None
     return int(number) if number.is_integer() and "." not in value else number
 

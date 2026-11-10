@@ -35,7 +35,7 @@ DRILLS = [
 
 
 def format_height(inches: float | None) -> str | None:
-    if not inches or inches <= 0:
+    if not isinstance(inches, (int, float)) or not math.isfinite(inches) or inches <= 0:
         return None
     feet, rest = divmod(round(inches), 12)
     return f"{feet}' {rest}\""
@@ -113,7 +113,7 @@ def _local_bio(row: dict | None, combine: Combine | None) -> Bio:
     weight = row.get("weight")
     return Bio(
         height=format_height(row.get("height")),
-        weight=f"{round(weight)} lbs" if isinstance(weight, (int, float)) and weight > 0 else None,
+        weight=f"{round(weight)} lbs" if isinstance(weight, (int, float)) and math.isfinite(weight) and weight > 0 else None,
         college=combine.school if combine else None,
         draft=draft,
     )
