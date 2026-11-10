@@ -139,6 +139,7 @@ function teamName(side) {
 
 function onTradeChanged() {
   clearTimeout(analysisTimer);
+  analysisSeq++; // discard any in-flight response for the previous trade
   if (SIDES.some((side) => state.sides[side].length === 0)) {
     state.values = new Map();
     renderEmptyResult();
@@ -340,7 +341,9 @@ function currentTheme() {
 function renderThemeToggle() {
   const button = document.getElementById("theme-toggle");
   const dark = currentTheme() === "dark";
-  button.setAttribute("aria-pressed", String(dark));
+  // The label names the action ("Light mode" while dark is on), so don't also expose
+  // aria-pressed: "Light mode, pressed" would announce the wrong theme as active.
+  button.classList.toggle("is-dark", dark);
   button.querySelector(".theme-label").textContent = dark ? "Light mode" : "Dark mode";
   button.title = dark ? "Switch to light mode" : "Switch to dark mode";
 }
