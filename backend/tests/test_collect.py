@@ -18,14 +18,32 @@ def test_collect_continues_after_a_failed_dataset(tmp_path, monkeypatch):
 
     monkeypatch.setattr(collect, "collect_dataset", fake_collect_dataset)
     conn = db.connect(tmp_path / "test.db")
-    results = collect.collect(["games", "teams"], 2026, conn)
+    results = collect.collect(["games", "teams"], [2026], conn)
 
-    assert isinstance(results["games"], RuntimeError)
-    assert results["teams"] == 1
+    assert isinstance(results["games:2026"], RuntimeError)
+    assert results["teams:2026"] == 1
     runs = {r["dataset"] for r in conn.execute("SELECT dataset FROM collection_runs")}
     assert runs == {"teams"}  # failed datasets aren't recorded as collected
 
 
 def test_every_dataset_is_handled():
-    assert set(collect.ALL_DATASETS) == {"teams", "espn_market", "players", "games",
-                                         "player_week_stats", "team_week_stats", "snap_counts", "injuries"}
+    assert set(collect.ALL_DATASETS) == {"teams", "espn_market", "players", "games", "player_week_stats",
+                                         "team_week_stats", "snap_counts", "injuries", "playcalling"}
+
+
+def test_parse_seasons():
+    assert collect.parse_seasons("2026") == [2026]
+    assert collect.parse_seasons("2022-2024") == [2022, 2023, 2024]
+    assert collect.parse_seasons("2025,2023") == [2023, 2025]
+
+
+def test_seasonless_datasets_run_once(tmp_path, monkeypatch):
+    calls = []
+
+    def fake(client, dataset, season):
+        calls.append((dataset, season))
+        return "teams", []
+
+    monkeypatch.setattr(collect, "collect_dataset", fake)
+    collect.collect(["games", "injuries"], [2024, 2025], db.connect(tmp_path / "t.db"))
+    assert calls == [("games", 2025), ("injuries", 2024), ("injuries", 2025)]
