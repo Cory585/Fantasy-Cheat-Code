@@ -37,104 +37,72 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>Draft Masterclass</h1>
-      <p class="lede">Prepare for draft day with rankings, round-by-round targets, and a draft board that tracks every pick.</p>
-      <p class="feature-status">In development</p>
+      <p class="lede">Pick your draft slot to see every pick you'll make in a snake draft and who's likely on the board at each one.</p>
+      <p class="data-status" id="data-status"></p>
     </div>
+    <form class="masthead-controls" id="draft-settings">
+      <label class="inline-field">
+        <span>League size</span>
+        <select id="league-size">
+          <option value="8">8 teams</option>
+          <option value="10">10 teams</option>
+          <option value="12" selected>12 teams</option>
+          <option value="14">14 teams</option>
+          <option value="16">16 teams</option>
+        </select>
+      </label>
+      <label class="inline-field">
+        <span>Your pick</span>
+        <select id="draft-slot"></select>
+      </label>
+      <label class="inline-field">
+        <span>Rounds</span>
+        <select id="rounds">
+          <option value="13">13</option>
+          <option value="14">14</option>
+          <option value="15" selected>15</option>
+          <option value="16">16</option>
+          <option value="17">17</option>
+          <option value="18">18</option>
+        </select>
+      </label>
+    </form>
   </header>
 
   <main>
-    <figure class="preview">
-      <figcaption>Planned layout: a snake-draft board for your league size. Picks fill in as the draft happens, with suggestions for your next pick.</figcaption>
-      <div class="draft-board" aria-hidden="true">
-        <div class="draft-grid">
-          <span></span>
-          <span class="team-head">Team 1</span>
-          <span class="team-head">Team 2</span>
-          <span class="team-head">Team 3</span>
-          <span class="team-head">Team 4</span>
-          <span class="team-head">Team 5</span>
-          <span class="team-head">Team 6</span>
-          <span class="team-head">Team 7</span>
-          <span class="team-head">Team 8</span>
-          <span class="team-head">Team 9</span>
-          <span class="team-head">Team 10</span>
-          <span class="team-head">Team 11</span>
-          <span class="team-head">Team 12</span>
-          <span>Round 1</span>
-          <div class="pick"><span class="pick-num">1.01</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.02</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.03</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.04</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.05</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.06</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.07</span><span class="bar bar-wide"></span></div>
-          <div class="pick"><span class="pick-num">1.08</span></div>
-          <div class="pick"><span class="pick-num">1.09</span></div>
-          <div class="pick"><span class="pick-num">1.10</span></div>
-          <div class="pick"><span class="pick-num">1.11</span></div>
-          <div class="pick"><span class="pick-num">1.12</span></div>
-          <span>Round 2</span>
-          <div class="pick"><span class="pick-num">2.12</span></div>
-          <div class="pick"><span class="pick-num">2.11</span></div>
-          <div class="pick"><span class="pick-num">2.10</span></div>
-          <div class="pick"><span class="pick-num">2.09</span></div>
-          <div class="pick"><span class="pick-num">2.08</span></div>
-          <div class="pick"><span class="pick-num">2.07</span></div>
-          <div class="pick"><span class="pick-num">2.06</span></div>
-          <div class="pick"><span class="pick-num">2.05</span></div>
-          <div class="pick"><span class="pick-num">2.04</span></div>
-          <div class="pick"><span class="pick-num">2.03</span></div>
-          <div class="pick"><span class="pick-num">2.02</span></div>
-          <div class="pick"><span class="pick-num">2.01</span></div>
-          <span>Round 3</span>
-          <div class="pick"><span class="pick-num">3.01</span></div>
-          <div class="pick"><span class="pick-num">3.02</span></div>
-          <div class="pick"><span class="pick-num">3.03</span></div>
-          <div class="pick"><span class="pick-num">3.04</span></div>
-          <div class="pick"><span class="pick-num">3.05</span></div>
-          <div class="pick"><span class="pick-num">3.06</span></div>
-          <div class="pick"><span class="pick-num">3.07</span></div>
-          <div class="pick"><span class="pick-num">3.08</span></div>
-          <div class="pick"><span class="pick-num">3.09</span></div>
-          <div class="pick"><span class="pick-num">3.10</span></div>
-          <div class="pick"><span class="pick-num">3.11</span></div>
-          <div class="pick"><span class="pick-num">3.12</span></div>
-          <span>Round 4</span>
-          <div class="pick"><span class="pick-num">4.12</span></div>
-          <div class="pick"><span class="pick-num">4.11</span></div>
-          <div class="pick"><span class="pick-num">4.10</span></div>
-          <div class="pick"><span class="pick-num">4.09</span></div>
-          <div class="pick"><span class="pick-num">4.08</span></div>
-          <div class="pick"><span class="pick-num">4.07</span></div>
-          <div class="pick"><span class="pick-num">4.06</span></div>
-          <div class="pick"><span class="pick-num">4.05</span></div>
-          <div class="pick"><span class="pick-num">4.04</span></div>
-          <div class="pick"><span class="pick-num">4.03</span></div>
-          <div class="pick"><span class="pick-num">4.02</span></div>
-          <div class="pick"><span class="pick-num">4.01</span></div>
-        </div>
-      </div>
-    </figure>
+    <section aria-labelledby="board-heading">
+      <h2 id="board-heading" class="section-heading">Draft board</h2>
+      <p class="section-note" id="my-picks"></p>
+      <div class="draft-board" id="draft-board"></div>
+    </section>
+
+    <section class="result" id="plan" aria-live="polite" aria-labelledby="plan-heading">
+      <h2 id="plan-heading" class="section-heading">Likely available at your picks</h2>
+      <p class="section-note">Players ranked around each pick by average draft position (ADP).
+        Everyone ranked ahead of a pick is assumed to be gone.</p>
+      <ol class="plan-list" id="plan-list"></ol>
+    </section>
 
     <section class="roadmap">
       <div>
         <h2>Still to build</h2>
         <ul>
-          <li>Preseason rankings with tiers, so you can see when a position is about to run dry.</li>
-          <li>A draft board that follows snake order for your league size and draft slot.</li>
-          <li>Best available picks for your roster, updated after every selection.</li>
-          <li>Mock drafts against opponents who pick by average draft position.</li>
+          <li>Suggestions that account for your roster so far, not just ADP.</li>
+          <li>Tiers, so you can see when a position is about to run dry.</li>
+          <li>Live draft tracking: mark picks as they happen and update what's left.</li>
+          <li>Mock drafts against opponents who pick by ADP.</li>
         </ul>
       </div>
       <div>
         <h2>Data it uses</h2>
-        <p>Preseason projections and average draft position (ADP), plus your league's size,
-          scoring, and roster slots. Sleeper and ESPN both publish ADP, so it can come from the
-          same sync as the other pages.</p>
+        <p>ESPN average draft position from <code>python -m app.data.collect</code>, falling back to
+          projections when there's no ADP. Your league size, draft slot, and number of rounds set
+          the pick order.</p>
       </div>
     </section>
   </main>
 
   <script src="/theme.js"></script>
+  <script src="/draft/draft.js"></script>
 </body>
 </html>
