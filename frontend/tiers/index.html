@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tier Lists</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='16' rx='14' ry='9' fill='%237a4422'/%3E%3Cpath d='M10 16h12M13 14v4M16 14v4M19 14v4' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong one.
+    try {
+      const saved = localStorage.getItem("theme");
+      if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <nav class="site-nav" aria-label="Main">
+    <div class="site-nav-inner">
+      <a class="site-name" href="/">Fantasy Cheat Code</a>
+      <ul class="nav-links">
+        <li><a href="/">Trade analyzer</a></li>
+        <li><a href="/tiers/" aria-current="page">Tier lists</a></li>
+        <li><a href="/start-sit/">Start/sit</a></li>
+        <li><a href="/draft/">Draft masterclass</a></li>
+      </ul>
+      <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
+        <span class="theme-icon" aria-hidden="true"></span>
+        <span class="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>Player Tier Lists</h1>
+      <p class="lede">See players grouped into tiers at each position, so you know where the real drop-offs are before you trade, start, or pick up a player.</p>
+      <p class="feature-status">In development</p>
+    </div>
+  </header>
+
+  <main>
+    <figure class="preview">
+      <figcaption>Planned layout: pick a position, then scan tiers from best to worst. Every player in a tier is roughly interchangeable.</figcaption>
+      <div class="position-tabs" aria-hidden="true">
+        <span class="position-tab">QB</span>
+        <span class="position-tab is-active">RB</span>
+        <span class="position-tab">WR</span>
+        <span class="position-tab">TE</span>
+        <span class="position-tab">Flex</span>
+        <span class="position-tab">K</span>
+        <span class="position-tab">DST</span>
+      </div>
+      <div aria-hidden="true">
+        <div class="tier-row">
+          <div class="tier-label">Tier 1</div>
+          <div class="tier-players">
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+          </div>
+        </div>
+        <div class="tier-row">
+          <div class="tier-label">Tier 2</div>
+          <div class="tier-players">
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+          </div>
+        </div>
+        <div class="tier-row">
+          <div class="tier-label">Tier 3</div>
+          <div class="tier-players">
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
+          </div>
+        </div>
+      </div>
+    </figure>
+
+    <section class="roadmap">
+      <div>
+        <h2>Still to build</h2>
+        <ul>
+          <li>Tier breaks at each position, placed where projected points drop sharply.</li>
+          <li>Position tabs, plus a flex view that mixes RB, WR, and TE.</li>
+          <li>A marker on players who moved up or down a tier since last week.</li>
+          <li>Links from a player to the trade analyzer and start/sit guide.</li>
+        </ul>
+      </div>
+      <div>
+        <h2>Data it uses</h2>
+        <p>Rest-of-season projections from Sleeper and ESPN, which the player sync already collects.
+          Week-over-week tier changes will need the sync to keep past snapshots.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/theme.js"></script>
+</body>
+</html>
