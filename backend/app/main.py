@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 
 from app.api import draft, errors, meta, players, trades
 from app.api.errors import error_response
+from app.api.static import SiteFiles
 from app.api.security import add_security_headers
 from app.api.ratelimit import RateLimiter, Rule, retry_after_header
 from app.config import settings
@@ -73,4 +73,4 @@ def health() -> dict[str, str]:
 
 # Serve the trade analyzer UI at "/". Mounted last so API routes take priority.
 if FRONTEND_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    app.mount("/", SiteFiles(directory=FRONTEND_DIR, html=True), name="frontend")

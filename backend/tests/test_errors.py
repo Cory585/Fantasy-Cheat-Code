@@ -73,3 +73,24 @@ def test_docs_skip_the_csp_but_keep_other_headers():
 def test_pages_have_no_inline_scripts():
     for path in ["/", "/draft/", "/tiers/", "/start-sit/"]:
         assert "<script>" not in client.get(path).text, path
+
+
+# ---------- 404 pages ----------
+
+def test_browsers_get_the_404_page():
+    resp = client.get("/no/such/page", headers={"accept": "text/html,application/xhtml+xml"})
+    assert resp.status_code == 404
+    assert "Page not found" in resp.text
+    assert resp.headers["content-type"].startswith("text/html")
+
+
+def test_api_clients_get_json_404s():
+    resp = client.get("/no/such/endpoint", headers={"accept": "application/json"})
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+
+
+def test_path_traversal_is_a_404():
+    resp = client.get("/..%2F..%2Fbackend%2Fapp%2Fconfig.py")
+    assert resp.status_code == 404
+    assert "DATA_DIR" not in resp.text
