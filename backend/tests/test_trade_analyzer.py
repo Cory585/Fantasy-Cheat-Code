@@ -76,3 +76,27 @@ def test_reported_difference_drives_verdict(analyzer, monkeypatch):
     result = analyzer.analyze(trade(["rb1"], ["wr1"]))
     assert result.value_difference_pct == 10.0
     assert result.verdict == Verdict.FAIR
+
+
+def test_balance_suggests_players_near_the_gap_for_the_winner(analyzer):
+    # Side A gives te2 (85) and receives rb1 (180): A wins, so A should add ~95 of value.
+    result = analyzer.analyze(trade(["te2"], ["rb1"]))
+    assert result.balance.side == "a"
+    assert result.balance.value_gap == 95.0
+    suggested = [v.player.id for v in result.balance.players]
+    assert "te2" not in suggested and "rb1" not in suggested
+    gaps = [abs(v.value - 95.0) for v in result.balance.players]
+    assert gaps == sorted(gaps)
+
+
+def test_balance_uses_winners_roster_when_given(analyzer):
+    request = TradeRequest(
+        side_a=TradeSide(player_ids=["te2"], roster_ids=["te2", "k1", "dst1"]),
+        side_b=TradeSide(player_ids=["rb1"]),
+    )
+    result = analyzer.analyze(request)
+    assert {v.player.id for v in result.balance.players} == {"k1", "dst1"}
+
+
+def test_no_balance_for_fair_trade(analyzer):
+    assert analyzer.analyze(trade(["rb1"], ["wr1"])).balance is None
