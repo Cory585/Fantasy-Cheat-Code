@@ -787,7 +787,9 @@ async function init() {
   // Close the lineup popover on an outside click or Escape.
   const lineup = document.querySelector(".lineup-settings");
   document.addEventListener("click", (event) => {
-    if (lineup.open && !lineup.contains(event.target)) lineup.open = false;
+    // composedPath() is captured when the click happens, so it still includes the popover
+    // even if the clicked stepper button was re-rendered (and detached) by then.
+    if (lineup.open && !event.composedPath().includes(lineup)) lineup.open = false;
   });
   lineup.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && lineup.open) {
