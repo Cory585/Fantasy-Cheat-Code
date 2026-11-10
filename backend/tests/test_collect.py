@@ -28,7 +28,8 @@ def test_collect_continues_after_a_failed_dataset(tmp_path, monkeypatch):
 
 def test_every_dataset_is_handled():
     assert set(collect.ALL_DATASETS) == {"teams", "espn_market", "players", "games", "player_week_stats",
-                                         "team_week_stats", "snap_counts", "injuries", "combine", "playcalling"}
+                                         "team_week_stats", "snap_counts", "injuries", "combine", "playcalling",
+                                         "weather"}
 
 
 def test_parse_seasons():
