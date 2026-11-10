@@ -37,6 +37,24 @@
   }
 }
 
+/* Explicit choice from the theme switch (same values as the media query above). */
+:root[data-theme="dark"] {
+  --bg: #0f1a15;
+  --surface: #17241e;
+  --ink: #e4ece7;
+  --muted: #9aaba2;
+  --line: #2d3d35;
+  --turf: #1f4d37;
+  --turf-dark: #1a422f;
+  --chalk: rgba(228, 236, 231, 0.55);
+  --side-a: #86a7ef;
+  --side-b: #e3a74c;
+  --good: #6cc896;
+  --bad: #ef8a7d;
+  --focus: #86a7ef;
+  color-scheme: dark;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -136,6 +154,26 @@ select { cursor: pointer; }
 }
 
 .btn-quiet:hover:not(:disabled) { border-color: var(--muted); }
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Sun in dark mode (switch to light), crescent moon in light mode (switch to dark). */
+.theme-icon {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  box-shadow: inset -0.3rem -0.15rem 0 0 var(--ink);
+}
+
+.theme-toggle[aria-pressed="true"] .theme-icon {
+  background: var(--ink);
+  box-shadow: 0 0 0 0.2rem var(--bg), 0 0 0 0.3rem var(--ink);
+  transform: scale(0.7);
+}
 
 /* ---------- Trade sides ---------- */
 
@@ -337,7 +375,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--surface);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.125rem;
