@@ -6,6 +6,7 @@ const state = {
   players: new Map(), // id -> player
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
+  values: new Map(), // player id -> trade value from the latest analysis
 };
 
 const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
@@ -92,7 +93,12 @@ function rosterItem(side, player) {
   }
   const meta = document.createElement("div");
   meta.className = "player-meta";
-  meta.textContent = [player.position, player.team, player.bye_week ? `bye week ${player.bye_week}` : null]
+  meta.textContent = [
+    player.position,
+    player.team,
+    `${formatPoints(player.ros_projection)} proj. pts`,
+    player.bye_week ? `bye week ${player.bye_week}` : null,
+  ]
     .filter(Boolean)
     .join(", ");
   info.append(name, meta);
@@ -118,11 +124,179 @@ function render() {
     renderPicker(side);
     renderRoster(side);
   }
+  refreshValues();
   onTradeChanged();
 }
 
-// Hook for the analysis step (added in a later commit).
-function onTradeChanged() {}
+// ---------- Analysis ----------
+
+let analysisTimer = null;
+let analysisSeq = 0;
+
+function teamName(side) {
+  return sideEl(side).querySelector(".team-name").value.trim() || `Team ${side.toUpperCase()}`;
+}
+
+function onTradeChanged() {
+  clearTimeout(analysisTimer);
+  if (SIDES.some((side) => state.sides[side].length === 0)) {
+    state.values = new Map();
+    renderEmptyResult();
+    return;
+  }
+  analysisTimer = setTimeout(analyze, 150);
+}
+
+async function analyze() {
+  const seq = ++analysisSeq;
+  const body = {
+    side_a: { team_name: teamName("a"), player_ids: state.sides.a },
+    side_b: { team_name: teamName("b"), player_ids: state.sides.b },
+    league: { num_teams: state.numTeams },
+  };
+  try {
+    const response = await fetch("/trades/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (seq !== analysisSeq) return; // a newer request superseded this one
+    if (!response.ok) throw new Error(errorDetail(data));
+    renderAnalysis(data);
+  } catch (error) {
+    if (seq !== analysisSeq) return;
+    renderError(`Couldn't analyze this trade: ${error.message}`);
+  }
+}
+
+function errorDetail(data) {
+  if (typeof data.detail === "string") return data.detail;
+  if (Array.isArray(data.detail)) return data.detail.map((d) => d.msg).join("; ");
+  return "unexpected response from the server.";
+}
+
+function renderEmptyResult() {
+  const result = document.getElementById("result");
+  const message = document.createElement("p");
+  message.className = "result-empty";
+  message.textContent = "Add at least one player to each side to see who wins the trade.";
+  result.replaceChildren(message);
+  refreshValues();
+}
+
+function renderError(text) {
+  const result = document.getElementById("result");
+  const message = document.createElement("p");
+  message.className = "result-error";
+  message.textContent = text;
+  result.replaceChildren(message);
+}
+
+function verdictText(analysis) {
+  const pct = analysis.value_difference_pct.toFixed(1);
+  if (analysis.verdict === "fair") return { headline: "Even trade", detail: `The two sides are ${pct}% apart in value.` };
+  const winner = analysis.verdict === "favors_a" ? teamName("a") : teamName("b");
+  return { headline: `${winner} wins this trade`, detail: `${winner} gets ${pct}% more value than they give up.` };
+}
+
+// Ball position in yards from Team A's goal line (0) to Team B's (100).
+// It starts at midfield and moves half a yard toward the winner per percentage point.
+function ballYard(analysis) {
+  const offset = Math.min(analysis.value_difference_pct, 100) / 2;
+  if (analysis.verdict === "favors_a" || (analysis.verdict === "fair" && analysis.side_a.net_value > 0)) {
+    return 50 - offset;
+  }
+  if (analysis.verdict === "favors_b" || (analysis.verdict === "fair" && analysis.side_b.net_value > 0)) {
+    return 50 + offset;
+  }
+  return 50;
+}
+
+function fieldMarkup(analysis) {
+  const yard = ballYard(analysis);
+  const lines = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    .map((y) => `<span class="yard-line" style="left:${y}%"><span>${y <= 50 ? y : 100 - y}</span></span>`)
+    .join("");
+  const fairHalf = 5; // 10% fair threshold = 5 yards either side of midfield
+  return `
+    <div class="field">
+      <div class="endzone endzone-a"><span></span></div>
+      <div class="field-play">
+        <div class="fair-zone" style="left:${50 - fairHalf}%;right:${50 - fairHalf}%"></div>
+        ${lines}
+        <div class="ball" style="left:${yard}%"></div>
+      </div>
+      <div class="endzone endzone-b"><span></span></div>
+    </div>`;
+}
+
+function sideSummary(side, analysis) {
+  const data = analysis[`side_${side}`];
+  const net = data.net_value;
+  const sign = net > 0 ? "+" : "";
+  const wrap = document.createElement("div");
+  wrap.className = `summary-side summary-${side}`;
+  wrap.innerHTML = `
+    <h3></h3>
+    <dl>
+      <div><dt>Receives</dt><dd>${formatPoints(data.total_value_received)}</dd></div>
+      <div><dt>Sends</dt><dd>${formatPoints(data.total_value_given)}</dd></div>
+      <div class="net ${net > 0 ? "net-up" : net < 0 ? "net-down" : ""}"><dt>Net</dt><dd>${sign}${formatPoints(net)}</dd></div>
+    </dl>`;
+  wrap.querySelector("h3").textContent = teamName(side);
+  return wrap;
+}
+
+function renderAnalysis(analysis) {
+  state.values = new Map();
+  for (const side of SIDES) {
+    for (const v of analysis[`side_${side}`].gives) state.values.set(v.player.id, v.value);
+  }
+  refreshValues();
+
+  const { headline, detail } = verdictText(analysis);
+  const result = document.getElementById("result");
+  result.innerHTML = `
+    <div class="verdict verdict-${analysis.verdict}">
+      <h2></h2>
+      <p></p>
+    </div>
+    ${fieldMarkup(analysis)}
+    <div class="summary"></div>
+    <p class="value-note">Trade value is a player's projected rest-of-season points above a
+      replacement-level player at the same position in a ${state.numTeams}-team league.</p>`;
+  result.querySelector(".verdict h2").textContent = headline;
+  result.querySelector(".verdict p").textContent = detail;
+  result.querySelector(".endzone-a span").textContent = teamName("a");
+  result.querySelector(".endzone-b span").textContent = teamName("b");
+  result.querySelector(".field").setAttribute("role", "img");
+  result.querySelector(".field").setAttribute("aria-label", `${headline}. ${detail}`);
+  result.querySelector(".summary").append(sideSummary("a", analysis), sideSummary("b", analysis));
+
+  if (analysis.warnings.length) {
+    const list = document.createElement("ul");
+    list.className = "warnings";
+    for (const warning of analysis.warnings) {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      list.append(item);
+    }
+    result.append(list);
+  }
+}
+
+// Show trade value next to each rostered player once the trade has been analyzed.
+function refreshValues() {
+  for (const item of document.querySelectorAll(".roster-item")) {
+    const player = state.players.get(item.dataset.id);
+    const value = state.values.get(item.dataset.id);
+    const cell = item.querySelector(".player-value");
+    cell.innerHTML = value === undefined
+      ? `${formatPoints(player.ros_projection)}<small>proj. pts</small>`
+      : `${formatPoints(value)}<small>trade value</small>`;
+  }
+}
 
 // ---------- Actions ----------
 
