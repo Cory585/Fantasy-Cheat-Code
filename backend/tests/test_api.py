@@ -113,3 +113,64 @@ def test_meta_reports_data_source():
     data = client.get("/meta").json()
     assert data["players"] == 12  # sample data in tests
     assert data["source"] in {"sample", "synced"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"side_a": {"player_ids": ["rb1"] * 41}, "side_b": {"player_ids": ["wr1"]}},  # too many players
+        {"side_a": {"player_ids": ["rb1"], "team_name": "A" * 51}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["rb1"], "roster_ids": ["x"] * 101}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["x" * 65]}, "side_b": {"player_ids": ["wr1"]}},  # absurd id
+        {"side_a": {"player_ids": [""]}, "side_b": {"player_ids": ["wr1"]}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"num_teams": 33}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"FLEX": 11}}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"SUPERFLEX": 1}}},
+    ],
+)
+def test_analyze_rejects_out_of_range_input(body):
+    assert client.post("/trades/analyze", json=body).status_code == 422
+
+
+def test_duplicate_check_is_fast_at_the_limit():
+    import time
+
+    t = time.perf_counter()
+    resp = client.post("/trades/analyze", json={"side_a": {"player_ids": ["rb1"] * 40}, "side_b": {"player_ids": ["wr1"]}})
+    assert resp.status_code == 422 and time.perf_counter() - t < 1
+
+
+def test_deeply_nested_json_is_a_client_error():
+    body = ("[" * 5000 + "]" * 5000).encode()
+    resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 400
+
+
+def test_oversized_body_is_rejected():
+    body = b'{"side_a": {"player_ids": ["rb1"]}, "junk": "' + b"x" * 300_000 + b'"}'
+    resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 413
+
+
+def test_corrupt_database_falls_back_to_projections_only(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    cache, database = tmp_path / "players.json", tmp_path / "fantasy.db"
+    write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
+                2026, range(10, 18), ScoringFormat.PPR)
+    database.write_bytes(b"this is not a sqlite database" * 100)
+    repo, outlooks = ReloadingPlayerData(cache, database).current()
+    assert repo.get("x1") is not None
+    assert outlooks == {}
+
+
+def test_cache_with_invalid_player_keeps_serving(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+
+    cache = tmp_path / "players.json"
+    cache.write_text('{"season": 2026, "players": [{"id": "x1", "name": "No position"}]}', encoding="utf-8")
+    repo, _ = ReloadingPlayerData(cache).current()
+    assert repo.get("rb1") is not None  # falls back to sample data instead of crashing
