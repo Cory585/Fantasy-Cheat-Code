@@ -44,8 +44,39 @@ def test_targets_use_adp_before_projection():
     ]
     plan = DraftPlanner(players, adp={1: 1.5, 2: 3.0}).plan(teams=1, slot=1, rounds=3, targets_per_pick=1)
     assert plan.adp_source == "espn"
-    assert [pp.targets[0].player_id for pp in plan.picks] == ["a", "b", "c"]
-    assert plan.picks[2].targets[0].adp is None
+    # ADP order (a before b); c has no ADP but the top projection, so it slots in after the
+    # first-ranked ADP player instead of falling to the end.
+    assert [pp.targets[0].player_id for pp in plan.picks] == ["a", "c", "b"]
+    assert plan.picks[1].targets[0].adp is None
+
+
+def _pool(n_drafted, n_floor):
+    players, adp = [], {}
+    for i in range(n_drafted):
+        players.append(Player(id=f"d{i}", name=f"D{i}", position=Position.RB, team="X",
+                              ros_projection=200 - i, espn_id=i + 1))
+        adp[i + 1] = 1.0 + i
+    for j in range(n_floor):
+        espn_id = 1000 + j
+        # Undrafted players all parked near ESPN's ceiling, in reverse projection order.
+        players.append(Player(id=f"u{j}", name=f"U{j}", position=Position.QB, team="X",
+                              ros_projection=float(j), espn_id=espn_id))
+        adp[espn_id] = 170.0 - j * 0.001
+    return players, adp
+
+
+def test_espn_undrafted_floor_is_ordered_by_projection():
+    players, adp = _pool(n_drafted=10, n_floor=30)
+    board = DraftPlanner(players, adp).plan(teams=1, slot=1, rounds=1, targets_per_pick=len(players)).picks[0].targets
+    tail = [t for t in board if t.player_id.startswith("u")]
+    assert [t.projection for t in tail] == sorted((t.projection for t in tail), reverse=True)
+    assert all(t.adp is None for t in tail)  # the floor value isn't shown as a real ADP
+
+
+def test_a_few_high_adp_players_are_not_a_floor():
+    players, adp = _pool(n_drafted=10, n_floor=3)
+    board = DraftPlanner(players, adp).plan(teams=1, slot=1, rounds=1, targets_per_pick=len(players)).picks[0].targets
+    assert board[-1].adp is not None
 
 
 def test_late_picks_past_the_player_pool_have_no_targets():
