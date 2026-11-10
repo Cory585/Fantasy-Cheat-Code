@@ -138,3 +138,15 @@ def test_duplicate_check_is_fast_at_the_limit():
     t = time.perf_counter()
     resp = client.post("/trades/analyze", json={"side_a": {"player_ids": ["rb1"] * 40}, "side_b": {"player_ids": ["wr1"]}})
     assert resp.status_code == 422 and time.perf_counter() - t < 1
+
+
+def test_deeply_nested_json_is_a_client_error():
+    body = ("[" * 5000 + "]" * 5000).encode()
+    resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 400
+
+
+def test_oversized_body_is_rejected():
+    body = b'{"side_a": {"player_ids": ["rb1"]}, "junk": "' + b"x" * 300_000 + b'"}'
+    resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 413
