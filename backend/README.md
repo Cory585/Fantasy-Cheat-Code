@@ -141,4 +141,116 @@ At each pick, every player ranked ahead of it is assumed to be gone, and the nex
 players are suggested. Without a collected database, the whole board is ranked by projection
 (`adp_source` in the response says which).
 
+The response also includes what the page's diagrams use:
+
+- `board`: a mock draft for every pick in the draft (`teams x rounds`), assuming each team takes
+  the top-ranked player left. The page colors it by position, so position runs stand out.
+- `picks[].picks_until_next`: how many picks other teams make before your next one (0 at the turn,
+  `null` after your last pick). The page draws these as arcs on the pick timeline.
+- `picks[].position_mix`: the positions of the players other teams likely take before your next
+  pick, assuming you take the top-ranked player. The page shows it as a stacked bar on each pick.
+
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
+
+## Errors, limits, and security
+
+**Errors.** Every error response is JSON shaped as `{"detail": "...", "code": "..."}`.
+`detail` is a readable message (a list of field errors for `422 invalid_request`); `code` is
+stable for clients to branch on:
+
+| Status | Codes |
+|---|---|
+| 400 | `bad_request` (including unparseable bodies) |
+| 404 | `not_found`, `player_not_found` |
+| 405 | `method_not_allowed` |
+| 413 | `payload_too_large` (bodies over 256 KB) |
+| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot` |
+| 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
+| 500 | `internal_error` (details are logged on the server, never returned) |
+| 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `upstream_timeout` |
+
+Validation errors don't echo the submitted input back. Browsers that hit a missing page get
+`frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
+
+**Rate limits.** Per client IP, in memory (`app/api/ratelimit.py`):
+
+| Bucket | Applies to | Burst | Sustained |
+|---|---|---|---|
+| `all` | every request | 300 | 5 per second |
+| `upstream` | endpoints that call outside providers (`.../profile`) | 10 | 1 every 5 seconds |
+
+Set `RATE_LIMIT_ENABLED=0` to turn them off. Behind a reverse proxy, set `TRUST_PROXY=1` so
+clients are keyed on `X-Forwarded-For`. Proxies append the address they saw, so the client is
+taken from the right: set `TRUSTED_PROXY_HOPS` to the number of proxies in front of the app
+(default 1). Anything further left was sent by the client and is ignored. Limits are per
+process, so several workers multiply them.
+
+**Headers.** Every response sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+a referrer policy, a permissions policy, and (except on `/docs` and `/redoc`) a Content Security
+Policy: scripts only from this app (no inline scripts), images only from here and
+`a.espncdn.com`, fonts from Google Fonts, and API calls only to this app.
+
+## Player profiles
+
+`GET /players/{id}/profile` (and the page at `/player/?id=<id>`, linked from player names)
+returns a player's bio, NFL career stats, college stats, and combine results:
+
+| Part | Source | How it's fetched |
+|---|---|---|
+| Bio (height, weight, age, college, draft), headshot | ESPN athlete API | On demand, cached |
+| NFL career stats by season | ESPN `nfl/athletes/{id}/stats` | On demand, cached |
+| College stats by season | ESPN `college-football/athletes/{id}/stats` (ESPN reuses the NFL id) | On demand, cached |
+| Combine results and percentiles | nflverse `combine.csv`, joined on `pfr_id` | `python -m app.data.collect --datasets combine` |
+| Fallback bio (height, weight, draft) | nflverse `players` | Already collected |
+
+Combine percentiles compare a result with every combine participant at the same position
+since 2000 (for the 40, 3-cone, and shuttle, lower is better).
+
+**Keeping ESPN safe.** A profile fetch is three ESPN requests, so they're protected at every step:
+
+- Only players in the app's player pool can be fetched; unknown ids are a 404 before any request.
+- Results are cached in `backend/data/profiles.db` for `PROFILE_TTL_HOURS` (default 24), and
+  players ESPN doesn't know are cached for a week. The cache is a separate file from
+  `fantasy.db`, so writes don't make the API reload player data.
+- Concurrent requests for the same player share one fetch, and at most 2 fetches run at once.
+- Requests use the shared rate-limited client (one request per second per host), an 8-second
+  timeout, one retry, and a 2 MB response cap.
+- After a failure, that player isn't retried for 10 minutes.
+- The `/profile` endpoint has its own strict incoming rate limit (see above).
+
+ESPN responses are treated as untrusted: only known fields are kept, each is type-checked
+and length-capped, and headshots are only accepted from `a.espncdn.com`.
+
+**When ESPN is unavailable**, the profile still returns 200 with what's stored locally, and
+`espn` says what happened:
+
+| `espn.status` | Meaning |
+|---|---|
+| `fresh` / `cached` | ESPN data included (just fetched / from the cache) |
+| `stale` | ESPN failed; an older cached copy is included |
+| `unavailable` | No ESPN data. `code` is `upstream_busy` or `upstream_error`; `retry_after` is in seconds |
+| `not_found` | ESPN has no athlete with this id (`code: espn_player_not_found`) |
+| `not_applicable` | Team defenses and players without an ESPN id |
+
+## Testing
+
+```
+pip install -r requirements-dev.txt
+pytest                      # everything, about 30 seconds
+pytest -m "not e2e"         # skip the browser tests
+pytest -m e2e               # only the browser tests
+pytest --cov=app            # with coverage
+```
+
+| Kind | Files | What it checks |
+|---|---|---|
+| Unit and API | `tests/test_*.py` | Each module and endpoint, including error codes and security headers |
+| Property-based | `tests/test_properties.py` | Invariants for any input (Hypothesis): every draft pick has exactly one owner, plans stay consistent, the rate limiter never exceeds its budget, ESPN parsing survives arbitrary JSON |
+| Concurrency stress | `tests/test_stress.py` | 40 threads × 25 profile requests: the concurrency cap holds, each player is fetched once, nothing hangs; concurrent cache writers; rate-limiter accuracy under contention |
+| Fuzzing | `tests/test_api_fuzz.py` | Random query strings, paths, bodies, methods, and Accept headers: never a 500, errors always `{detail, code}`, security headers always present |
+| End-to-end | `tests/e2e/` | The real pages in a headless browser (Playwright, using an installed Edge or Chrome): controls, keyboard focus, stale and failed loads, countdowns, text-only rendering of player data, no CSP violations or console errors |
+
+The browser tests are hermetic: a local server with fake player and ESPN data, and every
+request to another host is answered locally. They're skipped if Playwright or a browser isn't
+installed. No test contacts ESPN, Sleeper, or nflverse. If a test hangs for more than two
+minutes, pytest prints every thread's stack (`faulthandler_timeout` in `pytest.ini`).

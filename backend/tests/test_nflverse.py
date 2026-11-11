@@ -63,6 +63,7 @@ def test_parsed_rows_fit_the_schema(tmp_path):
         "team_week_stats": "team,season,week\nDET,2026,1\n",
         "snap_counts": "pfr_player_id,game_id,season\nAbc01,2026_01_A_B,2026\n",
         "injuries": "gsis_id,season,week,team\n00-1,2026,1,DET\n",
+        "combine": "season,player_name,pos\n2023,A Player,RB\n",
     }
     conn = db.connect(tmp_path / "test.db")
     for dataset, text in samples.items():
@@ -82,3 +83,23 @@ def test_team_abbreviations_match_the_rest_of_the_app():
     assert [(r["team"], r["opponent"]) for r in stats] == [("LAR", "SEA"), ("SEA", "LAR")]
     teams = nflverse.parse_team_week_stats("team,season,week,opponent_team\nLA,2026,1,SEA\n")
     assert teams[0]["team"] == "LAR"
+
+
+def test_parse_combine():
+    text = (
+        "season,draft_year,draft_team,draft_round,draft_ovr,pfr_id,cfb_id,player_name,pos,school,ht,wt,"
+        "forty,bench,vertical,broad_jump,cone,shuttle\n"
+        "2023,2023,Detroit Lions,1,12,GibbJa00,jahmyr-gibbs-1,Jahmyr Gibbs,RB,Alabama,5-9,199,4.36,,33.5,120,,\n"
+        "2001,,,,,,,No Id,WR,State,NA,NA,NA,NA,NA,NA,NA,NA\n"
+    )
+    gibbs, no_id = nflverse.parse_combine(text)
+    assert gibbs["combine_id"] == "GibbJa00"
+    assert gibbs["height_in"] == 69 and gibbs["forty"] == 4.36 and gibbs["broad_jump"] == 120
+    assert gibbs["bench"] is None and gibbs["draft_pick"] == 12
+    assert no_id["combine_id"] == "2001:No Id:WR:State"
+    assert no_id["height_in"] is None and no_id["forty"] is None
+
+
+def test_non_finite_numbers_are_treated_as_missing():
+    rows = nflverse.parse_players("gsis_id,display_name,height,weight\n00-1,A,inf,nan\n")
+    assert rows[0]["height"] is None and rows[0]["weight"] is None

@@ -10,6 +10,7 @@ The `parse_*` functions turn CSV text into rows for the tables in `app.data.db`.
 import csv
 import io
 import json
+import math
 from collections.abc import Callable
 
 from app.data.sources.http import RateLimitedClient
@@ -28,6 +29,7 @@ def dataset_urls(season: int) -> dict[str, str]:
         "team_week_stats": f"{RELEASES}/stats_team/stats_team_week_{season}.csv",
         "snap_counts": f"{RELEASES}/snap_counts/snap_counts_{season}.csv",
         "injuries": f"{RELEASES}/injuries/injuries_{season}.csv",
+        "combine": f"{RELEASES}/combine/combine.csv",  # every combine since 2000
     }
 
 
@@ -49,6 +51,8 @@ def _num(value: str | None) -> float | int | None:
     try:
         number = float(value)
     except ValueError:
+        return None
+    if not math.isfinite(number):  # float() also accepts "inf" and "nan"
         return None
     return int(number) if number.is_integer() and "." not in value else number
 
@@ -225,6 +229,50 @@ def parse_injuries(text: str) -> list[dict]:
     ]
 
 
+def _height_inches(value: str | None) -> float | None:
+    """nflverse combine heights are feet-inches, e.g. "6-1"."""
+    value = _str(value)
+    if not value:
+        return None
+    feet, _, inches = value.partition("-")
+    try:
+        return int(feet) * 12 + float(inches or 0)
+    except ValueError:
+        return None
+
+
+def parse_combine(text: str) -> list[dict]:
+    rows = []
+    for r in _rows(text):
+        name, season = _str(r.get("player_name")), _int(r.get("season"))
+        if not name or season is None:
+            continue
+        pfr_id = _str(r.get("pfr_id"))
+        position, school = _str(r.get("pos")), _str(r.get("school"))
+        rows.append({
+            "combine_id": pfr_id or f"{season}:{name}:{position}:{school}",
+            "season": season,
+            "pfr_id": pfr_id,
+            "cfb_id": _str(r.get("cfb_id")),
+            "name": name,
+            "position": position,
+            "school": school,
+            "draft_year": _int(r.get("draft_year")),
+            "draft_team": _str(r.get("draft_team")),
+            "draft_round": _int(r.get("draft_round")),
+            "draft_pick": _int(r.get("draft_ovr")),
+            "height_in": _height_inches(r.get("ht")),
+            "weight_lb": _num(r.get("wt")),
+            "forty": _num(r.get("forty")),
+            "bench": _int(r.get("bench")),
+            "vertical": _num(r.get("vertical")),
+            "broad_jump": _int(r.get("broad_jump")),
+            "cone": _num(r.get("cone")),
+            "shuttle": _num(r.get("shuttle")),
+        })
+    return rows
+
+
 PARSERS: dict[str, Callable[[str], list[dict]]] = {
     "players": parse_players,
     "games": parse_games,
@@ -232,4 +280,5 @@ PARSERS: dict[str, Callable[[str], list[dict]]] = {
     "team_week_stats": parse_team_week_stats,
     "snap_counts": parse_snap_counts,
     "injuries": parse_injuries,
+    "combine": parse_combine,
 }

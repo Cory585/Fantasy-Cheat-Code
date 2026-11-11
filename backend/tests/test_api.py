@@ -143,7 +143,10 @@ def test_duplicate_check_is_fast_at_the_limit():
 def test_deeply_nested_json_is_a_client_error():
     body = ("[" * 5000 + "]" * 5000).encode()
     resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
-    assert resp.status_code == 400
+    # Rejected as invalid without echoing the input back (echoing it used to overflow the stack).
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "invalid_request"
+    assert "[[[[" not in resp.text
 
 
 def test_oversized_body_is_rejected():
@@ -180,3 +183,7 @@ def test_draft_page_has_slot_dropdown_and_script():
     page = client.get("/draft/").text
     assert 'id="draft-slot"' in page and "/draft/draft.js" in page
     assert client.get("/draft/draft.js").status_code == 200
+
+
+def test_draft_page_loads_its_script_once():
+    assert client.get("/draft/").text.count('src="/draft/draft.js"') == 1

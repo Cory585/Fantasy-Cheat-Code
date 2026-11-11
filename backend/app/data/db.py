@@ -128,6 +128,31 @@ CREATE TABLE IF NOT EXISTS injuries (
     PRIMARY KEY (gsis_id, season, week, season_type, team)
 );
 
+-- NFL Scouting Combine results since 2000. Joins to players by pfr_id (most rows have one).
+CREATE TABLE IF NOT EXISTS combine (
+    combine_id   TEXT PRIMARY KEY,   -- pfr_id, or season:name:position:school when there's none
+    season       INTEGER NOT NULL,
+    pfr_id       TEXT,
+    cfb_id       TEXT,
+    name         TEXT NOT NULL,
+    position     TEXT,
+    school       TEXT,
+    draft_year   INTEGER,
+    draft_team   TEXT,
+    draft_round  INTEGER,
+    draft_pick   INTEGER,
+    height_in    REAL,
+    weight_lb    REAL,
+    forty        REAL,
+    bench        INTEGER,
+    vertical     REAL,
+    broad_jump   INTEGER,
+    cone         REAL,
+    shuttle      REAL
+);
+CREATE INDEX IF NOT EXISTS combine_pfr_id ON combine (pfr_id);
+CREATE INDEX IF NOT EXISTS combine_position ON combine (position);
+
 -- Daily snapshots from ESPN Fantasy, so trends (rostered %, ADP) can be tracked over time.
 CREATE TABLE IF NOT EXISTS espn_player_market (
     espn_id          INTEGER NOT NULL,
