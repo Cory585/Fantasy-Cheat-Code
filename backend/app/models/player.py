@@ -29,6 +29,14 @@ class Player(BaseModel):
     # Per-provider rest-of-season projections, e.g. {"sleeper": 150.2, "espn": 161.0}.
     # `ros_projection` is the consensus (mean) of these when real data is loaded.
     projection_sources: dict[str, float] = Field(default_factory=dict)
+    # Per-week projections by provider, e.g. {10: {"sleeper": 14.2, "espn": 15.1}}. Weeks the
+    # player has no projection (byes, games already played when synced) are left out.
+    weekly_projections: dict[int, dict[str, float]] = Field(default_factory=dict)
+
+    def week_projection(self, week: int) -> float | None:
+        """Consensus (mean of providers) projection for one week, or None if there isn't one."""
+        sources = self.weekly_projections.get(week)
+        return round(sum(sources.values()) / len(sources), 2) if sources else None
 
 
 class PlayerOutlook(BaseModel):
