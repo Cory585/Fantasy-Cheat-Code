@@ -162,3 +162,21 @@ def test_start_sit_never_500s(params):
     if resp.status_code == 200:
         body = resp.json()
         assert len(body["recommendation"]["start"]) == body["starts"]
+
+
+@FUZZ
+@given(body=st.one_of(
+    json_values,
+    st.fixed_dictionaries(
+        {"roster_ids": st.lists(st.one_of(text, st.sampled_from([p.id for p in PLAYERS])), max_size=45)},
+        optional={"slots": st.dictionaries(st.sampled_from(["QB", "RB", "WR", "TE", "FLEX", "SUPERFLEX", "K", "DST", "X"]),
+                                           st.one_of(st.integers(-2, 8), text), max_size=8),
+                  "week": st.one_of(st.integers(-5, 25), text, st.none())},
+    ),
+))
+def test_lineup_never_500s(body):
+    resp = client.post("/start-sit/lineup", json=body)
+    check(resp)
+    if resp.status_code == 200:
+        ids = [s["starter"]["player"]["id"] for s in resp.json()["lineup"] if s["starter"]]
+        assert len(ids) == len(set(ids))  # nobody starts twice

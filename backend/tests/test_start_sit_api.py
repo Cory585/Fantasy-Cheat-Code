@@ -41,3 +41,36 @@ def test_errors():
     assert get([("player", "wr1"), ("player", "wr2"), ("week", 18)]).json()["code"] == "invalid_week"
     assert get([("player", "wr1"), ("player", "<script>")]).json()["code"] == "invalid_request"
     assert get([("player", p) for p in ["wr1"] * 9]).status_code == 422
+
+
+def test_best_lineup_for_a_sample_roster():
+    ids = ["qb1", "qb2", "rb1", "rb2", "rb3", "wr1", "wr2", "wr3", "te1", "te2", "k1", "dst1"]
+    resp = client.post("/start-sit/lineup", json={"roster_ids": ids, "week": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week"] == 2
+    assert [s["slot"] for s in body["lineup"]] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DST"]
+    assert body["lineup"][0]["starter"]["player"]["id"] == "qb1"
+    assert len(body["bench"]) == 3
+    assert body["missing_ids"] == []
+
+
+def test_lineup_skips_players_no_longer_in_the_pool():
+    body = client.post("/start-sit/lineup", json={"roster_ids": ["wr1", "gone", "wr1"],
+                                                  "slots": {"WR": 1}}).json()
+    assert body["missing_ids"] == ["gone"]
+    assert any("no longer in the player pool" in w for w in body["warnings"])
+    assert [s["starter"]["player"]["id"] for s in body["lineup"]] == ["wr1"]
+
+
+def test_lineup_errors():
+    def post(body):
+        return client.post("/start-sit/lineup", json=body)
+
+    assert post({"roster_ids": ["gone"]}).json()["code"] == "player_not_found"
+    assert post({"roster_ids": []}).status_code == 422
+    assert post({"roster_ids": ["wr1"], "slots": {"BENCH": 1}}).json()["code"] == "invalid_request"
+    assert post({"roster_ids": ["wr1"], "slots": {"WR": 6}}).json()["code"] == "invalid_request"
+    assert post({"roster_ids": ["wr1"], "slots": {"WR": 0}}).json()["code"] == "invalid_lineup"
+    assert post({"roster_ids": ["wr1"], "week": 18}).json()["code"] == "invalid_week"
+    assert post({"roster_ids": ["x"] * 41}).status_code == 422
