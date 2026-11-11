@@ -52,7 +52,7 @@ def test_close_call_is_a_toss_up_and_lopsided_one_is_confident():
     close = advisor().compare([player("a", week_points=12.1), player("b", week_points=12.0)], week=WEEK)
     assert close.recommendation.confidence == Confidence.TOSS_UP
     assert 0.4 < close.recommendation.probability < 0.6
-    assert close.recommendation.summary.startswith("Toss-up.")
+    assert "it's close" in close.recommendation.summary
     clear = advisor().compare([player("a", week_points=25.0), player("b", week_points=5.0)], week=WEEK)
     assert clear.recommendation.confidence == Confidence.CONFIDENT
     assert clear.recommendation.probability > 0.9

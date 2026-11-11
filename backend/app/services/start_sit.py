@@ -352,7 +352,7 @@ def _summary(ranked: list[PlayerWeek], starts: int, probability: float) -> str:
     pct = round(probability * 100)
     tail = f"{last.player.name} outscores {next_best.player.name} in {pct}% of simulated weeks."
     if probability < LEAN_AT:
-        return f"Toss-up. {head} {why}, but it's close: {tail}"
+        return f"{head} {why}, but it's close: {tail}"
     return f"{head} {why}. {tail}"
 
 
