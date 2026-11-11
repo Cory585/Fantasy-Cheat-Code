@@ -113,6 +113,8 @@ def test_meta_reports_data_source():
     data = client.get("/meta").json()
     assert data["players"] == 12  # sample data in tests
     assert data["source"] in {"sample", "synced"}
+    assert data["current_week"] == data["weeks"][0] == 1  # sample data: no schedule, weeks 1-17
+    assert data["matchups"] is False
 
 
 @pytest.mark.parametrize(
