@@ -78,7 +78,14 @@ def ros_points(
 ) -> float:
     """Sum of a player's weekly ESPN projections over `weeks`, optionally skipping one week
     (used when the player's game that week is already final)."""
-    total = 0.0
+    return sum(weekly_points(player, season, weeks, scoring, skip_week).values())
+
+
+def weekly_points(
+    player: dict, season: int, weeks: range, scoring: ScoringFormat, skip_week: int | None = None
+) -> dict[int, float]:
+    """A player's ESPN projection for each week in `weeks` (weeks without one are left out)."""
+    points_by_week: dict[int, float] = {}
     for stat in player.get("stats") or []:
         if (
             stat.get("statSourceId") == STAT_SOURCE_PROJECTED
@@ -90,8 +97,9 @@ def ros_points(
             points = stat.get("appliedTotal") or 0.0
             if scoring == ScoringFormat.HALF_PPR:
                 points -= 0.5 * (stat.get("stats") or {}).get(STAT_RECEPTIONS, 0.0)
-            total += points
-    return total
+            week = stat["scoringPeriodId"]
+            points_by_week[week] = points_by_week.get(week, 0.0) + points
+    return points_by_week
 
 
 def teams_with_completed_games(client: RateLimitedClient, season: int, week: int) -> frozenset[str]:

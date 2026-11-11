@@ -149,3 +149,16 @@ def test_player_names_are_returned_as_data_not_markup():
     resp = client.get("/players/xss")
     assert resp.json()["name"] == "<img src=x onerror=alert(1)>"
     assert resp.headers["content-type"].startswith("application/json")
+
+
+@FUZZ
+@given(params=st.lists(st.tuples(
+    st.sampled_from(["player", "week", "slot", "starts", "x"]),
+    st.one_of(query_value, st.sampled_from([p.id for p in PLAYERS] + ["FLEX", "WR", "SUPERFLEX"])),
+), max_size=10))
+def test_start_sit_never_500s(params):
+    resp = client.get("/start-sit", params=params)
+    check(resp)
+    if resp.status_code == 200:
+        body = resp.json()
+        assert len(body["recommendation"]["start"]) == body["starts"]
