@@ -152,6 +152,42 @@ The response also includes what the page's diagrams use:
 
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
 
+## Start/sit
+
+`GET /start-sit` (and the page at `/start-sit/`) compares 2 to 8 players competing for one
+lineup spot in one week and says who to start:
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `player` | required | Repeat once per player: `?player=7564&player=6794` |
+| `week` | current week | Must be within the synced weeks. The current week is the first with games still to play (also in `/meta` as `current_week`). |
+| `slot` | narrowest that fits | `QB`, `RB`, `WR`, `TE`, `FLEX` (RB/WR/TE), `SUPERFLEX` (QB/RB/WR/TE), `K`, `DST`. Every player must be eligible. |
+| `starts` | 1 | How many of the players you can start (fewer than the number compared) |
+
+How each player's week is scored (`app/services/start_sit.py`):
+
+1. **Projection.** The mean of Sleeper's and ESPN's projections for that week. The sync job
+   keeps these per week in `weekly_projections`; caches built before that, and sample data,
+   use rest-of-season points per remaining game instead.
+2. **Recent form against this opponent** (needs `app.data.collect`). Points per game over the
+   last 4 games (within 6 weeks) times how much this opponent allows to the position, capped at
+   ±25% of the projection and blended in at `FORM_WEIGHT`, as in trade values.
+3. **Injury risk.** Expected points are scaled by the chance of playing: Questionable 85%,
+   Doubtful 30%, Out and IR 0%. Floor and ceiling describe the week if the player plays.
+4. **Range.** Floor and ceiling are roughly the 10th and 90th percentile: the player's own
+   week-to-week spread this season, shrunk toward a typical spread for the position when there
+   are few games.
+5. **Confidence.** The week is simulated 4,000 times (seeded, so results are repeatable).
+   `recommendation.probability` is how often the last player in the lineup outscores the best
+   one left out: 70% and up is `confident`, 58% and up is `lean`, anything closer is `toss_up`.
+   Each player's `start_probability` is how often they were among the top `starts` scorers.
+
+Each player also gets `reasons` (projection, matchup rank, Vegas implied team total, form,
+injury, bye), each marked `plus`, `minus`, or `neutral`. Byes are found from the collected
+schedule (or the player's `bye_week` without one); games already final show the actual score.
+Errors: `422 invalid_start_sit` (players can't share the spot, duplicates, too many starts),
+`422 invalid_week`, `404 player_not_found`.
+
 ## Errors, limits, and security
 
 **Errors.** Every error response is JSON shaped as `{"detail": "...", "code": "..."}`.
@@ -164,7 +200,7 @@ stable for clients to branch on:
 | 404 | `not_found`, `player_not_found` |
 | 405 | `method_not_allowed` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
-| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot` |
+| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_start_sit`, `invalid_week` |
 | 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
 | 500 | `internal_error` (details are logged on the server, never returned) |
 | 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `upstream_timeout` |
