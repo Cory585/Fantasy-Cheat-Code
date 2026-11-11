@@ -22,11 +22,11 @@ def test_comparison_from_the_url(page):
 
 def test_adding_players_with_the_keyboard(page):
     page.goto("/start-sit/")
-    expect(page.locator(".result-empty")).to_contain_text("at least two")
+    expect(page.locator("#ss-result .result-empty")).to_contain_text("at least two")
     search = page.locator("#ss-search")
     search.fill("Sample RB One")
     search.press("Enter")
-    expect(page.locator(".result-empty")).to_contain_text("one more")
+    expect(page.locator("#ss-result .result-empty")).to_contain_text("one more")
     # With an RB chosen and "Any" spot, kickers and defenses aren't offered.
     search.fill("Sample Kicker")
     expect(page.locator("#ss-results .search-empty")).to_contain_text("No players match")
@@ -60,7 +60,7 @@ def test_removing_a_player_updates_the_call(page):
     page.goto("/start-sit/?p=wr1,wr2&week=3")
     expect(page.locator(".ss-card")).to_have_count(2)
     page.click('button[aria-label="Remove Sample WR One"]')
-    expect(page.locator(".result-empty")).to_contain_text("one more")
+    expect(page.locator("#ss-result .result-empty")).to_contain_text("one more")
     assert page.evaluate("document.activeElement.id") == "ss-search"
 
 
