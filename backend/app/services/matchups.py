@@ -24,6 +24,7 @@ class Game:
     implied_total: float | None = None
     # Points the team is favored by (negative = underdog).
     favored_by: float | None = None
+    gameday: str | None = None  # ISO date, e.g. "2026-11-15"
 
 
 @dataclass
@@ -85,19 +86,20 @@ def load_matchups(conn: sqlite3.Connection, season: int, scoring: ScoringFormat)
 def _schedule(conn: sqlite3.Connection, season: int) -> dict[str, dict[int, Game]]:
     schedule: dict[str, dict[int, Game]] = defaultdict(dict)
     rows = conn.execute(
-        """SELECT week, away_team, home_team, away_score, home_score, spread_line, total_line
+        """SELECT week, away_team, home_team, away_score, home_score, spread_line, total_line, gameday
            FROM games WHERE season = ? AND game_type = 'REG'""",
         (season,),
     )
-    for week, away, home, away_score, home_score, spread, total in rows:
+    for week, away, home, away_score, home_score, spread, total, gameday in rows:
         played = away_score is not None and home_score is not None
         # nflverse spread_line is positive when the home team is favored.
         home_implied = away_implied = None
         if spread is not None and total is not None:
             home_implied = round((total + spread) / 2, 1)
             away_implied = round((total - spread) / 2, 1)
-        schedule[home][week] = Game(week, away, True, played, home_implied, spread)
-        schedule[away][week] = Game(week, home, False, played, away_implied, -spread if spread is not None else None)
+        schedule[home][week] = Game(week, away, True, played, home_implied, spread, gameday)
+        schedule[away][week] = Game(week, home, False, played, away_implied,
+                                    -spread if spread is not None else None, gameday)
     return dict(schedule)
 
 

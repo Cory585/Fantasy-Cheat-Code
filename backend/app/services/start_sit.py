@@ -19,8 +19,9 @@ injuries as a coin flip) says how often the call is right, so close calls look c
 import math
 import random
 import statistics
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from datetime import date
 
 from app.models.player import Player, Position
 from app.models.start_sit import (
@@ -81,19 +82,25 @@ class StartSitAdvisor:
     weeks: tuple[int, int]  # first and last week with projections
     form_weight: float = 0.3
     simulations: int = SIMULATIONS
+    today: Callable[[], date] = field(default=date.today, repr=False)
 
     # ---------- public ----------
 
     @property
     def current_week(self) -> int:
-        """First week in range with a game still to be played (the first week without a schedule)."""
+        """First week in range with a game still to be played (the first week without a schedule).
+
+        A game with no score whose date has passed was almost certainly played after the data
+        was collected, so it doesn't hold the current week back."""
         first, last = self.weeks
-        if self.matchups.available:
-            for week in range(first, last + 1):
-                games = [w[week] for w in self.matchups.schedule.values() if week in w]
-                if any(not g.played for g in games):
-                    return week
-        return first
+        if not self.matchups.available:
+            return first
+        today = self.today().isoformat()
+        for week in range(first, last + 1):
+            games = [w[week] for w in self.matchups.schedule.values() if week in w]
+            if any(not g.played and (g.gameday is None or g.gameday >= today) for g in games):
+                return week
+        return last
 
     def check_week(self, week: int | None) -> int:
         if week is None:

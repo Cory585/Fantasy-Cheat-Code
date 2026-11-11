@@ -247,3 +247,16 @@ def test_missing_positions_leave_empty_spots_with_a_warning():
 def test_lineup_needs_a_spot():
     with pytest.raises(StartSitError):
         advisor().lineup(roster(), {LineupSlot.QB: 0}, week=WEEK)
+
+
+def test_current_week_skips_unscored_games_whose_date_has_passed():
+    from datetime import date
+
+    schedule = {
+        "AAA": {9: Game(9, "BBB", True, False, gameday="2026-11-09"), 10: Game(10, "CCC", True, False, gameday="2026-11-15")},
+    }
+    data = MatchupData(season=2026, schedule=schedule)
+    on = lambda day: StartSitAdvisor(data, 2026, (9, 17), today=lambda: date.fromisoformat(day)).current_week  # noqa: E731
+    assert on("2026-11-09") == 9  # Monday night game still to come
+    assert on("2026-11-11") == 10  # collected before it finished; the week is over
+    assert on("2027-01-30") == 17  # season over: the last week
