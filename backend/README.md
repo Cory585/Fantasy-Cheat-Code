@@ -231,3 +231,26 @@ and length-capped, and headshots are only accepted from `a.espncdn.com`.
 | `unavailable` | No ESPN data. `code` is `upstream_busy` or `upstream_error`; `retry_after` is in seconds |
 | `not_found` | ESPN has no athlete with this id (`code: espn_player_not_found`) |
 | `not_applicable` | Team defenses and players without an ESPN id |
+
+## Testing
+
+```
+pip install -r requirements-dev.txt
+pytest                      # everything, about 30 seconds
+pytest -m "not e2e"         # skip the browser tests
+pytest -m e2e               # only the browser tests
+pytest --cov=app            # with coverage
+```
+
+| Kind | Files | What it checks |
+|---|---|---|
+| Unit and API | `tests/test_*.py` | Each module and endpoint, including error codes and security headers |
+| Property-based | `tests/test_properties.py` | Invariants for any input (Hypothesis): every draft pick has exactly one owner, plans stay consistent, the rate limiter never exceeds its budget, ESPN parsing survives arbitrary JSON |
+| Concurrency stress | `tests/test_stress.py` | 40 threads × 25 profile requests: the concurrency cap holds, each player is fetched once, nothing hangs; concurrent cache writers; rate-limiter accuracy under contention |
+| Fuzzing | `tests/test_api_fuzz.py` | Random query strings, paths, bodies, methods, and Accept headers: never a 500, errors always `{detail, code}`, security headers always present |
+| End-to-end | `tests/e2e/` | The real pages in a headless browser (Playwright, using an installed Edge or Chrome): controls, keyboard focus, stale and failed loads, countdowns, text-only rendering of player data, no CSP violations or console errors |
+
+The browser tests are hermetic: a local server with fake player and ESPN data, and every
+request to another host is answered locally. They're skipped if Playwright or a browser isn't
+installed. No test contacts ESPN, Sleeper, or nflverse. If a test hangs for more than two
+minutes, pytest prints every thread's stack (`faulthandler_timeout` in `pytest.ini`).

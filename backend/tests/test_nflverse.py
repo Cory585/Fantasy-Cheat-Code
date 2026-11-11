@@ -98,3 +98,8 @@ def test_parse_combine():
     assert gibbs["bench"] is None and gibbs["draft_pick"] == 12
     assert no_id["combine_id"] == "2001:No Id:WR:State"
     assert no_id["height_in"] is None and no_id["forty"] is None
+
+
+def test_non_finite_numbers_are_treated_as_missing():
+    rows = nflverse.parse_players("gsis_id,display_name,height,weight\n00-1,A,inf,nan\n")
+    assert rows[0]["height"] is None and rows[0]["weight"] is None

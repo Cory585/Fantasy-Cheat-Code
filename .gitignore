@@ -8,3 +8,8 @@ venv/
 *.egg-info/
 # Synced player data (regenerate with: python -m app.data.sync)
 backend/data/
+
+# Test tooling
+.hypothesis/
+.coverage
+htmlcov/
