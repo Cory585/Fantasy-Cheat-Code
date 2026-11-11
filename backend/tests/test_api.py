@@ -165,9 +165,33 @@ def test_corrupt_database_falls_back_to_projections_only(tmp_path):
     write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
                 2026, range(10, 18), ScoringFormat.PPR)
     database.write_bytes(b"this is not a sqlite database" * 100)
-    repo, outlooks = ReloadingPlayerData(cache, database).current()
+    data = ReloadingPlayerData(cache, database)
+    repo, outlooks = data.current()
     assert repo.get("x1") is not None
     assert outlooks == {}
+    matchups, meta = data.matchups()
+    assert not matchups.available and meta["weeks"] == [10, 17]
+
+
+def test_start_sit_reads_matchups_and_weeks_from_collected_data(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData, get_start_sit_advisor
+    from app.data import db
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    cache, database = tmp_path / "players.json", tmp_path / "fantasy.db"
+    write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
+                2026, range(10, 18), ScoringFormat.PPR)
+    conn = db.connect(database)
+    db.upsert(conn, "games", [{"game_id": "g", "season": 2026, "game_type": "REG", "week": 11, "gameday": None,
+                               "gametime": None, "away_team": "KC", "home_team": "DEN", "away_score": None,
+                               "home_score": None, "spread_line": -2.5, "total_line": 44.5, "roof": None,
+                               "surface": None, "temp": None, "wind": None, "div_game": None, "espn_id": None}])
+    conn.close()
+    advisor = get_start_sit_advisor(ReloadingPlayerData(cache, database).matchups())
+    assert advisor.weeks == (10, 17) and advisor.season == 2026
+    assert advisor.matchups.game("KC", 11).implied_total == 23.5
 
 
 def test_cache_with_invalid_player_keeps_serving(tmp_path):

@@ -24,7 +24,9 @@ from app.data.sources.http import RateLimitedClient
 from app.services.draft import DraftPlanner
 from app.services.player_profile import LocalPlayerData
 from app.services.profiles import ProfileService
+from app.services.matchups import MatchupData, load_matchups
 from app.services.outlook import OutlookBuilder
+from app.services.start_sit import StartSitAdvisor
 from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
 
@@ -50,6 +52,8 @@ class ReloadingPlayerData:
         self._repo: PlayerRepository | None = None
         self._outlooks: dict[str, PlayerOutlook] = {}
         self._adp: dict[int, float] = {}
+        self._matchups = MatchupData()
+        self._meta: dict = {}
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
         with self._lock:
@@ -60,6 +64,12 @@ class ReloadingPlayerData:
         with self._lock:
             self._refresh()
             return self._adp
+
+    def matchups(self) -> tuple[MatchupData, dict]:
+        """Weekly matchup data and the player cache's metadata (season, weeks, scoring)."""
+        with self._lock:
+            self._refresh()
+            return self._matchups, self._meta
 
     def _refresh(self) -> None:
         versions = (_mtime(self._cache_path), _mtime(*self._db_paths))
@@ -78,12 +88,39 @@ class ReloadingPlayerData:
         if players is None:
             log.warning("No player cache at %s; using sample data. Run `python -m app.data.sync`.", self._cache_path)
             self._repo, self._outlooks = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
+            self._matchups, self._meta = MatchupData(), {}
         else:
             self._repo = InMemoryPlayerRepository(players)
             self._outlooks = self._build_outlooks(players)
+            self._meta = self._load_meta()
+            self._matchups = self._load_matchups()
             log.info("Loaded %d players (%d with schedule/form outlooks)", len(players), len(self._outlooks))
         self._adp = self._load_adp()
         self._versions = versions
+
+    def _load_meta(self) -> dict:
+        try:
+            return load_cache_metadata(self._cache_path)
+        except (OSError, ValueError) as error:
+            log.error("Couldn't read cache metadata from %s: %s", self._cache_path, error)
+            return {}
+
+    def _load_matchups(self) -> MatchupData:
+        if not self._db_paths or not self._db_paths[0].exists() or "season" not in self._meta:
+            return MatchupData()
+        try:
+            conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
+            try:
+                return load_matchups(
+                    conn,
+                    season=int(self._meta["season"]),
+                    scoring=ScoringFormat(self._meta.get("scoring", settings.default_scoring)),
+                )
+            finally:
+                conn.close()
+        except (sqlite3.Error, KeyError, ValueError) as error:
+            log.error("Couldn't load matchups from %s: %s", self._db_paths[0], error)
+            return MatchupData()
 
     def _load_adp(self) -> dict[int, float]:
         if not self._db_paths or not self._db_paths[0].exists():
@@ -137,6 +174,25 @@ def get_outlooks() -> dict[str, PlayerOutlook]:
 def get_adp() -> dict[int, float]:
     """Latest ESPN average draft position by ESPN id (empty without a collected database)."""
     return _data.adp()
+
+
+def get_matchups() -> tuple[MatchupData, dict]:
+    """Weekly matchup data (empty without a collected database) and the player cache metadata."""
+    return _data.matchups()
+
+
+# Weeks used when there's no synced cache to say which weeks it covers (sample data).
+DEFAULT_WEEKS = (1, 17)
+
+
+def get_start_sit_advisor(data: tuple[MatchupData, dict] = Depends(get_matchups)) -> StartSitAdvisor:
+    matchups, meta = data
+    weeks = meta.get("weeks") or DEFAULT_WEEKS
+    try:
+        first, last = int(weeks[0]), int(weeks[1])
+    except (TypeError, ValueError, IndexError):
+        first, last = DEFAULT_WEEKS
+    return StartSitAdvisor(matchups, meta.get("season"), (first, last), form_weight=settings.form_weight)
 
 
 def get_draft_planner(
