@@ -87,6 +87,10 @@ class KickerFeatureBuilder(DefenseFeatureBuilder):
                 if stats is not None:
                     self.lines_against.setdefault((g["season"], team), {})[g["week"]] = stats
 
+    def dst_rows(self, seasons: list[int], include_unplayed: bool = False) -> list[FeatureRow]:
+        """The DST model's rows, from the same loaded data (one load serves both models)."""
+        return super().rows(seasons, include_unplayed)
+
     def rows(self, seasons: list[int], include_unplayed: bool = False) -> list[FeatureRow]:
         out = []
         for g in self.games:

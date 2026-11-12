@@ -12,6 +12,10 @@ For each player and week:
 4. **Range.** The spread of outcomes is the player's own week-to-week spread this season,
    shrunk toward a typical spread for the position (POSITION_CV) when there are few games.
 
+Kickers and defenses use their matchup models instead of step 2 when the models are trained
+(`app/services/special_teams.py`): the model's prediction for the team's game, capped at
++/-MODEL_CAP of the provider projection, blended in at `model_weight`.
+
 Players are ranked by expected points, and a seeded simulation of the week (normal outcomes,
 injuries as a coin flip) says how often the call is right, so close calls look close.
 """
@@ -45,6 +49,7 @@ FORM_GAMES = 4
 MIN_FORM_GAMES = 3
 FORM_WINDOW_WEEKS = 6
 FORM_CAP = 0.25
+MODEL_CAP = 0.5  # a kicker/DST model estimate is limited to the provider projection +/- 50%
 # Chance a player plays this week, by injury designation.
 PLAY_PROBABILITY = {"Q": 0.85, "D": 0.3, "O": 0.0, "IR": 0.0}
 # Typical week-to-week standard deviation as a share of projection, by position.
@@ -81,6 +86,7 @@ class StartSitAdvisor:
     season: int | None
     weeks: tuple[int, int]  # first and last week with projections
     form_weight: float = 0.3
+    model_weight: float = 0.5
     simulations: int = SIMULATIONS
     today: Callable[[], date] = field(default=date.today, repr=False)
 
@@ -124,7 +130,7 @@ class StartSitAdvisor:
                               floor=0, ceiling=0, play_probability=0, reasons=reasons)
 
         matchup = self._matchup(player, game, week) if game else None
-        history = self.matchups.player_history(player.espn_id)
+        history = self.matchups.history_for(player)
 
         if game and game.played:
             actual = history.get(week)
@@ -154,7 +160,12 @@ class StartSitAdvisor:
         ppg, n_games = (statistics.fmean(recent), len(recent)) if recent else (None, 0)
         if_active = base
         injury = player.injury_status
-        if (
+        estimate = self.matchups.model_estimate(player, week)
+        if estimate is not None and base > 0 and injury not in ("O", "IR"):
+            capped = min(max(estimate.points, (1 - MODEL_CAP) * base), (1 + MODEL_CAP) * base)
+            if_active = (1 - self.model_weight) * base + self.model_weight * capped
+            reasons.append(_model_reason(player, estimate))
+        elif (
             ppg is not None and n_games >= MIN_FORM_GAMES and base > 0
             and player.position != Position.DST and injury not in ("O", "IR")
         ):
@@ -399,6 +410,20 @@ def _matchup_reasons(player: Player, m: Matchup) -> list[Reason]:
                               text=f"Vegas expects {player.team} to score {m.implied_total:.1f} "
                                    f"({_ordinal(m.implied_rank)} most this week)."))
     return reasons
+
+
+def _model_reason(player: Player, estimate) -> Reason:
+    what = "defense" if player.position == Position.DST else "kicker"
+    text = f"Matchup model: {estimate.points:.1f} points for the {player.team} {what}."
+    helps = [f"{label} ({value:+.1f})" for label, value in estimate.factors if value > 0]
+    hurts = [f"{label} ({value:+.1f})" for label, value in estimate.factors if value < 0]
+    if helps:
+        text += f" Helps: {', '.join(helps)}."
+    if hurts:
+        text += f" Hurts: {', '.join(hurts)}."
+    net = sum(value for _, value in estimate.factors)
+    effect = Effect.PLUS if net >= 0.5 else Effect.MINUS if net <= -0.5 else Effect.NEUTRAL
+    return Reason(kind="model", text=text, effect=effect)
 
 
 def _confidence(probability: float) -> Confidence:

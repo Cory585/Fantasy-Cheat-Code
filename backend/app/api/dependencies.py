@@ -44,8 +44,10 @@ class ReloadingPlayerData:
     database. Both reload when their files change, so a fresh `app.data.sync` or
     `app.data.collect` shows up without restarting the server."""
 
-    def __init__(self, cache_path: Path, database_path: Path | None = None):
+    def __init__(self, cache_path: Path, database_path: Path | None = None,
+                 model_paths: tuple[Path, Path] | None = None):
         self._cache_path = cache_path
+        self._model_paths = model_paths or (None, None)
         self._db_paths = (database_path, database_path.with_name(database_path.name + "-wal")) if database_path else ()
         self._lock = threading.Lock()
         self._versions: tuple | None = None
@@ -72,7 +74,8 @@ class ReloadingPlayerData:
             return self._matchups, self._meta
 
     def _refresh(self) -> None:
-        versions = (_mtime(self._cache_path), _mtime(*self._db_paths))
+        versions = (_mtime(self._cache_path), _mtime(*self._db_paths),
+                    tuple(_mtime(p) for p in self._model_paths if p is not None))
         if self._repo is None or versions != self._versions:
             self._reload(versions)
 
@@ -115,6 +118,8 @@ class ReloadingPlayerData:
                     conn,
                     season=int(self._meta["season"]),
                     scoring=ScoringFormat(self._meta.get("scoring", settings.default_scoring)),
+                    dst_model_path=self._model_paths[0],
+                    kicker_model_path=self._model_paths[1],
                 )
             finally:
                 conn.close()
@@ -158,7 +163,8 @@ class ReloadingPlayerData:
             return {}
 
 
-_data = ReloadingPlayerData(settings.player_cache_path, settings.database_path)
+_data = ReloadingPlayerData(settings.player_cache_path, settings.database_path,
+                            (settings.dst_model_path, settings.kicker_model_path))
 
 
 def get_player_repository() -> PlayerRepository:
@@ -192,7 +198,8 @@ def get_start_sit_advisor(data: tuple[MatchupData, dict] = Depends(get_matchups)
         first, last = int(weeks[0]), int(weeks[1])
     except (TypeError, ValueError, IndexError):
         first, last = DEFAULT_WEEKS
-    return StartSitAdvisor(matchups, meta.get("season"), (first, last), form_weight=settings.form_weight)
+    return StartSitAdvisor(matchups, meta.get("season"), (first, last), form_weight=settings.form_weight,
+                           model_weight=settings.model_weight)
 
 
 def get_draft_planner(

@@ -142,8 +142,11 @@ def expected_pa_score(implied: float, sd: float = TEAM_SCORE_SD) -> float:
 
 
 class DefenseFeatureBuilder:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, first_season: int | None = None):
+        """`first_season` skips loading older seasons (a season's features need only it and
+        the season before), so building one season's rows for the API is quick."""
         self.conn = conn
+        self.first_season = first_season or 0
         self._load()
 
     # ---------- loading ----------
@@ -156,7 +159,8 @@ class DefenseFeatureBuilder:
             for row in c.execute(
                 """SELECT game_id, season, week, away_team, home_team, away_score, home_score, spread_line,
                           total_line, roof, temp, wind, espn_id, away_coach, home_coach, gameday
-                   FROM games WHERE game_type = 'REG' ORDER BY season, week""")]
+                   FROM games WHERE game_type = 'REG' AND season >= ? ORDER BY season, week""",
+                (self.first_season,))]
 
         # Points scored/allowed per team-game.
         self.scored = defaultdict(dict)  # (season, team) -> week -> points scored
@@ -182,7 +186,8 @@ class DefenseFeatureBuilder:
         self.offense_against = defaultdict(dict)  # (season, defense) -> week -> the opposing offense's row
         for row in c.execute(
             """SELECT season, week, team, opponent, plays, dropbacks, sacks, interceptions, fumbles_lost,
-                      dropback_epa, pass_oe_sum, pass_oe_n FROM team_game_offense WHERE season_type = 'REG'"""):
+                      dropback_epa, pass_oe_sum, pass_oe_n FROM team_game_offense
+               WHERE season_type = 'REG' AND season >= ?""", (self.first_season,)):
             season, week, team, opponent, *values = row
             offense = dict(zip(("plays", "dropbacks", "sacks", "ints", "fumbles", "epa", "oe_sum", "oe_n"),
                                (v or 0 for v in values)))
@@ -193,7 +198,8 @@ class DefenseFeatureBuilder:
         # Defense stat lines.
         self.defense = defaultdict(dict)  # (season, team) -> week -> stats dict
         for season, week, team, stats in c.execute(
-                "SELECT season, week, team, stats FROM team_week_stats WHERE season_type = 'REG'"):
+                "SELECT season, week, team, stats FROM team_week_stats WHERE season_type = 'REG' AND season >= ?",
+                (self.first_season,)):
             self.defense[(season, team)][week] = json.loads(stats)
 
         # QBs and receivers per game.
@@ -202,7 +208,8 @@ class DefenseFeatureBuilder:
         self.names = {}
         for gsis, season, week, team, position, name, stats in c.execute(
             """SELECT gsis_id, season, week, team, position, name, stats FROM player_week_stats
-               WHERE season_type = 'REG' AND position IN ('QB', 'WR', 'TE')"""):
+               WHERE season_type = 'REG' AND position IN ('QB', 'WR', 'TE') AND season >= ?""",
+            (self.first_season,)):
             s = json.loads(stats)
             self.names[gsis] = name
             if position == "QB":
@@ -216,7 +223,8 @@ class DefenseFeatureBuilder:
         # Injury reports: (season, week, team) -> gsis -> (position, status)
         self.injuries = defaultdict(dict)
         for season, week, team, gsis, position, status in c.execute(
-                "SELECT season, week, team, gsis_id, position, report_status FROM injuries WHERE season_type = 'REG'"):
+                "SELECT season, week, team, gsis_id, position, report_status FROM injuries "
+                "WHERE season_type = 'REG' AND season >= ?", (self.first_season,)):
             if status:
                 self.injuries[(season, week, team)][gsis] = (position, status)
 
