@@ -1,6 +1,7 @@
 """Start/sit request and response models."""
 
 from enum import Enum
+from typing import Annotated
 
 from pydantic import BaseModel, Field
 
@@ -108,4 +109,49 @@ class StartSitAnalysis(BaseModel):
     starts: int
     players: list[PlayerWeek] = Field(description="Best to worst by expected points")
     recommendation: Recommendation
+    warnings: list[str] = Field(default_factory=list)
+
+
+# ---------- Lineups (a whole roster) ----------
+
+MAX_ROSTER = 40
+MAX_SLOT_COUNT = 5
+DEFAULT_LINEUP = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "K": 1, "DST": 1}
+
+
+class LineupRequest(BaseModel):
+    roster_ids: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")]] = Field(
+        min_length=1, max_length=MAX_ROSTER
+    )
+    slots: dict[LineupSlot, Annotated[int, Field(ge=0, le=MAX_SLOT_COUNT)]] = Field(
+        default_factory=lambda: {LineupSlot(k): v for k, v in DEFAULT_LINEUP.items()},
+        description="Starting lineup, e.g. {\"QB\": 1, \"RB\": 2, \"WR\": 2, \"TE\": 1, \"FLEX\": 1}",
+    )
+    week: int | None = Field(default=None, ge=1, le=18)
+
+
+class LineupSpot(BaseModel):
+    slot: LineupSlot
+    starter: PlayerWeek | None = Field(description="None when the roster has nobody left who fits")
+    alternative: PlayerWeek | None = Field(
+        default=None, description="The best benched player who could fill this spot"
+    )
+    probability: float | None = Field(
+        default=None, description="How often the starter outscores the alternative in simulated weeks"
+    )
+    confidence: Confidence | None = None
+
+
+class LineupAnalysis(BaseModel):
+    season: int | None
+    week: int
+    lineup: list[LineupSpot]
+    bench: list[PlayerWeek] = Field(description="Best to worst by expected points")
+    projected_total: float
+    close_calls: list[int] = Field(
+        default_factory=list, description="Indexes into `lineup` of the closest calls, closest first"
+    )
+    missing_ids: list[str] = Field(
+        default_factory=list, description="Roster ids that aren't in the player pool (skipped)"
+    )
     warnings: list[str] = Field(default_factory=list)

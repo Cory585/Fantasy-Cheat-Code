@@ -19,8 +19,9 @@ injuries as a coin flip) says how often the call is right, so close calls look c
 import math
 import random
 import statistics
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from datetime import date
 
 from app.models.player import Player, Position
 from app.models.start_sit import (
@@ -28,7 +29,9 @@ from app.models.start_sit import (
     Confidence,
     Effect,
     GameStatus,
+    LineupAnalysis,
     LineupSlot,
+    LineupSpot,
     Matchup,
     PlayerWeek,
     Reason,
@@ -56,6 +59,12 @@ Z_10 = 1.2816  # 10th/90th percentile of a normal distribution
 CONFIDENT_AT = 0.7
 LEAN_AT = 0.58
 SIMULATIONS = 4000
+MAX_CLOSE_CALLS = 3
+# Lineup spots are filled narrowest first (see StartSitAdvisor.lineup) and shown in the usual order.
+FILL_ORDER = (LineupSlot.QB, LineupSlot.RB, LineupSlot.WR, LineupSlot.TE, LineupSlot.K, LineupSlot.DST,
+              LineupSlot.FLEX, LineupSlot.SUPERFLEX)
+DISPLAY_ORDER = (LineupSlot.QB, LineupSlot.RB, LineupSlot.WR, LineupSlot.TE, LineupSlot.FLEX,
+                 LineupSlot.SUPERFLEX, LineupSlot.K, LineupSlot.DST)
 
 
 class StartSitError(ValueError):
@@ -73,19 +82,25 @@ class StartSitAdvisor:
     weeks: tuple[int, int]  # first and last week with projections
     form_weight: float = 0.3
     simulations: int = SIMULATIONS
+    today: Callable[[], date] = field(default=date.today, repr=False)
 
     # ---------- public ----------
 
     @property
     def current_week(self) -> int:
-        """First week in range with a game still to be played (the first week without a schedule)."""
+        """First week in range with a game still to be played (the first week without a schedule).
+
+        A game with no score whose date has passed was almost certainly played after the data
+        was collected, so it doesn't hold the current week back."""
         first, last = self.weeks
-        if self.matchups.available:
-            for week in range(first, last + 1):
-                games = [w[week] for w in self.matchups.schedule.values() if week in w]
-                if any(not g.played for g in games):
-                    return week
-        return first
+        if not self.matchups.available:
+            return first
+        today = self.today().isoformat()
+        for week in range(first, last + 1):
+            games = [w[week] for w in self.matchups.schedule.values() if week in w]
+            if any(not g.played and (g.gameday is None or g.gameday >= today) for g in games):
+                return week
+        return last
 
     def check_week(self, week: int | None) -> int:
         if week is None:
@@ -205,6 +220,65 @@ class StartSitAdvisor:
         return StartSitAnalysis(
             season=self.season, week=week, slot=slot, starts=starts, players=evaluated,
             recommendation=recommendation, warnings=self._warnings(evaluated),
+        )
+
+    def lineup(self, roster: Sequence[Player], slots: dict[LineupSlot, int], week: int | None = None) -> LineupAnalysis:
+        """The best starting lineup from a roster for one week.
+
+        Spots are filled from the most restrictive to the least (position spots, then FLEX,
+        then SUPERFLEX), each with the best player left who fits by expected points. Because
+        each wider spot accepts everything a narrower one does, this is optimal. Each spot
+        also names the best benched player who could take it, and how often the starter
+        outscores them.
+        """
+        week = self.check_week(week)
+        if sum(slots.values()) == 0:
+            raise StartSitError("invalid_lineup", "The lineup needs at least one spot.")
+        unique = list({p.id: p for p in roster}.values())
+        available = sorted((self.evaluate(p, week) for p in unique), key=_rank_key, reverse=True)
+
+        filled: dict[LineupSlot, list[PlayerWeek | None]] = {}
+        for slot in FILL_ORDER:
+            picks: list[PlayerWeek | None] = []
+            for _ in range(slots.get(slot, 0)):
+                pick = next((pw for pw in available if pw.player.position in SLOT_POSITIONS[slot]), None)
+                if pick is not None:
+                    available.remove(pick)
+                    pick.recommended = True
+                picks.append(pick)
+            filled[slot] = picks
+
+        bench = available
+        spots: list[LineupSpot] = []
+        warnings: list[str] = [] if self.matchups.available else [
+            "No matchup data yet (run `python -m app.data.collect`): using projections only."
+        ]
+        for slot in DISPLAY_ORDER:
+            for starter in filled.get(slot, []):
+                spot = LineupSpot(slot=slot, starter=starter)
+                if starter is None:
+                    warnings.append(f"No one on the roster can fill the {slot.value} spot.")
+                else:
+                    alt = next((pw for pw in bench if pw.player.position in SLOT_POSITIONS[slot]), None)
+                    if alt is not None:
+                        _, prob = self._simulate([starter, alt], 1, seed=f"{week}:{starter.player.id}:{alt.player.id}")
+                        spot.alternative, spot.probability = alt, round(prob, 3)
+                        spot.confidence = _confidence(prob)
+                    if starter.status == GameStatus.BYE or (
+                        starter.status == GameStatus.UPCOMING and starter.play_probability == 0
+                    ):
+                        why = "is on bye" if starter.status == GameStatus.BYE else "isn't expected to play"
+                        warnings.append(f"{starter.player.name} {why}, and nobody else fits the {slot.value} spot.")
+                spots.append(spot)
+
+        close = sorted(
+            (i for i, s in enumerate(spots) if s.probability is not None and s.probability < CONFIDENT_AT),
+            key=lambda i: spots[i].probability,
+        )
+        return LineupAnalysis(
+            season=self.season, week=week, lineup=spots, bench=bench,
+            projected_total=round(sum(s.starter.projection for s in spots if s.starter), 1),
+            close_calls=close[:MAX_CLOSE_CALLS], warnings=warnings,
         )
 
     # ---------- internals ----------

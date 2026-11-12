@@ -188,6 +188,26 @@ schedule (or the player's `bye_week` without one); games already final show the 
 Errors: `422 invalid_start_sit` (players can't share the spot, duplicates, too many starts),
 `422 invalid_week`, `404 player_not_found`.
 
+### Your team and lineup
+
+The **My team** page (`/team/`) saves a roster (up to 40 players) and your league's lineup spots
+in the browser's `localStorage` (key `fcc.team.v1`). There are no accounts: the team stays on that
+device, and nothing is stored on the server. The start/sit page's **My lineup** mode sends the
+roster and spots to `POST /start-sit/lineup`:
+
+```json
+{"roster_ids": ["4984", "6794", "9221"], "slots": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "K": 1, "DST": 1}, "week": 11}
+```
+
+`slots` takes the same spots as `/start-sit` (0 to 5 of each). Spots are filled narrowest first
+(position spots, then FLEX, then SUPERFLEX), each with the player left who has the most expected
+points and fits; because each wider spot accepts everything a narrower one does, this gives the
+best total (`tests/test_properties.py` checks it against brute force). Each spot names the best
+benched `alternative` and how often the starter outscores them (`probability`, `confidence`);
+`close_calls` lists the closest spots. Roster ids no longer in the player pool are skipped and
+returned in `missing_ids`, so a saved team keeps working. Errors: `422 invalid_lineup` (no spots),
+`422 invalid_week`, `404 player_not_found` (none of the roster is in the pool).
+
 ## Errors, limits, and security
 
 **Errors.** Every error response is JSON shaped as `{"detail": "...", "code": "..."}`.
@@ -200,7 +220,7 @@ stable for clients to branch on:
 | 404 | `not_found`, `player_not_found` |
 | 405 | `method_not_allowed` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
-| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_start_sit`, `invalid_week` |
+| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
 | 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
 | 500 | `internal_error` (details are logged on the server, never returned) |
 | 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `upstream_timeout` |

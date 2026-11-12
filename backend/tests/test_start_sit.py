@@ -179,3 +179,84 @@ def test_load_matchups_from_database(tmp_path):
     assert data.game("AAA", 9).played
     assert data.history == {"g1": {9: 14.0}}
     assert data.implied_rank("AAA", 10) == (1, 2)
+
+
+# ---------- Lineups ----------
+
+from app.models.start_sit import DEFAULT_LINEUP  # noqa: E402
+
+SLOTS = {LineupSlot(k): v for k, v in DEFAULT_LINEUP.items()}
+
+
+def roster():
+    return [
+        player("qb1", Position.QB, week_points=22.0), player("qb2", Position.QB, week_points=18.0),
+        player("rb1", Position.RB, week_points=16.0), player("rb2", Position.RB, week_points=12.0),
+        player("rb3", Position.RB, week_points=11.5),
+        player("wr1", week_points=17.0), player("wr2", week_points=13.0), player("wr3", week_points=9.0),
+        player("te1", Position.TE, week_points=10.0), player("te2", Position.TE, week_points=4.0),
+        player("k1", Position.K, week_points=8.0), player("dst1", Position.DST, week_points=7.0),
+    ]
+
+
+def starters(analysis):
+    return [(s.slot.value, s.starter.player.id if s.starter else None) for s in analysis.lineup]
+
+
+def test_best_lineup_fills_narrow_spots_first():
+    result = advisor().lineup(roster(), SLOTS, week=WEEK)
+    assert starters(result) == [("QB", "qb1"), ("RB", "rb1"), ("RB", "rb2"), ("WR", "wr1"), ("WR", "wr2"),
+                                ("TE", "te1"), ("FLEX", "rb3"), ("K", "k1"), ("DST", "dst1")]
+    assert [pw.player.id for pw in result.bench] == ["qb2", "wr3", "te2"]
+    assert result.projected_total == pytest.approx(sum(s.starter.projection for s in result.lineup))
+    assert all(s.starter.recommended for s in result.lineup)
+    assert not any(pw.recommended for pw in result.bench)
+
+
+def test_each_spot_names_the_best_alternative_and_close_calls():
+    result = advisor().lineup(roster(), SLOTS, week=WEEK)
+    flex = next(s for s in result.lineup if s.slot == LineupSlot.FLEX)
+    assert flex.alternative.player.id == "wr3"
+    qb = result.lineup[0]
+    assert qb.alternative.player.id == "qb2" and 0.5 < qb.probability < 1
+    kicker = next(s for s in result.lineup if s.slot == LineupSlot.K)
+    assert kicker.alternative is None and kicker.probability is None
+    assert result.close_calls == sorted(result.close_calls, key=lambda i: result.lineup[i].probability)
+    assert all(result.lineup[i].probability < 0.7 for i in result.close_calls)
+
+
+def test_superflex_takes_the_second_quarterback():
+    slots = {**SLOTS, LineupSlot.SUPERFLEX: 1}
+    result = advisor().lineup(roster(), slots, week=WEEK)
+    assert ("SUPERFLEX", "qb2") in starters(result)
+
+
+def test_bye_week_starter_is_replaced():
+    team = roster()
+    team[0] = player("qb1", Position.QB, week_points=22.0, team="BYE")
+    result = advisor().lineup(team, SLOTS, week=WEEK)
+    assert result.lineup[0].starter.player.id == "qb2"
+
+
+def test_missing_positions_leave_empty_spots_with_a_warning():
+    result = advisor().lineup([player("wr1", week_points=10.0)], SLOTS, week=WEEK)
+    assert ("WR", "wr1") in starters(result) and ("QB", None) in starters(result)
+    assert any("QB spot" in w for w in result.warnings)
+
+
+def test_lineup_needs_a_spot():
+    with pytest.raises(StartSitError):
+        advisor().lineup(roster(), {LineupSlot.QB: 0}, week=WEEK)
+
+
+def test_current_week_skips_unscored_games_whose_date_has_passed():
+    from datetime import date
+
+    schedule = {
+        "AAA": {9: Game(9, "BBB", True, False, gameday="2026-11-09"), 10: Game(10, "CCC", True, False, gameday="2026-11-15")},
+    }
+    data = MatchupData(season=2026, schedule=schedule)
+    on = lambda day: StartSitAdvisor(data, 2026, (9, 17), today=lambda: date.fromisoformat(day)).current_week  # noqa: E731
+    assert on("2026-11-09") == 9  # Monday night game still to come
+    assert on("2026-11-11") == 10  # collected before it finished; the week is over
+    assert on("2027-01-30") == 17  # season over: the last week

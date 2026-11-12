@@ -1,12 +1,19 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from app.api.dependencies import get_player_repository, get_start_sit_advisor
 from app.api.errors import ApiError
 from app.api.players import PLAYER_ID_PATTERN
 from app.data.repository import PlayerRepository
-from app.models.start_sit import MAX_COMPARE, MIN_COMPARE, LineupSlot, StartSitAnalysis
+from app.models.start_sit import (
+    MAX_COMPARE,
+    MIN_COMPARE,
+    LineupAnalysis,
+    LineupRequest,
+    LineupSlot,
+    StartSitAnalysis,
+)
 from app.services.start_sit import StartSitAdvisor, StartSitError
 
 router = APIRouter(prefix="/start-sit", tags=["start-sit"])
@@ -38,3 +45,34 @@ def start_sit(
         return advisor.compare(players, week=week, slot=slot, starts=starts)
     except StartSitError as error:
         raise ApiError(422, error.code, str(error)) from None
+
+
+@router.post("/lineup", response_model=LineupAnalysis)
+def best_lineup(
+    request: LineupRequest = Body(...),
+    repo: PlayerRepository = Depends(get_player_repository),
+    advisor: StartSitAdvisor = Depends(get_start_sit_advisor),
+) -> LineupAnalysis:
+    """The best starting lineup from your roster for a week, with the closest calls.
+
+    Roster ids that aren't in the player pool (released players, say) are skipped and listed
+    in `missing_ids`, so a saved team keeps working as the pool changes.
+    """
+    roster, missing = [], []
+    for player_id in dict.fromkeys(request.roster_ids):
+        found = repo.get(player_id)
+        (roster if found else missing).append(found or player_id)
+    if not roster:
+        raise ApiError(404, "player_not_found", "None of the roster's players are in the player pool.")
+    try:
+        analysis = advisor.lineup(roster, request.slots, week=request.week)
+    except StartSitError as error:
+        raise ApiError(422, error.code, str(error)) from None
+    if missing:
+        analysis.missing_ids = missing
+        count = len(missing)
+        analysis.warnings.append(
+            f"{count} saved player{' is' if count == 1 else 's are'} no longer in the player pool and "
+            f"{'was' if count == 1 else 'were'} skipped."
+        )
+    return analysis
