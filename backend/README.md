@@ -45,6 +45,9 @@ Sleeper or ESPN directly; they only read the cache.
 | `PLAYER_CACHE_PATH` | `backend/data/players.json` |
 | `DATABASE_PATH` | `backend/data/fantasy.db` |
 | `REQUEST_INTERVAL_SECONDS` | `1.0` |
+| `DST_MODEL_PATH` | `backend/data/defense_model.json` |
+| `KICKER_MODEL_PATH` | `backend/data/kicker_model.json` |
+| `MODEL_WEIGHT` | `0.5` (share of a K/DST weekly projection from its matchup model) |
 
 ## Player and team database
 
@@ -54,7 +57,7 @@ the full schedule history). A full run is 9 requests and takes about 10 seconds.
 
 ```
 python -m app.data.collect                                   # everything, current season
-python -m app.data.collect --seasons 2022-2026               # history (used to train the defense model)
+python -m app.data.collect --seasons 2022-2026               # history (used to train the K and DST models)
 python -m app.data.collect --datasets player_week_stats,injuries
 ```
 
@@ -173,7 +176,9 @@ How each player's week is scored (`app/services/start_sit.py`):
    use rest-of-season points per remaining game instead.
 2. **Recent form against this opponent** (needs `app.data.collect`). Points per game over the
    last 4 games (within 6 weeks) times how much this opponent allows to the position, capped at
-   ±25% of the projection and blended in at `FORM_WEIGHT`, as in trade values.
+   ±25% of the projection and blended in at `FORM_WEIGHT`, as in trade values. Kickers and
+   defenses use their [matchup models](#kicker-and-defense-models) instead when they're trained:
+   the model's prediction, capped at ±50% of the projection, blended in at `MODEL_WEIGHT`.
 3. **Injury risk.** Expected points are scaled by the chance of playing: Questionable 85%,
    Doubtful 30%, Out and IR 0%. Floor and ceiling describe the week if the player plays.
 4. **Range.** Floor and ceiling are roughly the 10th and 90th percentile: the player's own
@@ -185,10 +190,51 @@ How each player's week is scored (`app/services/start_sit.py`):
    Each player's `start_probability` is how often they were among the top `starts` scorers.
 
 Each player also gets `reasons` (projection, matchup rank, Vegas implied team total, form,
-injury, bye), each marked `plus`, `minus`, or `neutral`. Byes are found from the collected
-schedule (or the player's `bye_week` without one); games already final show the actual score.
+matchup model, injury, bye), each marked `plus`, `minus`, or `neutral`. Byes are found from the
+collected schedule (or the player's `bye_week` without one); games already final show the actual
+score (for defenses, scored from the team's stat line).
 Errors: `422 invalid_start_sit` (players can't share the spot, duplicates, too many starts),
 `422 invalid_week`, `404 player_not_found`.
+
+### Kicker and defense models
+
+Kicker and DST scoring depends on the game more than the player, so each has a matchup model:
+a ridge regression on pre-game features (only what was known before kickoff), trained on
+every game since 2023 (`--seasons 2022-2026`; 2022 is the prior for 2023). Train them after
+collecting, and again whenever you want them to learn from new weeks:
+
+```
+python -m app.defense.train      # -> data/defense_model.json
+python -m app.kicker.train       # -> data/kicker_model.json
+```
+
+Each feature is blended with last season's value early in the year. Every feature has an
+expected direction (more wind hurts kickers, a QB who takes sacks helps defenses); when
+correlated features push one the wrong way, it's dropped and the rest refit, so each
+explanation in `reasons` points the sensible way. The API reloads the models when the files
+change. Without them, kickers and defenses use the plain matchup factor above.
+
+| Model | Features (`app/defense/features.py`, `app/kicker/features.py`) |
+|---|---|
+| DST | Opponent Vegas total and expected points-allowed score; opponent sack, turnover, and pass rates, pace, and efficiency; the expected opposing QB's passer rating, sack rate, and interception rate (with injuries); opponent receiver injuries; the defense's sacks, sack rate, QB hits, passes defended, takeaways, and pass defense EPA; expected sacks and takeaways (both sides of the matchup combined); defenders out; spread; rest; home; wind; cold |
+| Kicker | Team Vegas total and scoring; FG and PAT attempts per game; how often drives stall into FGs; pace and passing efficiency; FG accuracy (shrunk toward 85%); share of 50+ yard attempts; kicker points and FG tries the opponent allows; expected kicker points; dome, wind, cold, altitude, home |
+
+Each training run prints out-of-sample backtests: fit on earlier seasons, score on the next.
+Mean absolute error per game (lower is better) and average weekly rank correlation (how well it
+orders teams, higher is better), as of week 9 of 2026:
+
+| Test season | DST model | DST, Vegas only | Kicker model | Kicker, before (PPG × matchup) | Kicker, Vegas only |
+|---|---|---|---|---|---|
+| 2024 | 4.00 / 0.35 | 4.04 / 0.33 | 3.78 / 0.23 | 4.08 / 0.11 | 3.82 / 0.20 |
+| 2025 | 4.07 / 0.33 | 4.12 / 0.34 | 3.75 / 0.20 | 3.91 / 0.17 | 3.80 / 0.11 |
+| 2026 (weeks 1-9) | 3.78 / 0.31 | 3.82 / 0.30 | 3.79 / 0.08 | 4.04 / 0.11 | 3.79 / 0.04 |
+
+Both are mostly noise week to week (R² around 0.1 for DST and under 0.05 for kickers), so the
+gains are modest. The newer DST features (QB-specific rates, pass rush, coverage, spread,
+rest, and the matchup combinations) changed DST error by less than 0.02 points per game. The
+kicker model cuts error by 4-7% against the points-per-game estimate start/sit used before.
+`MODEL_WEIGHT` isn't tuned: provider projections for past weeks aren't stored, so the blend
+with them can't be backtested yet.
 
 ### Your team and lineup
 

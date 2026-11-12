@@ -18,18 +18,21 @@ flowchart LR
     subgraph sources["External data (public, no auth)"]
         sleeper["Sleeper<br/>players, projections"]
         espn["ESPN<br/>projections, byes, ADP, teams"]
-        nflverse["nflverse<br/>stats, schedules, injuries, snaps, combine"]
+        nflverse["nflverse<br/>stats, schedules, injuries, snaps,<br/>play-by-play, combine"]
+        meteo["Open-Meteo<br/>game-time forecasts"]
         espnAth["ESPN athlete API<br/>bios, career stats"]
     end
 
     subgraph jobs["Offline jobs (run by hand or on a schedule)"]
         sync["python -m app.data.sync"]
         collect["python -m app.data.collect"]
+        train["python -m app.defense.train<br/>python -m app.kicker.train"]
     end
 
     subgraph store["Local data (backend/data/, gitignored)"]
         cache[("players.json<br/>player pool + projections")]
-        db[("fantasy.db<br/>SQLite stats + market")]
+        db[("fantasy.db<br/>SQLite stats, market, weather")]
+        models[("defense_model.json<br/>kicker_model.json")]
         profiles[("profiles.db<br/>ESPN profile cache")]
     end
 
@@ -37,7 +40,7 @@ flowchart LR
         mw["Middleware<br/>rate limit, body size, security headers"]
         routes["Routes<br/>/players /trades /start-sit /draft /meta"]
         deps["dependencies.py<br/>reloads data when files change"]
-        services["Services<br/>valuation, trade analyzer, start/sit,<br/>draft planner, outlooks, profiles"]
+        services["Services<br/>valuation, trade analyzer, start/sit,<br/>K/DST models, draft planner, outlooks, profiles"]
     end
 
     subgraph web["Browser (frontend/, static)"]
@@ -49,11 +52,15 @@ flowchart LR
     espn --> sync
     espn --> collect
     nflverse --> collect
+    meteo --> collect
     sync --> cache
     collect --> db
+    db --> train
+    train --> models
 
     cache --> deps
     db --> deps
+    models --> deps
     deps --> services
     routes --> services
     mw --> routes
@@ -64,7 +71,8 @@ flowchart LR
     pages <--> ls
 ```
 
-The sync and collect jobs are the only things that call Sleeper, ESPN, or nflverse in bulk. API
+The sync and collect jobs are the only things that call Sleeper, ESPN, nflverse, or Open-Meteo in
+bulk. The train jobs fit the kicker and DST matchup models from the collected history. API
 requests read the local files, which reload when they change, so a fresh sync shows up without
 a restart. The one exception is player profiles: they're fetched from ESPN on demand, cached,
 and rate limited in both directions. All outbound requests go through one rate-limited client
@@ -77,7 +85,9 @@ backend/
     config.py      settings from environment variables
     api/           routes, dependency wiring, errors, rate limiting, security headers
     services/      valuation, trades, start/sit, draft, matchups, outlooks, profiles
-    data/          sync and collect jobs, repositories, caches, sources/ (Sleeper, ESPN, nflverse)
+    data/          sync and collect jobs, repositories, caches, sources/ (Sleeper, ESPN, nflverse, weather)
+    defense/       DST features, scoring, ridge model, and training
+    kicker/        kicker features and training (shares the DST model code)
     models/        Pydantic request and response models
   tests/           unit, API, property, stress, fuzz, and e2e/ browser tests
 frontend/          static HTML, CSS, and JS, one folder per page
@@ -94,6 +104,11 @@ pip install -r requirements.txt
 
 python -m app.data.sync         # player pool and projections (about 15 seconds)
 python -m app.data.collect      # stats, schedules, injuries, ADP (about 10 seconds, optional)
+
+# Optional: history and the kicker/DST matchup models used by start/sit
+python -m app.data.collect --seasons 2022-2026
+python -m app.defense.train
+python -m app.kicker.train
 
 uvicorn app.main:app --reload
 ```
