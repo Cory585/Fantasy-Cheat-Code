@@ -34,7 +34,8 @@ def to_arrays(rows: list[FeatureRow], features: list[str] = FEATURES):
     return X, y, weeks
 
 
-def choose_alpha(rows: list[FeatureRow], features: list[str] = FEATURES) -> float:
+def choose_alpha(rows: list[FeatureRow], features: list[str] = FEATURES,
+                 signs: dict[str, int] = EXPECTED_SIGNS) -> float:
     """Leave-one-season-out cross-validation on the training seasons (by MAE)."""
     seasons = sorted({r.season for r in rows})
     if len(seasons) < 2:
@@ -47,7 +48,7 @@ def choose_alpha(rows: list[FeatureRow], features: list[str] = FEATURES) -> floa
             test = [r for r in rows if r.season == held]
             X, y, _ = to_arrays(train, features)
             Xt, yt, _ = to_arrays(test, features)
-            model = RidgeModel.fit(X, y, features, alpha, signs=EXPECTED_SIGNS)
+            model = RidgeModel.fit(X, y, features, alpha, signs=signs)
             errors.append(np.abs(yt - model.predict(Xt)).mean())
         score = float(np.mean(errors))
         if best is None or score < best[1]:
