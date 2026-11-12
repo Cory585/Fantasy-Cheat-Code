@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
-from app.kicker.train import backtest
+from app.defense.features import FeatureRow
+from app.kicker.train import backtest, season_weights, trend_intercept
 from app.services.outlook import kicker_points
 from app.services.special_teams import KICKER_LABELS
 from tests.league_fixture import build_league
@@ -98,3 +99,21 @@ def test_backtest_reports_the_model_and_baselines(tmp_path):
     assert result["train_seasons"] == [2024]
     assert set(result["baselines"]) == {"league_average", "team_season_average", "ppg_times_matchup", "vegas_only"}
     assert result["model"]["n"] == len([r for r in rows if r.season == 2025])
+
+
+def _season_rows(means: dict[int, float]) -> list[FeatureRow]:
+    return [FeatureRow(s, 1, f"{s}", None, "BUF", "MIA", True, {}, target)
+            for s, m in means.items() for target in (m - 1, m + 1)]
+
+
+def test_recent_seasons_weigh_more():
+    rows = _season_rows({2022: 7.0, 2023: 7.0, 2024: 7.0})
+    w = season_weights(rows, 2025)
+    assert w[-1] == 1.0 and w[0] == pytest.approx(0.5)  # 2022 is two seasons before 2024
+
+
+def test_intercept_follows_the_league_trend_with_enough_seasons():
+    rising = _season_rows({2021: 7.0, 2022: 7.5, 2023: 8.0, 2024: 8.5})
+    assert trend_intercept(rising, 2025) == pytest.approx(9.0)
+    assert trend_intercept(rising, 2024) == pytest.approx(8.5)
+    assert trend_intercept(rising[2:], 2025) is None  # three seasons: too few

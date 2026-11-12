@@ -5,7 +5,15 @@ Usage (from backend/, after `python -m app.data.collect --seasons 2022-2026`):
 
 Same method as the DST model (`app.defense.train`): fit on earlier seasons, score on a later
 one against simple baselines, then fit on every played game and save to
-`backend/data/kicker_model.json`.
+`backend/data/kicker_model.json`. Two differences, because kicking keeps changing (more 50+
+yard tries, and league kicker scoring up about 0.15 points per game each season since 2019):
+
+- Seasons are weighted by recency (SEASON_HALF_LIFE).
+- With at least MIN_TREND_SEASONS seasons, the intercept is the league average projected
+  from its trend across seasons instead of the (lagging) training average.
+
+Training uses every season in the database after the first (which is only the prior), so
+collecting older seasons (`--seasons 2017-2026`) gives it more history.
 """
 
 import argparse
@@ -23,6 +31,39 @@ from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 log = logging.getLogger(__name__)
 
 MODEL_PATH = DATA_DIR / "kicker_model.json"
+SEASON_HALF_LIFE = 2.0  # a season counts half as much as the one two seasons after it
+MIN_TREND_SEASONS = 4  # with fewer seasons than this the trend is mostly noise
+
+
+def season_weights(rows, target_season: int) -> np.ndarray:
+    """Recency weights for predicting `target_season` (the latest training season weighs 1)."""
+    latest = min(target_season, max(r.season for r in rows))
+    return np.array([0.5 ** ((latest - r.season) / SEASON_HALF_LIFE) for r in rows])
+
+
+def trend_intercept(rows, target_season: int) -> float | None:
+    """League kicker points per game in `target_season`, from a recency-weighted linear trend
+    in the seasons' averages (None with too few seasons)."""
+    seasons = sorted({r.season for r in rows})
+    if len(seasons) < MIN_TREND_SEASONS:
+        return None
+    means = [np.mean([r.target for r in rows if r.season == s]) for s in seasons]
+    weights = [0.5 ** ((seasons[-1] - s) / SEASON_HALF_LIFE) for s in seasons]
+    slope, level = np.polyfit(np.array(seasons, dtype=float) - seasons[-1], means, 1, w=np.sqrt(weights))
+    return float(level + slope * (target_season - seasons[-1]))
+
+
+def fit(rows, target_season: int, alpha: float, metadata: dict | None = None) -> RidgeModel:
+    """Recency-weighted, sign-constrained ridge, with the intercept from the league trend."""
+    X, y, _ = to_arrays(rows, FEATURES)
+    model = RidgeModel.fit(X, y, FEATURES, alpha, metadata, signs=EXPECTED_SIGNS,
+                           weights=season_weights(rows, target_season))
+    trend = trend_intercept(rows, target_season)
+    model.metadata["training_average"] = round(model.intercept, 3)
+    model.metadata["intercept_from_trend"] = trend is not None
+    if trend is not None:
+        model.intercept = trend
+    return model
 
 
 def backtest(rows, test_season: int) -> dict:
@@ -31,7 +72,7 @@ def backtest(rows, test_season: int) -> dict:
     X, y, _ = to_arrays(train, FEATURES)
     Xt, yt, wt = to_arrays(test, FEATURES)
     alpha = choose_alpha(train, FEATURES, EXPECTED_SIGNS)
-    model = RidgeModel.fit(X, y, FEATURES, alpha, signs=EXPECTED_SIGNS)
+    model = fit(train, test_season, alpha)
 
     def col(name, rows_=test):
         return np.array([r.features[name] for r in rows_])
@@ -45,6 +86,7 @@ def backtest(rows, test_season: int) -> dict:
         "alpha": alpha,
         "model": evaluate(yt, model.predict(Xt), wt),
         "dropped_for_sign": model.metadata.get("dropped_for_sign", []),
+        "intercept_from_trend": model.metadata["intercept_from_trend"],
         "baselines": {
             "league_average": evaluate(yt, np.full(len(yt), y.mean()), wt),
             "team_season_average": evaluate(yt, col("team_k_ppg"), wt),
@@ -63,8 +105,7 @@ def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, lis
     played_seasons = sorted({r.season for r in rows})
     backtests = [backtest(rows, s) for s in played_seasons[1:]]
     alpha = choose_alpha(rows, FEATURES, EXPECTED_SIGNS)
-    X, y, _ = to_arrays(rows, FEATURES)
-    model = RidgeModel.fit(X, y, FEATURES, alpha, signs=EXPECTED_SIGNS, metadata={
+    model = fit(rows, played_seasons[-1], alpha, metadata={
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "seasons": played_seasons,
         "games": len(rows),
@@ -73,15 +114,23 @@ def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, lis
     return model, backtests
 
 
+def first_season_with_prior(conn: sqlite3.Connection) -> int:
+    """The season after the earliest one with team stats (that one is only the prior)."""
+    earliest = conn.execute("SELECT MIN(season) FROM team_week_stats WHERE season_type = 'REG'").fetchone()[0]
+    return FIRST_TRAIN_SEASON if earliest is None else earliest + 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--first-season", type=int, default=FIRST_TRAIN_SEASON)
+    parser.add_argument("--first-season", type=int, default=None,
+                        help="first season to train on (default: the second season in the database)")
     parser.add_argument("--last-season", type=int, default=datetime.now().year)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     conn = sqlite3.connect(settings.database_path)
-    model, backtests = train(conn, list(range(args.first_season, args.last_season + 1)))
+    first = args.first_season or first_season_with_prior(conn)
+    model, backtests = train(conn, list(range(first, args.last_season + 1)))
     model.save(MODEL_PATH)
 
     for bt in backtests:
@@ -90,6 +139,9 @@ def main() -> None:
         for name, m in [("model", bt["model"])] + list(bt["baselines"].items()):
             log.info("  %-24s %6.3f %6.3f %7.4f %10s", name, m["mae"], m["rmse"], m["r2"], m["weekly_rank_corr"])
     log.info("\nFinal model: %d games, seasons %s, alpha %s", model.metadata["games"], model.metadata["seasons"], model.alpha)
+    log.info("Intercept %.2f points (%s; recency-weighted training average %.2f)", model.intercept,
+             "from the league trend" if model.metadata["intercept_from_trend"] else "training average",
+             model.metadata["training_average"])
     log.info("Dropped (wrong direction once correlated features are included): %s",
              ", ".join(model.metadata.get("dropped_for_sign", [])) or "none")
     log.info("Points per 1 SD change (largest first):")
