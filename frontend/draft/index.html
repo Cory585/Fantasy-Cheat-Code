@@ -34,6 +34,12 @@
       <p class="lede">Choose your draft slot to see when you're on the clock and who should still be there each time.</p>
       <p class="data-status" id="data-status" role="status" aria-live="polite"></p>
     </div>
+    <div class="masthead-controls">
+      <div class="segmented" id="view-toggle" role="group" aria-label="View">
+        <button type="button" data-view="full">Full guide</button>
+        <button type="button" data-view="recap">Quick recap</button>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -69,13 +75,24 @@
       </fieldset>
     </form>
 
-    <section class="draft-section" aria-labelledby="timeline-heading">
+    <section class="draft-section recap-view" id="recap" aria-labelledby="recap-heading">
+      <div class="section-head">
+        <div>
+          <h2 id="recap-heading" class="section-heading">Quick recap</h2>
+          <p class="section-note" id="recap-summary"></p>
+        </div>
+        <button type="button" class="btn btn-quiet" id="recap-print">Print</button>
+      </div>
+      <div id="recap-body"></div>
+    </section>
+
+    <section class="draft-section full-view" aria-labelledby="timeline-heading">
       <h2 id="timeline-heading" class="section-heading">When you're on the clock</h2>
       <p class="section-note" id="timeline-summary"></p>
       <div class="timeline" id="timeline"></div>
     </section>
 
-    <section class="draft-section" aria-labelledby="board-heading">
+    <section class="draft-section full-view" aria-labelledby="board-heading">
       <div class="section-head">
         <div>
           <h2 id="board-heading" class="section-heading">Mock draft by ADP</h2>
@@ -87,7 +104,7 @@
       <div class="draft-board" id="draft-board"></div>
     </section>
 
-    <section class="draft-section" id="plan" aria-labelledby="plan-heading">
+    <section class="draft-section full-view" id="plan" aria-labelledby="plan-heading">
       <div class="section-head">
         <div>
           <h2 id="plan-heading" class="section-heading">Who to target at each pick</h2>
@@ -107,7 +124,7 @@
       <ol class="plan-list" id="plan-list"></ol>
     </section>
 
-    <section class="roadmap">
+    <section class="roadmap full-view">
       <div>
         <h2>Still to build</h2>
         <ul>
