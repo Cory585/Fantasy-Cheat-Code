@@ -33,12 +33,12 @@ def backtest(rows, test_season: int) -> dict:
     alpha = choose_alpha(train, FEATURES, EXPECTED_SIGNS)
     model = RidgeModel.fit(X, y, FEATURES, alpha, signs=EXPECTED_SIGNS)
 
-    def col(name, M=Xt):
-        return M[:, FEATURES.index(name)]
+    def col(name, rows_=test):
+        return np.array([r.features[name] for r in rows_])
 
     vegas_idx = [FEATURES.index("team_implied_points")]
     vegas = RidgeModel.fit(X[:, vegas_idx], y, ["team_implied_points"], alpha)
-    league_allowed = col("opp_k_allowed_pg", X).mean()
+    league_allowed = col("opp_k_allowed_pg", train).mean()
     return {
         "test_season": test_season,
         "train_seasons": sorted({r.season for r in train}),

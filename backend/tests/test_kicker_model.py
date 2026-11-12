@@ -6,6 +6,7 @@ import pytest
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 from app.kicker.train import backtest
 from app.services.outlook import kicker_points
+from app.services.special_teams import KICKER_LABELS
 from tests.league_fixture import build_league
 
 
@@ -18,14 +19,15 @@ def conn(tmp_path):
     return build_league(tmp_path / "league.db")
 
 
-def test_every_feature_has_an_expected_sign():
+def test_every_feature_has_an_expected_sign_and_a_label():
     assert set(EXPECTED_SIGNS) == set(FEATURES)
+    assert set(KICKER_LABELS) == set(FEATURES)
 
 
 def test_rows_have_every_feature_and_the_teams_kicker_points(conn):
     rows = rows_by_key(KickerFeatureBuilder(conn))
     buf = rows[(2025, 4, "BUF")]  # the row's `defense` field is the kicking team here
-    assert set(buf.features) == set(FEATURES)
+    assert set(FEATURES) <= set(buf.features)
     assert all(np.isfinite(v) for v in buf.features.values())
     stats = json.loads(conn.execute("SELECT stats FROM team_week_stats WHERE team = 'BUF' AND season = 2025 "
                                     "AND week = 4").fetchone()[0])
@@ -35,8 +37,15 @@ def test_rows_have_every_feature_and_the_teams_kicker_points(conn):
 def test_stronger_offense_projects_more_kicking(conn):
     rows = rows_by_key(KickerFeatureBuilder(conn))
     buf, nyj = rows[(2025, 4, "BUF")], rows[(2025, 4, "NYJ")]
-    for name in ("team_implied_points", "team_fg_att_pg", "team_k_ppg", "exp_k_points"):
+    for name in ("team_implied_points", "team_favored_by", "team_k_ppg"):
         assert buf.features[name] > nyj.features[name], name
+
+
+def test_favored_by_is_the_spread_from_each_side(conn):
+    rows = rows_by_key(KickerFeatureBuilder(conn))
+    home = next(r for r in rows.values() if r.home and r.week == 4)
+    away = rows[(2025, 4, home.opponent)]
+    assert home.features["team_favored_by"] == -away.features["team_favored_by"]
 
 
 def test_fg_pct_is_shrunk_toward_the_league_rate(conn):
@@ -45,6 +54,13 @@ def test_fg_pct_is_shrunk_toward_the_league_rate(conn):
     # 20-attempt prior keeps an early-season estimate close to the league rate.
     early, late = rows[(2025, 1, "NYJ")].features["fg_pct"], rows[(2025, 6, "NYJ")].features["fg_pct"]
     assert 0.6 < early < 0.85 and late <= early
+
+
+def test_pat_pct_is_shrunk_toward_the_league_rate(conn):
+    rows = rows_by_key(KickerFeatureBuilder(conn))
+    # Every PAT in the fixture is good, so the rate climbs from the 95% prior with more kicks.
+    early, late = rows[(2025, 1, "BUF")].features["pat_pct"], rows[(2025, 6, "BUF")].features["pat_pct"]
+    assert 0.95 < early <= late < 1.0
 
 
 def test_weather_and_venue(tmp_path):
