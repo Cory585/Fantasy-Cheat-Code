@@ -217,15 +217,31 @@
     const byId = new Map(a.players.map((pw) => [pw.player.id, pw]));
     const starters = a.recommendation.start.map((id) => byId.get(id).player.name);
     const confidence = CONFIDENCE[a.recommendation.confidence];
-    const box = el("div", `ss-verdict tone-${confidence.tone}`);
+    const box = el("div", `ss-verdict field-strip tone-${confidence.tone}`);
+    const main = el("div", "ss-verdict-main");
     const head = el("div", "ss-verdict-head");
     head.append(
       el("span", "ss-badge", confidence.label),
-      el("span", "ss-week", `Week ${a.week} · ${SLOT_NAMES[a.slot] || a.slot} spot`),
+      el("span", "ss-week", `Week ${a.week}, ${SLOT_NAMES[a.slot] || a.slot} spot`),
     );
     const title = el("h2", null, `Start ${listNames(starters)}`);
-    box.append(head, title, el("p", "ss-summary", a.recommendation.summary), confidenceMeter(a));
+    main.append(head, title, el("p", "ss-summary", a.recommendation.summary), confidenceMeter(a));
+    box.append(main, scoreboard(a));
     return box;
+  }
+
+  // The closest call as a scoreboard: the last starter against the best player left out.
+  function scoreboard(a) {
+    const board = el("div", "scoreboard");
+    board.setAttribute("aria-label", "Expected points");
+    for (const pw of [a.players[a.starts - 1], a.players[a.starts]]) {
+      const row = el("div", `scoreboard-row${pw.recommended ? " is-start" : ""}`);
+      row.append(el("span", "scoreboard-name", pw.player.name),
+        el("span", "scoreboard-points", pw.status === "bye" ? "Bye" : fmt(pw.projection)));
+      board.append(row);
+    }
+    board.append(el("span", "scoreboard-caption", "Expected points"));
+    return board;
   }
 
   function confidenceMeter(a) {
@@ -243,7 +259,10 @@
     const mid = el("span", "ss-meter-mid");
     mid.title = "50%: a coin flip";
     track.append(fill, mid);
-    wrap.append(label, track);
+    const scale = el("span", "ss-meter-scale");
+    scale.setAttribute("aria-hidden", "true");
+    scale.append(el("span", null, "0%"), el("span", null, "Coin flip"), el("span", null, "100%"));
+    wrap.append(label, track, scale);
     return wrap;
   }
 
@@ -302,8 +321,9 @@
     name.href = profileUrl(pw.player.id);
     const meta = [pw.player.position, pw.player.team];
     if (pw.matchup) meta.push(`${pw.matchup.home ? "vs" : "at"} ${pw.matchup.opponent}`);
-    title.append(name, el("span", "player-meta", meta.join(" · ")));
+    title.append(name, el("span", "player-meta", meta.join(", ")));
     const call = el("span", `ss-call ${pw.recommended ? "ss-call-start" : "ss-call-sit"}`, pw.recommended ? "Start" : "Sit");
+    call.setAttribute("aria-label", pw.recommended ? "Recommended: start" : "Recommended: sit");
     head.append(avatar(pw.player), title, call);
 
     const stats = el("dl", "ss-stats");
@@ -418,14 +438,18 @@
   }
 
   function lineupHead(a) {
-    const head = el("div", "ss-lineup-head");
-    const title = el("div");
+    const head = el("div", "ss-lineup-head field-strip");
+    const title = el("div", "ss-verdict-main");
     const name = state.team.name.trim() || "Your team";
-    title.append(el("h2", "section-heading", `${name}: week ${a.week} lineup`),
-      el("p", "section-note", `Projected ${fmt(a.projected_total)} points from ${a.lineup.filter((s) => s.starter).length} starters.`));
-    const edit = el("a", "btn btn-quiet", "Edit team");
+    const edit = el("a", "btn btn-chalk", "Edit team");
     edit.href = "/team/";
-    head.append(title, edit);
+    const starters = a.lineup.filter((s) => s.starter).length;
+    title.append(el("h2", null, `${name}: week ${a.week} lineup`),
+      el("p", "ss-summary", `${starters} starters, filled from your saved roster. Closest calls first.`), edit);
+    const board = el("div", "scoreboard scoreboard-total");
+    board.append(el("span", "scoreboard-points", fmt(a.projected_total)),
+      el("span", "scoreboard-caption", "Projected points"));
+    head.append(title, board);
     return head;
   }
 
@@ -440,8 +464,8 @@
       const item = el("li", `ss-close tone-${confidence.tone}`);
       const text = el("p", "ss-close-title", `${spot.slot}: ${spot.starter.player.name} over ${spot.alternative.player.name}`);
       const detail = el("p", "ss-close-detail",
-        `${confidence.label} · ${Math.round(spot.probability * 100)}% of simulated weeks · `
-        + `${fmt(spot.starter.projection)} vs ${fmt(spot.alternative.projection)} expected`);
+        `${confidence.label}: right in ${Math.round(spot.probability * 100)}% of simulated weeks, `
+        + `${fmt(spot.starter.projection)} to ${fmt(spot.alternative.projection)} expected`);
       item.append(text, detail, compareButton(spot));
       list.append(item);
     }
@@ -488,7 +512,7 @@
         const confidence = CONFIDENCE[spot.confidence];
         const pct = Math.round(spot.probability * 100);
         alt.append(el("span", `ss-dot tone-${confidence.tone}`),
-          el("span", null, `over ${spot.alternative.player.name} · ${pct}%`));
+          el("span", null, `over ${spot.alternative.player.name}, ${pct}%`));
         alt.title = `${confidence.label}: ${pw.player.name} outscores ${spot.alternative.player.name} in ${pct}% of simulated weeks`;
       } else {
         alt.append(el("span", "ss-muted", "no one to swap in"));
@@ -504,7 +528,7 @@
     if (pw.matchup) parts.push(`${pw.matchup.home ? "vs" : "at"} ${pw.matchup.opponent}`);
     if (pw.status === "played") parts.push("final");
     if (pw.player.injury_status) parts.push(pw.player.injury_status);
-    return parts.join(" · ");
+    return parts.join(", ");
   }
 
   function benchList(a) {
