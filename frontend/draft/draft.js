@@ -18,6 +18,10 @@ const els = {
   planList: $("plan-list"),
   status: $("data-status"),
   tooltip: $("viz-tooltip"),
+  view: $("view-toggle"),
+  recapSummary: $("recap-summary"),
+  recapBody: $("recap-body"),
+  recapPrint: $("recap-print"),
 };
 
 const TEAM_OPTIONS = [8, 10, 12, 14, 16];
@@ -28,7 +32,7 @@ const TARGETS_FETCHED = 15; // extra, so a position filter still has players to 
 
 // `plan` is for the current settings only (cleared when they change); `board` is the ADP
 // ranking, which doesn't depend on settings, so it's kept to avoid flicker while reloading.
-const state = { teams: 12, slot: 1, rounds: 15, position: "", plan: null, board: [], error: null };
+const state = { teams: 12, slot: 1, rounds: 15, position: "", view: "full", plan: null, board: [], error: null };
 let requestId = 0; // ignore responses to settings that have since changed
 
 // ---------- Helpers ----------
@@ -116,17 +120,23 @@ function readSettings() {
   state.rounds = pick("rounds", ROUND_OPTIONS, 15);
   const position = params.get("pos");
   state.position = POSITIONS.includes(position) ? position : "";
+  state.view = params.get("view") === "recap" ? "recap" : "full";
 }
 
 function writeSettings() {
   const params = new URLSearchParams({ teams: state.teams, slot: state.slot, rounds: state.rounds });
   if (state.position) params.set("pos", state.position);
+  if (state.view === "recap") params.set("view", "recap");
   history.replaceState(null, "", `${location.pathname}?${params}`);
 }
 
 // ---------- Controls ----------
 
 function renderControls() {
+  document.body.dataset.view = state.view;
+  for (const button of els.view.querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.view === state.view));
+  }
   for (const button of els.teams.querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(Number(button.dataset.teams) === state.teams));
     button.setAttribute("aria-label", `${button.dataset.teams} teams`);
@@ -388,6 +398,7 @@ function targetItem(target, overall) {
 }
 
 function renderPlan() {
+  renderRecap();
   const plan = state.plan;
   if (!plan) {
     if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks..."));
@@ -427,6 +438,7 @@ function renderPlan() {
 function renderError(message) {
   state.error = message;
   els.planList.replaceChildren(el("li", "result-error", message));
+  renderRecap();
   els.status.textContent = message;
 }
 
@@ -466,6 +478,121 @@ async function loadPlan() {
 // Re-rendering the board replaces its buttons; put focus back on the same team.
 function restoreBoardFocus(slot) {
   if (slot) els.board.querySelector(`button[data-slot="${slot}"]`)?.focus();
+}
+
+// ---------- Quick recap: the whole plan on one screen ----------
+
+// Roster limits for the suggested picks, so the recap reads like a real team (ADP alone
+// can hand you four defenses). Kickers and defenses wait for the last LATE_ROUNDS rounds.
+const RECAP_LIMITS = { QB: 2, RB: 5, WR: 5, TE: 2, K: 1, DST: 1 };
+// A starting lineup's worth: once the picks left only just cover what's missing, fill it.
+const RECAP_NEEDS = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, DST: 1 };
+const LATE_ROUNDS = 2;
+
+// At each pick, the best-ranked player likely to be left who fits the limits, plus the next
+// two who fit as backups. Candidates are the pick's targets, then the rest of the mock board
+// after this pick (so a late kicker or defense can still be found).
+function recapRows(plan) {
+  const counts = Object.fromEntries(POSITIONS.map((p) => [p, 0]));
+  const mine = new Set();
+  const lateFrom = state.rounds - LATE_ROUNDS + 1;
+  return plan.picks.map(({ pick, targets, picks_until_next }, index) => {
+    const seen = new Set();
+    const open = [...targets, ...state.board.slice(pick.overall - 1)]
+      .filter((t) => !mine.has(t.player_id) && !seen.has(t.player_id) && seen.add(t.player_id));
+    const unmet = POSITIONS.filter((p) => counts[p] < RECAP_NEEDS[p]);
+    const shortOnPicks = unmet.reduce((n, p) => n + RECAP_NEEDS[p] - counts[p], 0) >= plan.picks.length - index;
+    const fits = (t) => counts[t.position] < RECAP_LIMITS[t.position]
+      && ((t.position !== "K" && t.position !== "DST") || pick.round >= lateFrom)
+      && (!shortOnPicks || unmet.includes(t.position));
+    const fitting = open.filter(fits);
+    // Every limit is full (a long draft): add RB or WR depth.
+    const depth = open.find((t) => t.position === "RB" || t.position === "WR");
+    const likely = fitting[0] || depth || open[0] || null;
+    if (likely) {
+      counts[likely.position] += 1;
+      mine.add(likely.player_id);
+    }
+    const backups = fitting.filter((t) => t.player_id !== likely?.player_id).slice(0, 2);
+    return { pick, likely, backups, wait: picks_until_next };
+  });
+}
+
+function renderRecap() {
+  const plan = state.plan;
+  const picks = myPicks();
+  const first = picks[0];
+  els.recapSummary.textContent =
+    `${state.teams} teams, ${ordinal(state.slot)} pick, ${plural(state.rounds, "round")}. ` +
+    (first ? `You're first on the clock at ${first.label} (${ordinal(first.overall)} overall).` : "");
+  if (!plan) {
+    els.recapBody.replaceChildren(el("p", "player-meta", state.error || "Loading your picks..."));
+    return;
+  }
+  const rows = recapRows(plan);
+
+  // Position count of the likely team, so gaps stand out.
+  const counts = Object.fromEntries(POSITIONS.map((p) => [p, 0]));
+  for (const row of rows) if (row.likely) counts[row.likely.position] += 1;
+  const tally = el("ul", "recap-tally");
+  tally.setAttribute("aria-label", "Your likely team by position");
+  for (const position of POSITIONS) {
+    const item = el("li", `recap-count pos-${position}${counts[position] ? "" : " is-zero"}`);
+    item.append(el("span", "pos-swatch"), el("strong", null, String(counts[position])), el("span", null, position));
+    tally.append(item);
+  }
+
+  const facts = el("ul", "recap-facts");
+  const gaps = rows.filter((r) => r.wait != null);
+  const longest = gaps.reduce((a, b) => (b.wait > a.wait ? b : a), gaps[0] || null);
+  const turns = gaps.filter((r) => r.wait === 0).length;
+  const missing = POSITIONS.filter((p) => !counts[p] && p !== "K" && p !== "DST");
+  const unranked = ["K", "DST"].filter((p) => !counts[p]).map((p) => (p === "K" ? "kicker" : "defense"));
+  if (longest && longest.wait > 0) {
+    facts.append(el("li", null, `Longest wait: ${plural(longest.wait, "pick")} after ${longest.pick.label}. Grab the player you can't live without there.`));
+  }
+  if (turns) facts.append(el("li", null, `${plural(turns, "back-to-back turn")}: you can pair two players at the same position.`));
+  if (missing.length) facts.append(el("li", null, `This plan finishes without a ${missing.join(" or ")}. Reach for one before the late rounds.`));
+  if (unranked.length) {
+    facts.append(el("li", null, `No ${unranked.join(" or ")} is ranked this late in a draft this size, so take the best one left in your last round.`));
+  } else if (state.rounds > LATE_ROUNDS) {
+    facts.append(el("li", null, "Wait on a kicker and a defense until your last two rounds."));
+  }
+
+  const table = el("table", "stat-table recap-table");
+  const head = el("thead");
+  const headRow = el("tr");
+  for (const label of ["Pick", "Overall", "Suggested pick", "If they're gone", "Next pick"]) {
+    const th = el("th", null, label);
+    th.scope = "col";
+    headRow.append(th);
+  }
+  head.append(headRow);
+  const body = el("tbody");
+  for (const row of rows) {
+    const tr = el("tr", row.likely ? `pos-${row.likely.position}` : "");
+    const pickCell = el("th", "recap-pick", row.pick.label);
+    pickCell.scope = "row";
+    const likely = el("td", "recap-likely");
+    if (row.likely) {
+      const link = el("a", "profile-link", row.likely.name);
+      link.href = profileUrl(row.likely.player_id);
+      likely.append(el("span", "pos-tag", row.likely.position), link, el("span", "player-meta", ` ${row.likely.team}`));
+    } else {
+      likely.append(el("span", "player-meta", "Best player left"));
+    }
+    const backups = el("td", "recap-backups");
+    backups.textContent = row.backups.map((t) => `${shortName(t.name)} (${t.position})`).join(", ") || "—";
+    const wait = row.wait == null ? "Last pick" : row.wait === 0 ? "Right after" : `in ${row.wait}`;
+    tr.append(pickCell, el("td", "num", String(row.pick.overall)), likely, backups, el("td", "recap-wait", wait));
+    body.append(tr);
+  }
+  table.append(head, body);
+  const wrap = el("div", "stat-table-wrap recap-table-wrap");
+  wrap.append(table);
+
+  els.recapBody.replaceChildren(tally, ...(facts.children.length ? [facts] : []), wrap,
+    el("p", "value-note", "Suggested picks are the best players by ADP expected to be left at each pick, keeping a balanced roster: a full starting lineup, at most 2 QBs, 2 TEs, and 5 each of RBs and WRs, with the kicker and defense in the last two rounds. Backups are the next players who fit."));
 }
 
 // ---------- Wiring ----------
@@ -524,6 +651,15 @@ function init() {
     state.position = button.dataset.position;
     update({ refetch: false });
   });
+  els.view.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-view]");
+    if (!button || button.dataset.view === state.view) return;
+    state.view = button.dataset.view;
+    update({ refetch: false });
+    // The timeline is drawn to its container's width, which is zero while hidden.
+    if (state.view === "full") renderTimeline();
+  });
+  els.recapPrint.addEventListener("click", () => window.print());
   document.getElementById("draft-setup").addEventListener("submit", (event) => event.preventDefault());
 
   let resizeTimer;

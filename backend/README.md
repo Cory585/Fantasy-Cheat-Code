@@ -150,6 +150,12 @@ The response also includes what the page's diagrams use:
 - `picks[].position_mix`: the positions of the players other teams likely take before your next
   pick, assuming you take the top-ranked player. The page shows it as a stacked bar on each pick.
 
+The page's **Quick recap** view (`/draft/?...&view=recap`) puts the plan on one printable screen: a
+suggested player and two backups at each of your picks, the wait until your next pick, and your
+team's position count. Suggestions are made in the browser from the plan's targets and mock
+board, keeping a balanced roster: a full starting lineup (1 QB, 2 RB, 2 WR, 1 TE, 1 K, 1 DST), at
+most 2 QBs, 2 TEs, and 5 each of RBs and WRs, with the kicker and defense in the last two rounds.
+
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
 
 ## Start/sit
