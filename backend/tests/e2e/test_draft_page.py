@@ -123,3 +123,38 @@ def test_narrow_screens_do_not_scroll_sideways(page):
     open_draft(page)
     overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     assert overflow <= 0
+
+
+def test_quick_recap_toggle(page):
+    open_draft(page)
+    page.click('#view-toggle button[data-view="recap"]')
+    expect(page.locator("#recap")).to_be_visible()
+    expect(page.locator("#draft-board")).to_be_hidden()
+    expect(page.locator(".recap-table tbody tr")).to_have_count(15)
+    expect(page.locator(".recap-table tbody th").first).to_have_text("1.05")
+    expect(page.locator("#recap-summary")).to_contain_text("12 teams, 5th pick, 15 rounds")
+    expect(page.locator(".recap-count")).to_have_count(6)
+    expect(page).to_have_url(re.compile(r"view=recap"))
+    # Back to the full guide: the timeline is redrawn at its real width.
+    page.click('#view-toggle button[data-view="full"]')
+    expect(page.locator("#recap")).to_be_hidden()
+    assert page.evaluate("document.querySelector('.timeline-svg').getAttribute('width')") != "320"
+    assert page.problems.errors == []
+
+
+def test_quick_recap_from_the_url_follows_settings(page):
+    page.goto("/draft/?teams=8&slot=2&rounds=13&view=recap")
+    expect(page.locator(".recap-table tbody tr")).to_have_count(13)
+    page.click('#league-size button[data-teams="10"]')
+    expect(page.locator("#recap-summary")).to_contain_text("10 teams")
+    expect(page.locator(".recap-table tbody tr")).to_have_count(13)
+    # Suggested picks never repeat a player.
+    names = page.locator(".recap-likely a").all_inner_texts()
+    assert len(names) == len(set(names))
+
+
+def test_quick_recap_print_button(page):
+    page.goto("/draft/?teams=12&slot=1&rounds=15&view=recap")
+    page.evaluate("() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; }")
+    page.click("#recap-print")
+    assert page.evaluate("window.__printed") == 1
