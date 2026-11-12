@@ -90,7 +90,7 @@
       if (!ids.length) return null;
       const group = el("section", `team-group pos-${pos}`);
       const head = el("h3", "team-group-head");
-      head.append(el("span", "pos-swatch"), el("span", null, `${pos} · ${ids.length}`));
+      head.append(el("span", "pos-swatch"), el("span", null, pos), el("span", "team-group-count", String(ids.length)));
       const list = el("ul", "team-list");
       for (const id of ids) list.append(rosterItem(players.get(id)));
       group.append(head, list);
@@ -105,7 +105,7 @@
     const name = el("a", "ss-chip-name", player.name);
     name.href = profileUrl(player.id);
     const upcomingBye = player.bye_week && player.bye_week >= firstWeek ? `bye ${player.bye_week}` : null;
-    const meta = [player.team, upcomingBye].filter(Boolean).join(" · ");
+    const meta = [player.team, upcomingBye].filter(Boolean).join(", ");
     const metaEl = el("span", "player-meta", meta);
     if (player.injury_status) metaEl.append(el("span", "injury", player.injury_status));
     text.append(name, metaEl);
