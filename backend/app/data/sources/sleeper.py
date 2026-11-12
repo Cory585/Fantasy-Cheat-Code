@@ -52,19 +52,33 @@ class SleeperSource:
         scoring: ScoringFormat,
         played_first_week: frozenset[str] = frozenset(),
     ) -> dict[str, float]:
-        """Sum of weekly projected points per Sleeper player_id over `weeks`.
+        """Sum of weekly projected points per Sleeper player_id over `weeks`."""
+        return ros_totals(self.weekly_points(season, weeks, scoring, played_first_week))
+
+    def weekly_points(
+        self,
+        season: int,
+        weeks: range,
+        scoring: ScoringFormat,
+        played_first_week: frozenset[str] = frozenset(),
+    ) -> dict[str, dict[int, float]]:
+        """Projected points per Sleeper player_id per week over `weeks`.
 
         `played_first_week` lists teams whose game in the first week is already final;
         their projections for that week are skipped so finished games aren't counted.
         """
-        totals: dict[str, float] = {}
+        by_player: dict[str, dict[int, float]] = {}
         for week in weeks:
             skip = played_first_week if week == weeks.start else frozenset()
             for player_id, points in parse_weekly_points(
                 self.weekly_projections(season, week), scoring, skip_teams=skip
             ).items():
-                totals[player_id] = totals.get(player_id, 0.0) + points
-        return totals
+                by_player.setdefault(player_id, {})[week] = points
+        return by_player
+
+
+def ros_totals(weekly: dict[str, dict[int, float]]) -> dict[str, float]:
+    return {player_id: sum(weeks.values()) for player_id, weeks in weekly.items()}
 
 
 def parse_weekly_points(

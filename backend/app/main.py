@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from app.api import draft, errors, meta, players, trades
+from app.api import draft, errors, meta, players, start_sit, trades
 from app.api.errors import error_response
 from app.api.static import SiteFiles
 from app.api.security import add_security_headers
@@ -68,6 +68,7 @@ app.include_router(players.router)
 app.include_router(trades.router)
 app.include_router(meta.router)
 app.include_router(draft.router)
+app.include_router(start_sit.router)
 
 
 @app.get("/health", tags=["meta"])

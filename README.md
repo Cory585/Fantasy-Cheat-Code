@@ -36,6 +36,8 @@ Interactive docs at http://localhost:8000/docs.
 - `GET /players?position=RB` and `GET /players/{id}`
 - `POST /trades/analyze`
 - `GET /draft/plan?teams=12&slot=5&rounds=15`: your snake-draft picks and who's likely available at each
+- `GET /start-sit?player=7564&player=6794&week=11`: who to start this week, with a confidence level and the reasons
+- `POST /start-sit/lineup`: the best lineup from your roster for a week (used by the My team page)
 
 ```json
 {

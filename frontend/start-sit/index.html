@@ -20,6 +20,7 @@
         <li><a href="/tiers/">Tier lists</a></li>
         <li><a href="/start-sit/" aria-current="page">Start/sit</a></li>
         <li><a href="/draft/">Draft masterclass</a></li>
+        <li><a href="/team/">My team</a></li>
       </ul>
       <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
         <span class="theme-icon" aria-hidden="true"></span>
@@ -31,55 +32,84 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>Start/Sit Guide</h1>
-      <p class="lede">Choose between players for one lineup spot and see who to start this week, and why.</p>
-      <p class="feature-status">In development</p>
+      <p class="lede">Set your whole lineup from your saved team, or compare the players fighting for one spot. See who to start, how sure the call is, and why.</p>
+      <p class="data-status" id="data-status" role="status" aria-live="polite"></p>
     </div>
   </header>
 
   <main>
-    <figure class="preview">
-      <figcaption>Planned layout: pick two or more players competing for the same spot. The guide recommends one and explains the call.</figcaption>
-      <div aria-hidden="true">
-        <div class="matchup">
-          <div class="slot">
-            <span class="bar bar-wide"></span>
-            <span class="bar bar-mid"></span>
-            <span class="bar bar-short"></span>
-          </div>
-          <div class="matchup-vs">vs</div>
-          <div class="slot">
-            <span class="bar bar-wide"></span>
-            <span class="bar bar-mid"></span>
-            <span class="bar bar-short"></span>
-          </div>
-        </div>
-        <div class="matchup-call">
-          <span class="bar bar-mid"></span>
-          <span class="bar bar-wide"></span>
-        </div>
-      </div>
-    </figure>
+    <div class="segmented ss-modes" id="ss-mode" role="group" aria-label="What to decide">
+      <button type="button" data-mode="lineup">My lineup</button>
+      <button type="button" data-mode="compare">Compare players</button>
+    </div>
 
-    <section class="roadmap">
-      <div>
-        <h2>Still to build</h2>
-        <ul>
-          <li>Player pickers filtered to one lineup slot (QB, RB, WR, TE, flex, K, DST).</li>
-          <li>A recommendation with a confidence level, so close calls look close.</li>
-          <li>The reasons behind each call: projection, matchup, and injury status.</li>
-          <li>A floor-to-ceiling range for each player, not just one number.</li>
-        </ul>
+    <form class="draft-setup" id="ss-setup" aria-label="Start/sit settings">
+      <fieldset class="setup-group">
+        <legend>Week</legend>
+        <div class="stepper">
+          <button type="button" class="btn btn-quiet step-btn" id="week-prev" aria-label="Previous week">&#9664;</button>
+          <select id="week" aria-label="Week"></select>
+          <button type="button" class="btn btn-quiet step-btn" id="week-next" aria-label="Next week">&#9654;</button>
+        </div>
+      </fieldset>
+      <fieldset class="setup-group compare-only">
+        <legend>Lineup spot</legend>
+        <div class="segmented" id="slot" role="group" aria-label="Lineup spot">
+          <button type="button" data-slot="" title="Any spot these players can share">Any</button>
+          <button type="button" data-slot="QB">QB</button>
+          <button type="button" data-slot="RB">RB</button>
+          <button type="button" data-slot="WR">WR</button>
+          <button type="button" data-slot="TE">TE</button>
+          <button type="button" data-slot="FLEX" title="RB, WR, or TE">FLEX</button>
+          <button type="button" data-slot="SUPERFLEX" title="QB, RB, WR, or TE">SFLEX</button>
+          <button type="button" data-slot="K">K</button>
+          <button type="button" data-slot="DST">DST</button>
+        </div>
+      </fieldset>
+      <fieldset class="setup-group compare-only">
+        <legend>Players to start</legend>
+        <div class="segmented" id="starts" role="group" aria-label="Players to start">
+          <button type="button" data-starts="1">1</button>
+          <button type="button" data-starts="2">2</button>
+          <button type="button" data-starts="3">3</button>
+        </div>
+      </fieldset>
+    </form>
+
+    <section class="draft-section compare-only" aria-labelledby="pick-heading">
+      <div class="section-head">
+        <div>
+          <h2 id="pick-heading" class="section-heading">Who's in the running</h2>
+          <p class="section-note">Add 2 to 8 players who could fill the spot. The search only shows players who fit it.</p>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-quiet" id="share">Copy link</button>
+          <button type="button" class="btn btn-quiet" id="clear">Clear</button>
+          <span class="share-status" id="share-status" role="status" aria-live="polite"></span>
+        </div>
       </div>
-      <div>
-        <h2>Data it uses</h2>
-        <p>This week's projections, opponent strength against each position, and injury and
-          practice reports. The player sync currently stores rest-of-season totals, so it will
-          need to keep weekly projections too.</p>
+      <div class="ss-picker">
+        <div class="search">
+          <input type="search" class="player-search" id="ss-search" placeholder="Search players or teams"
+            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ss-results"
+            aria-label="Search players to compare" autocomplete="off" spellcheck="false">
+          <ul class="search-results" id="ss-results" role="listbox" aria-label="Matching players" hidden></ul>
+        </div>
+        <ul class="ss-chosen" id="ss-chosen" aria-label="Players being compared" aria-live="polite"></ul>
+        <div class="ss-from-team" id="ss-from-team" hidden>
+          <p class="ss-from-team-label" id="from-team-label">From your team</p>
+          <ul class="ss-quick" id="ss-quick" aria-labelledby="from-team-label"></ul>
+        </div>
       </div>
     </section>
 
+    <section class="result compare-only" id="ss-result" aria-live="polite" aria-busy="false"></section>
+    <section class="result lineup-only" id="ss-lineup" aria-live="polite" aria-busy="false"></section>
   </main>
 
   <script src="/theme.js"></script>
+  <script src="/player-search.js"></script>
+  <script src="/team-store.js"></script>
+  <script src="/start-sit/start-sit.js"></script>
 </body>
 </html>

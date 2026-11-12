@@ -57,6 +57,7 @@ class EspnProjection(NamedTuple):
     position: Position
     team: str | None
     points: float
+    weekly: dict[int, float] | None = None  # points by week (None when not collected)
 
 
 class EspnIndex:
@@ -108,8 +109,13 @@ def build_players(
     sleeper_ros: dict[str, float],
     espn_index: EspnIndex,
     bye_weeks: dict[str, int | None],
+    sleeper_weekly: dict[str, dict[int, float]] | None = None,
 ) -> list[Player]:
-    """Merge provider data into Players. Skips anyone with no projection from any source."""
+    """Merge provider data into Players. Skips anyone with no projection from any source.
+
+    `sleeper_weekly` (Sleeper points by player and week) and each ESPN match's `weekly`
+    become the player's `weekly_projections`."""
+    sleeper_weekly = sleeper_weekly or {}
     relevant = {sid: raw for sid, raw in sleeper_players.items() if sleeper.is_fantasy_relevant(raw)}
     sleeper_keys = {
         (normalize_name(_full_name(raw)), sleeper.POSITION_MAP[raw["position"]], raw["team"])
@@ -123,13 +129,16 @@ def build_players(
         espn_id = int(raw["espn_id"]) if raw.get("espn_id") else None
 
         sources: dict[str, float] = {}
+        weekly: dict[int, dict[str, float]] = {}
         if sleeper_ros.get(sleeper_id):
             sources["sleeper"] = round(sleeper_ros[sleeper_id], 2)
+            _add_weekly(weekly, "sleeper", sleeper_weekly.get(sleeper_id))
         espn_match = espn_index.find(name, position, team, espn_id, sleeper_keys)
         if espn_match:
             espn_id = espn_id or espn_match.espn_id
             if espn_match.points:
                 sources["espn"] = round(espn_match.points, 2)
+                _add_weekly(weekly, "espn", espn_match.weekly)
         if not sources:
             continue
 
@@ -146,9 +155,16 @@ def build_players(
                 sleeper_id=sleeper_id,
                 espn_id=espn_id,
                 projection_sources=sources,
+                weekly_projections=dict(sorted(weekly.items())),
             )
         )
     return sorted(players, key=lambda p: p.ros_projection, reverse=True)
+
+
+def _add_weekly(weekly: dict[int, dict[str, float]], source: str, points: dict[int, float] | None) -> None:
+    for week, value in (points or {}).items():
+        if value:
+            weekly.setdefault(week, {})[source] = round(value, 2)
 
 
 def espn_projections(
@@ -165,16 +181,18 @@ def espn_projections(
         if position is None:
             continue
         team = teams.get(p.get("proTeamId"))
+        weekly = espn.weekly_points(
+            p, season, weeks, scoring,
+            skip_week=weeks.start if team and team.abbrev in played_first_week else None,
+        )
         projections.append(
             EspnProjection(
                 espn_id=p["id"],
                 name=p.get("fullName", ""),
                 position=position,
                 team=team.abbrev if team else None,
-                points=espn.ros_points(
-                    p, season, weeks, scoring,
-                    skip_week=weeks.start if team and team.abbrev in played_first_week else None,
-                ),
+                points=sum(weekly.values()),
+                weekly=weekly,
             )
         )
     return projections
@@ -203,7 +221,8 @@ def sync(
         log.info("Fetching Sleeper players...")
         sleeper_players = sleeper_src.players()
         log.info("Fetching Sleeper projections (%d weekly requests)...", len(weeks))
-        sleeper_ros = sleeper_src.ros_projections(season, weeks, scoring, played_first_week=played)
+        sleeper_weekly = sleeper_src.weekly_points(season, weeks, scoring, played_first_week=played)
+        sleeper_ros = sleeper.ros_totals(sleeper_weekly)
 
         espn_proj: list[EspnProjection] = []
         bye_weeks: dict[str, int | None] = {}
@@ -216,7 +235,7 @@ def sync(
                 espn_src.players(season, scoring), teams, season, weeks, scoring, played_first_week=played
             )
 
-    players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks)
+    players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks, sleeper_weekly)
     write_cache(output, players, season=season, weeks=weeks, scoring=scoring)
     log.info("Wrote %d players to %s", len(players), output)
     return players

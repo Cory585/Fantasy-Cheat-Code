@@ -159,3 +159,42 @@ def test_parse_completed_teams_only_counts_final_games():
                                   "competitors": [{"team": {"abbreviation": away}}, {"team": {"abbreviation": home}}]}]}
     data = {"events": [event(True, "WSH", "NYG"), event(False, "SEA", "LAR")]}
     assert espn.parse_completed_teams(data) == {"WAS", "NYG"}
+
+
+def test_espn_weekly_points_by_week():
+    player = {"stats": [espn_stat(10, 20.0, receptions=4), espn_stat(11, 10.0), espn_stat(9, 99.0)]}
+    assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.HALF_PPR) == {10: 18.0, 11: 10.0}
+    assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.PPR, skip_week=10) == {11: 10.0}
+
+
+def test_sleeper_weekly_points_and_totals():
+    class FakeSleeper(sleeper.SleeperSource):
+        def __init__(self):
+            pass
+
+        def weekly_projections(self, season, week):
+            return [{"player_id": "1", "team": "DET", "stats": {"pts_ppr": float(week)}}]
+
+    weekly = FakeSleeper().weekly_points(SEASON, WEEKS, ScoringFormat.PPR, played_first_week=frozenset({"DET"}))
+    assert weekly == {"1": {11: 11.0}}  # week 10 already played
+    assert sleeper.ros_totals(weekly) == {"1": 11.0}
+
+
+def test_build_players_keeps_weekly_projections_by_source():
+    sleeper_players = {"10": {"full_name": "Kenneth Walker III", "position": "RB", "team": "SEA"}}
+    index = EspnIndex([EspnProjection(100, "Kenneth Walker III", Position.RB, "SEA", 30.0, {10: 14.0, 11: 16.0})])
+    [walker] = build_players(sleeper_players, {"10": 22.0}, index, {}, {"10": {10: 12.0, 11: 10.0}})
+    assert walker.weekly_projections == {10: {"sleeper": 12.0, "espn": 14.0}, 11: {"sleeper": 10.0, "espn": 16.0}}
+    assert walker.week_projection(10) == 13.0
+    assert walker.week_projection(12) is None
+
+
+def test_weekly_projections_survive_the_cache(tmp_path):
+    index = EspnIndex([])
+    players = build_players(
+        {"10": {"full_name": "A Player", "position": "QB", "team": "KC"}}, {"10": 20.0}, index, {}, {"10": {10: 20.0}}
+    )
+    path = tmp_path / "players.json"
+    write_cache(path, players, SEASON, WEEKS, ScoringFormat.PPR)
+    [loaded] = load_player_cache(path)
+    assert loaded.weekly_projections == {10: {"sleeper": 20.0}}

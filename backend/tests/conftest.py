@@ -3,6 +3,7 @@ import pytest
 from app.api.dependencies import (
     get_adp,
     get_local_player_data,
+    get_matchups,
     get_outlooks,
     get_player_repository,
     get_profile_service,
@@ -10,6 +11,7 @@ from app.api.dependencies import (
 from app.data.repository import InMemoryPlayerRepository
 from app.data.sample_players import SAMPLE_PLAYERS
 from app.main import app, limiter
+from app.services.matchups import MatchupData
 from app.services.player_profile import LocalPlayerData
 
 
@@ -26,6 +28,7 @@ def use_sample_players():
     app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(SAMPLE_PLAYERS)
     app.dependency_overrides[get_adp] = lambda: {}
     app.dependency_overrides[get_outlooks] = lambda: {}
+    app.dependency_overrides[get_matchups] = lambda: (MatchupData(), {})
     app.dependency_overrides[get_profile_service] = NoNetworkProfiles
     app.dependency_overrides[get_local_player_data] = lambda: LocalPlayerData(None)
     limiter.reset()

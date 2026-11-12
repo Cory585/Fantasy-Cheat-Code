@@ -221,3 +221,53 @@ def test_wants_html_never_crashes(raw):
 def test_wants_html_respects_quality(q):
     header = f"text/html;q={q}".encode()
     assert wants_html({"headers": [(b"accept", header)]}) == (q > 0)
+
+
+# ---------- Start/sit lineups ----------
+
+import itertools  # noqa: E402
+
+from app.models.start_sit import SLOT_POSITIONS, LineupSlot  # noqa: E402
+from app.services.matchups import MatchupData  # noqa: E402
+from app.services.start_sit import StartSitAdvisor  # noqa: E402
+
+roster_players = st.lists(
+    st.tuples(st.sampled_from([Position.QB, Position.RB, Position.WR, Position.TE]), st.floats(0, 30)),
+    min_size=1, max_size=7,
+)
+lineup_slots = st.fixed_dictionaries({
+    LineupSlot.QB: st.integers(0, 1), LineupSlot.RB: st.integers(0, 2), LineupSlot.WR: st.integers(0, 2),
+    LineupSlot.TE: st.integers(0, 1), LineupSlot.FLEX: st.integers(0, 1), LineupSlot.SUPERFLEX: st.integers(0, 1),
+})
+
+
+@settings(max_examples=80, deadline=None)
+@given(players=roster_players, slots=lineup_slots)
+def test_lineup_is_as_good_as_any_assignment(players, slots):
+    assume(0 < sum(slots.values()) <= 5)  # keeps the brute force small
+    roster = [
+        Player(id=f"p{i}", name=f"P{i}", position=pos, team="AAA", weekly_projections={1: {"x": round(pts, 2)}})
+        for i, (pos, pts) in enumerate(players)
+    ]
+    advisor = StartSitAdvisor(MatchupData(), None, (1, 17), simulations=50)
+    result = advisor.lineup(roster, slots, week=1)
+
+    starters = [s.starter.player.id for s in result.lineup if s.starter]
+    assert len(starters) == len(set(starters))
+    assert {pw.player.id for pw in result.bench} | set(starters) == {p.id for p in roster}
+    for spot in result.lineup:
+        if spot.starter:
+            assert spot.starter.player.position in SLOT_POSITIONS[spot.slot]
+
+    # Brute force: every way to put distinct players (or nobody) in the spots.
+    spots = [slot for slot, n in slots.items() for _ in range(n)]
+    points = {p.id: p.week_projection(1) for p in roster}
+    options = [None] + roster
+    best = 0.0
+    for choice in itertools.product(options, repeat=len(spots)):
+        chosen = [p for p in choice if p is not None]
+        if len({p.id for p in chosen}) != len(chosen):
+            continue
+        if all(p is None or p.position in SLOT_POSITIONS[s] for p, s in zip(choice, spots)):
+            best = max(best, sum(points[p.id] for p in chosen))
+    assert result.projected_total == pytest.approx(best, abs=0.1)
