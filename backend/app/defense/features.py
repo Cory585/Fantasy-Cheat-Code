@@ -26,20 +26,42 @@ Features (opponent = the offense the defense is facing):
     home                   1 if the defense is at home
     wind_mph               game wind speed (0 indoors)
     cold                   degrees below 40F, in tens (0 indoors)
+    opp_qb_sack_rate       sacks taken per dropback by the opponent's expected starting QB
+    opp_qb_int_rate        interceptions per pass attempt by that QB
+    def_sack_rate          sacks the defense makes per opponent dropback
+    def_pressure_pg        the defense's QB hits per game (steadier than sacks)
+    def_pass_defended_pg   passes defended per game (a steadier sign of interceptions to come)
+    def_epa_allowed        opponent EPA per dropback against this defense
+    def_favored_by         points the defense's team is favored by (trailing offenses pass more)
+    rest_edge              the defense's days of rest minus the opponent's (capped at +/-7)
+
+Matchup features combine both sides, because points come from the interaction (a strong pass
+rush matters more against a QB who takes sacks) and points-allowed scoring is a step function:
+    exp_pa_score           expected points-allowed score if the opponent scores around its implied
+                           points (normal, sd TEAM_SCORE_SD)
+    exp_sacks              opponent dropbacks per game x defense sack rate x the expected QB's sack
+                           rate / league sack rate
+    exp_takeaways          opponent plays per game x defense takeaway rate x opponent giveaway rate
+                           / league giveaway rate
 """
 
 import json
+import math
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 
-from app.defense.scoring import dst_points
+from app.defense.scoring import dst_points, points_allowed_score
 
 FEATURES = [
     "opp_implied_points", "opp_points_pg", "opp_sack_rate", "opp_turnover_rate", "opp_epa_per_dropback",
     "opp_proe", "opp_plays_pg", "opp_qb_rating", "opp_qb_out", "opp_receiver_depth", "opp_receivers_out",
     "def_sacks_pg", "def_takeaways_pg", "def_dst_ppg", "def_points_allowed_pg", "def_players_out",
     "home", "wind_mph", "cold",
+    "opp_qb_sack_rate", "opp_qb_int_rate", "def_sack_rate", "def_pressure_pg", "def_pass_defended_pg",
+    "def_epa_allowed", "def_favored_by", "rest_edge",
+    "exp_pa_score", "exp_sacks", "exp_takeaways",
 ]
 
 # Direction each feature should push a defense's projection (+1 helps the defense).
@@ -48,10 +70,19 @@ EXPECTED_SIGNS = {
     "opp_epa_per_dropback": -1, "opp_proe": +1, "opp_plays_pg": +1, "opp_qb_rating": -1, "opp_qb_out": +1,
     "opp_receiver_depth": -1, "opp_receivers_out": +1, "def_sacks_pg": +1, "def_takeaways_pg": +1,
     "def_dst_ppg": +1, "def_points_allowed_pg": -1, "def_players_out": -1, "home": +1, "wind_mph": +1, "cold": +1,
+    "opp_qb_sack_rate": +1, "opp_qb_int_rate": +1, "def_sack_rate": +1, "def_pressure_pg": +1,
+    "def_pass_defended_pg": +1, "def_epa_allowed": -1, "def_favored_by": +1, "rest_edge": +1,
+    "exp_pa_score": +1, "exp_sacks": +1, "exp_takeaways": +1,
 }
 
 PRIOR_GAMES = 4.0  # how many games' worth of weight the prior gets
 QB_PRIOR_ATTEMPTS = 150.0
+# League-typical QB rates, the prior for QBs with few attempts.
+LEAGUE_QB_SACK_RATE = 0.068
+LEAGUE_QB_INT_RATE = 0.023
+LEAGUE_TURNOVER_RATE = 0.021  # interceptions + fumbles lost per offensive play
+MAX_REST_EDGE = 7.0
+TEAM_SCORE_SD = 10.0  # how far a team's score typically lands from its implied points
 OUT_STATUSES = {"Out", "Doubtful"}
 INDOOR_ROOFS = {"dome", "closed"}
 DEFENSIVE_POSITIONS = {"DE", "DT", "NT", "DL", "LB", "ILB", "OLB", "MLB", "CB", "S", "FS", "SS", "DB", "SAF"}
@@ -93,6 +124,23 @@ def implied_points(team_is_home: bool, spread: float | None, total: float | None
     return (total + spread) / 2 if team_is_home else (total - spread) / 2
 
 
+def expected_pa_score(implied: float, sd: float = TEAM_SCORE_SD) -> float:
+    """Expected points-allowed score when the opponent's score is normal around `implied`.
+
+    Scores are whole points, so each tier covers a range of integers; the normal is split at
+    half-points. A tier step function of the mean alone would jump at tier boundaries."""
+    def cdf(x: float) -> float:
+        return 0.5 * (1 + math.erf((x - implied) / (sd * math.sqrt(2))))
+
+    edges = [(0.5, 10), (6.5, 7), (13.5, 4), (20.5, 1), (27.5, 0), (34.5, -1)]
+    total, below = 0.0, 0.0
+    for edge, score in edges:
+        p = cdf(edge)
+        total += (p - below) * score
+        below = p
+    return total + (1 - below) * points_allowed_score(35)
+
+
 class DefenseFeatureBuilder:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -104,17 +152,21 @@ class DefenseFeatureBuilder:
         c = self.conn
         self.games = [dict(zip(
             ("game_id", "season", "week", "away", "home", "away_score", "home_score", "spread", "total",
-             "roof", "temp", "wind", "espn_id", "away_coach", "home_coach"), row))
+             "roof", "temp", "wind", "espn_id", "away_coach", "home_coach", "gameday"), row))
             for row in c.execute(
                 """SELECT game_id, season, week, away_team, home_team, away_score, home_score, spread_line,
-                          total_line, roof, temp, wind, espn_id, away_coach, home_coach
+                          total_line, roof, temp, wind, espn_id, away_coach, home_coach, gameday
                    FROM games WHERE game_type = 'REG' ORDER BY season, week""")]
 
         # Points scored/allowed per team-game.
         self.scored = defaultdict(dict)  # (season, team) -> week -> points scored
         self.allowed = defaultdict(dict)
         self.coach = {}  # (season, team) -> head coach (from any game)
+        self.gamedays = defaultdict(dict)  # (season, team) -> week -> ISO date
         for g in self.games:
+            if g["gameday"]:
+                self.gamedays[(g["season"], g["away"])][g["week"]] = g["gameday"]
+                self.gamedays[(g["season"], g["home"])][g["week"]] = g["gameday"]
             for team, coach in ((g["away"], g["away_coach"]), (g["home"], g["home_coach"])):
                 if coach:
                     self.coach[(g["season"], team)] = coach
@@ -127,12 +179,16 @@ class DefenseFeatureBuilder:
 
         # Offense per game (play-calling, efficiency).
         self.offense = defaultdict(dict)  # (season, team) -> week -> row
+        self.offense_against = defaultdict(dict)  # (season, defense) -> week -> the opposing offense's row
         for row in c.execute(
-            """SELECT season, week, team, plays, dropbacks, sacks, interceptions, fumbles_lost, dropback_epa,
-                      pass_oe_sum, pass_oe_n FROM team_game_offense WHERE season_type = 'REG'"""):
-            season, week, team, *values = row
-            self.offense[(season, team)][week] = dict(zip(
-                ("plays", "dropbacks", "sacks", "ints", "fumbles", "epa", "oe_sum", "oe_n"), values))
+            """SELECT season, week, team, opponent, plays, dropbacks, sacks, interceptions, fumbles_lost,
+                      dropback_epa, pass_oe_sum, pass_oe_n FROM team_game_offense WHERE season_type = 'REG'"""):
+            season, week, team, opponent, *values = row
+            offense = dict(zip(("plays", "dropbacks", "sacks", "ints", "fumbles", "epa", "oe_sum", "oe_n"),
+                               (v or 0 for v in values)))
+            self.offense[(season, team)][week] = offense
+            if opponent:
+                self.offense_against[(season, opponent)][week] = offense
 
         # Defense stat lines.
         self.defense = defaultdict(dict)  # (season, team) -> week -> stats dict
@@ -151,7 +207,8 @@ class DefenseFeatureBuilder:
             self.names[gsis] = name
             if position == "QB":
                 self.qbs[(season, team)][week][gsis] = {k: float(s.get(k) or 0) for k in
-                    ("attempts", "completions", "passing_yards", "passing_tds", "passing_interceptions")}
+                    ("attempts", "completions", "passing_yards", "passing_tds", "passing_interceptions",
+                     "sacks_suffered")}
             else:
                 self.receivers[(season, team)][week][gsis] = {
                     "targets": float(s.get("targets") or 0), "yards": float(s.get("receiving_yards") or 0)}
@@ -210,8 +267,8 @@ class DefenseFeatureBuilder:
         rows = self._before(table.get((season, team), {}), week)
         return sum(fn(r) for r in rows) / len(rows) if rows else None
 
-    def _ratio(self, season, team, week, num, den):
-        rows = self._before(self.offense.get((season, team), {}), week)
+    def _ratio(self, season, team, week, num, den, table=None):
+        rows = self._before((self.offense if table is None else table).get((season, team), {}), week)
         d = sum(r[den] for r in rows)
         return sum(r[num] for r in rows) / d if d else None
 
@@ -251,7 +308,8 @@ class DefenseFeatureBuilder:
 
         # Opponent QB and receivers, adjusted for this week's injury report.
         report = self.injuries.get((s, w, opponent), {})
-        f["opp_qb_rating"], f["opp_qb_out"], ctx["opp_qb"] = self._expected_qb(s, opponent, w, report)
+        (f["opp_qb_rating"], f["opp_qb_out"], ctx["opp_qb"],
+         f["opp_qb_sack_rate"], f["opp_qb_int_rate"]) = self._expected_qb(s, opponent, w, report)
         f["opp_receiver_depth"], f["opp_receivers_out"], ctx["opp_receivers_out"] = self._receivers(s, opponent, w, report)
 
         # The defense itself.
@@ -263,6 +321,25 @@ class DefenseFeatureBuilder:
         f["def_points_allowed_pg"] = self._blend(
             s, defense, w, lambda s_, t, w_: self._per_game(self.allowed, s_, t, w_, lambda x: x), "allowed")
         f["def_dst_ppg"] = self._blend(s, defense, w, self._dst_ppg, "dst_ppg")
+        f["def_pressure_pg"] = self._blend(s, defense, w, def_rate(lambda d: float(d.get("def_qb_hits") or 0)), "qb_hits")
+        f["def_pass_defended_pg"] = self._blend(
+            s, defense, w, def_rate(lambda d: float(d.get("def_pass_defended") or 0)), "pass_defended")
+        f["def_sack_rate"] = self._blend(s, defense, w, lambda s_, t, w_: self._ratio(
+            s_, t, w_, "sacks", "dropbacks", self.offense_against), "def_sack_rate")
+        f["def_epa_allowed"] = self._blend(s, defense, w, lambda s_, t, w_: self._ratio(
+            s_, t, w_, "epa", "dropbacks", self.offense_against), "def_epa_allowed")
+        favored = None if g["spread"] is None else (g["spread"] if is_home else -g["spread"])
+        f["def_favored_by"] = float(favored) if favored is not None else 0.0
+        f["rest_edge"] = self._rest_edge(s, w, defense, opponent)
+
+        # Matchup interactions.
+        f["exp_pa_score"] = expected_pa_score(f["opp_implied_points"])
+        opp_dropbacks = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(
+            self.offense, s_, t, w_, lambda r: r["dropbacks"]), "dropbacks")
+        f["exp_sacks"] = opp_dropbacks * f["def_sack_rate"] * f["opp_qb_sack_rate"] / LEAGUE_QB_SACK_RATE
+        def_takeaway_rate = self._blend(s, defense, w, lambda s_, t, w_: self._turnover_rate(
+            s_, t, w_, self.offense_against), "def_to_rate")
+        f["exp_takeaways"] = f["opp_plays_pg"] * def_takeaway_rate * f["opp_turnover_rate"] / LEAGUE_TURNOVER_RATE
         own_report = self.injuries.get((s, w, defense), {})
         out_defenders = [gsis for gsis, (pos, status) in own_report.items()
                          if status in OUT_STATUSES and pos in DEFENSIVE_POSITIONS]
@@ -280,8 +357,8 @@ class DefenseFeatureBuilder:
                 target = dst_points(stats, allowed)
         return FeatureRow(s, w, g["game_id"], g["espn_id"], defense, opponent, is_home, f, target, ctx)
 
-    def _turnover_rate(self, season, team, week):
-        rows = self._before(self.offense.get((season, team), {}), week)
+    def _turnover_rate(self, season, team, week, table=None):
+        rows = self._before((self.offense if table is None else table).get((season, team), {}), week)
         plays = sum(r["plays"] for r in rows)
         return sum(r["ints"] + r["fumbles"] for r in rows) / plays if plays else None
 
@@ -309,12 +386,13 @@ class DefenseFeatureBuilder:
         return (oe_sum + prior * prior_plays) / (oe_n + prior_plays), coach
 
     def _expected_qb(self, season, team, week, report):
-        """Passer rating of the QB expected to start, and whether the usual starter is out."""
+        """(passer rating, 1 if the usual starter is out, name, sack rate, interception rate) of the
+        QB expected to start. Rates are blended with league-typical ones over QB_PRIOR_ATTEMPTS."""
         by_week = self.qbs.get((season, team), {})
         played = sorted(w for w in by_week if w < week)
         league = 90.0
         if not played:
-            return league, 0.0, None
+            return league, 0.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE
         last = by_week[played[-1]]
         starter = max(last, key=lambda q: last[q]["attempts"])
         out = report.get(starter, (None, None))[1] in OUT_STATUSES
@@ -328,7 +406,7 @@ class DefenseFeatureBuilder:
             expected = max(totals, key=totals.get) if totals else None
 
         if expected is None:
-            return league - 15, 1.0, None  # unknown backup
+            return league - 15, 1.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE  # unknown backup
         sums = defaultdict(float)
         for w in played:
             for k, v in by_week[w].get(expected, {}).items():
@@ -337,7 +415,24 @@ class DefenseFeatureBuilder:
                                sums["passing_tds"], sums["passing_interceptions"])
         attempts = sums["attempts"]
         blended = (rating * attempts + league * QB_PRIOR_ATTEMPTS) / (attempts + QB_PRIOR_ATTEMPTS)
-        return blended, 1.0 if out else 0.0, self.names.get(expected)
+        sacks = sums["sacks_suffered"]
+        sack_rate = (sacks + LEAGUE_QB_SACK_RATE * QB_PRIOR_ATTEMPTS) / (attempts + sacks + QB_PRIOR_ATTEMPTS)
+        int_rate = (sums["passing_interceptions"] + LEAGUE_QB_INT_RATE * QB_PRIOR_ATTEMPTS) / (attempts + QB_PRIOR_ATTEMPTS)
+        return blended, 1.0 if out else 0.0, self.names.get(expected), sack_rate, int_rate
+
+    def _rest_edge(self, season, week, defense, opponent) -> float:
+        """Days since the defense's last game minus the opponent's (0 in week 1 or without dates)."""
+        def rest(team):
+            days = self.gamedays.get((season, team), {})
+            before = [d for w, d in days.items() if w < week]
+            if week not in days or not before:
+                return None
+            return (date.fromisoformat(days[week]) - date.fromisoformat(max(before))).days
+
+        mine, theirs = rest(defense), rest(opponent)
+        if mine is None or theirs is None:
+            return 0.0
+        return max(-MAX_REST_EDGE, min(MAX_REST_EDGE, float(mine - theirs)))
 
     def _receivers(self, season, team, week, report):
         """Yards per game of the top 3 available WR/TE (by targets), and how many top-3 are out."""
