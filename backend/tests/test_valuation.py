@@ -131,10 +131,10 @@ def test_schedule_form_injury_and_provider_traits():
     svc = ValuationService(InMemoryPlayerRepository([hot, hurt, spare]), outlooks)
     h, i = svc.value(hot, league), svc.value(hurt, league)
     assert "Easiest remaining schedule for WRs" in h.strengths
-    assert any("running above projections" in s for s in h.strengths)
+    assert any("points above projections" in s for s in h.strengths)
     assert "Projections agree (ESPN 152 vs Sleeper 148)" in h.strengths
     assert "3rd hardest remaining schedule for WRs" in i.concerns
-    assert any("running below projections" in c for c in i.concerns)
+    assert any("points below projections" in c for c in i.concerns)
     assert "Listed Q: trade value cut to 90%" in i.concerns
     assert "Projections disagree (ESPN 140 vs Sleeper 100), so the outlook is less certain" in i.concerns
 

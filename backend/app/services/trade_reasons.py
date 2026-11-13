@@ -129,13 +129,13 @@ def side_reasons(sends: list[PlayerValuation], receives: list[PlayerValuation]) 
     cold_in = [v for v in receives if _form(v) < 0]
     if hot_in:
         reasons.append(Reason(kind="form", effect=Effect.PLUS,
-                              text=f"Gets {_names(hot_in)}, outplaying projections lately"))
+                              text=f"Gets {_names(hot_in)}, whose recent form points above projections"))
     if hot_out:
         reasons.append(Reason(kind="form", effect=Effect.MINUS,
-                              text=f"Gives up {_names(hot_out)}, outplaying projections lately"))
+                              text=f"Gives up {_names(hot_out)}, whose recent form points above projections"))
     if cold_in:
         reasons.append(Reason(kind="form", effect=Effect.MINUS,
-                              text=f"Gets {_names(cold_in)}, playing below projections lately"))
+                              text=f"Gets {_names(cold_in)}, whose recent form points below projections"))
 
     # Injuries.
     hurt_in = [v for v in receives if v.player.injury_status]

@@ -73,14 +73,14 @@ def test_schedule_form_injury_and_uncertainty():
     reasons = by_kind(side_reasons(sends=[cold], receives=[hot, shaky]))
     assert reasons["schedule"][0].effect == Effect.PLUS
     assert "easier remaining schedules (15% more points allowed" in reasons["schedule"][0].text
-    assert [r.text for r in reasons["form"]] == ["Gets Hot, outplaying projections lately"]
+    assert [r.text for r in reasons["form"]] == ["Gets Hot, whose recent form points above projections"]
     assert reasons["injury"][0].text == "Takes on injury risk: Shaky (Q)"
     assert reasons["uncertainty"][0].effect == Effect.MINUS
     # And the other side sees the same facts the other way round.
     other = by_kind(side_reasons(sends=[hot, shaky], receives=[cold]))
     assert other["schedule"][0].effect == Effect.MINUS
-    assert [r.text for r in other["form"]] == ["Gives up Hot, outplaying projections lately",
-                                               "Gets Cold, playing below projections lately"]
+    assert [r.text for r in other["form"]] == ["Gives up Hot, whose recent form points above projections",
+                                               "Gets Cold, whose recent form points below projections"]
     assert other["injury"][0].text == "Moves injury risk: Shaky (Q)"
 
 

@@ -174,7 +174,8 @@ def player_traits(player: Player, outlook: PlayerOutlook | None, league: LeagueS
             trend = outlook.form_projection - outlook.provider_projection
             if abs(trend) >= 0.1 * outlook.provider_projection:
                 direction = "above" if trend > 0 else "below"
-                text = f"Recent form ({outlook.recent_ppg:.1f} pts/game) is running {direction} projections"
+                text = (f"Recent form ({outlook.recent_ppg:.1f} pts/game), adjusted for the remaining schedule, "
+                        f"points {direction} projections")
                 (strengths if trend > 0 else concerns).append(text)
 
     if player.injury_status:
