@@ -6,6 +6,9 @@ Usage (from backend/, after `python -m app.data.collect --seasons 2022-2026`):
 Evaluation is out of sample by season: the model is fit on earlier seasons and scored on a
 later one, compared against simple baselines. The final model is then fit on every played
 game and saved to `backend/data/defense_model.json`.
+
+Training uses every season in the database after the first (which is only the prior), so
+collecting older seasons (`--seasons 2018-2026`) gives it more history and more backtests.
 """
 
 import argparse
@@ -24,7 +27,7 @@ log = logging.getLogger(__name__)
 
 MODEL_PATH = DATA_DIR / "defense_model.json"
 ALPHAS = [1, 3, 10, 30, 100, 300, 1000]
-FIRST_TRAIN_SEASON = 2023  # 2022 is only used as the prior for 2023
+FIRST_TRAIN_SEASON = 2023  # without team stats to look at, assume 2022-2026 were collected
 
 
 def to_arrays(rows: list[FeatureRow], features: list[str] = FEATURES):
@@ -68,7 +71,7 @@ def backtest(rows: list[FeatureRow], test_season: int) -> dict:
 
     vegas_idx = [FEATURES.index("opp_implied_points")]
     vegas = RidgeModel.fit(X[:, vegas_idx], y, ["opp_implied_points"], alpha)
-    dst_ppg = Xt[:, FEATURES.index("def_dst_ppg")]
+    dst_ppg = np.array([r.context["def_dst_ppg"] for r in test])
     return {
         "test_season": test_season,
         "train_seasons": sorted({r.season for r in train}),
@@ -103,15 +106,23 @@ def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, lis
     return model, backtests
 
 
+def first_season_with_prior(conn: sqlite3.Connection) -> int:
+    """The season after the earliest one with team stats (that one is only the prior)."""
+    earliest = conn.execute("SELECT MIN(season) FROM team_week_stats WHERE season_type = 'REG'").fetchone()[0]
+    return FIRST_TRAIN_SEASON if earliest is None else earliest + 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--first-season", type=int, default=FIRST_TRAIN_SEASON)
+    parser.add_argument("--first-season", type=int, default=None,
+                        help="first season to train on (default: the second season in the database)")
     parser.add_argument("--last-season", type=int, default=datetime.now().year)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     conn = sqlite3.connect(settings.database_path)
-    model, backtests = train(conn, list(range(args.first_season, args.last_season + 1)))
+    first = args.first_season or first_season_with_prior(conn)
+    model, backtests = train(conn, list(range(first, args.last_season + 1)))
     model.save(MODEL_PATH)
 
     for bt in backtests:
@@ -124,7 +135,8 @@ def main() -> None:
              ", ".join(model.metadata.get("dropped_for_sign", [])) or "none")
     log.info("Points per 1 SD change (largest first):")
     for name, coef in sorted(zip(model.features, model.coefs), key=lambda t: -abs(t[1])):
-        log.info("  %-24s %+.3f", name, coef)
+        if coef:
+            log.info("  %-24s %+.3f", name, coef)
     log.info("\nSaved to %s", MODEL_PATH)
 
 

@@ -27,51 +27,33 @@ MIN_FACTOR_POINTS = 0.15  # smaller effects aren't worth a line in the reasons
 # Plain-language descriptions, phrased so "helps" / "hurts" reads naturally after them.
 DST_LABELS = {
     "opp_implied_points": "opponent's Vegas total",
-    "opp_points_pg": "opponent scoring",
     "opp_sack_rate": "opponent's sack rate allowed",
-    "opp_turnover_rate": "opponent's turnover rate",
-    "opp_epa_per_dropback": "opponent passing efficiency",
     "opp_proe": "opponent's pass-heavy play-calling",
     "opp_plays_pg": "opponent pace",
-    "opp_qb_rating": "opposing QB's passer rating",
-    "opp_qb_out": "opposing QB's availability",
-    "opp_receiver_depth": "opponent's healthy receivers",
-    "opp_receivers_out": "opponent's receiver injuries",
-    "def_sacks_pg": "sacks per game",
-    "def_takeaways_pg": "takeaways per game",
-    "def_dst_ppg": "fantasy points per game",
-    "def_points_allowed_pg": "points allowed per game",
-    "def_players_out": "defensive health",
-    "home": "home field",
-    "wind_mph": "wind",
-    "cold": "cold",
     "opp_qb_sack_rate": "opposing QB's sack rate",
     "opp_qb_int_rate": "opposing QB's interception rate",
-    "def_sack_rate": "pass rush (sack rate)",
+    "def_takeaways_pg": "takeaways per game",
     "def_pressure_pg": "QB hits per game",
     "def_pass_defended_pg": "passes defended per game",
-    "def_epa_allowed": "pass defense efficiency",
+    "def_players_out": "defensive health",
     "def_favored_by": "point spread",
-    "rest_edge": "rest advantage",
+    "wind_mph": "wind",
     "exp_pa_score": "expected points-allowed score",
-    "exp_sacks": "expected sacks",
     "exp_takeaways": "expected takeaways",
+}
+# Games without a Vegas line yet use an estimate of it (see DefenseFeatureBuilder.estimated_points).
+DST_LABELS_WITHOUT_LINE = {
+    **DST_LABELS,
+    "opp_implied_points": "opponent's projected points",
+    "def_favored_by": "projected point spread",
 }
 KICKER_LABELS = {
     "team_implied_points": "team's Vegas total",
-    "team_points_pg": "team scoring",
-    "team_fg_att_pg": "field goal attempts per game",
-    "team_pat_att_pg": "extra point attempts per game",
-    "team_fg_share": "drives stalling into field goals",
-    "team_plays_pg": "offensive pace",
-    "team_epa_per_dropback": "passing efficiency",
-    "team_k_ppg": "kicker points per game",
+    "team_favored_by": "point spread",
     "fg_pct": "field goal accuracy",
     "long_fg_share": "50+ yard attempts",
+    "pat_pct": "extra point accuracy",
     "opp_k_allowed_pg": "kicker points the opponent allows",
-    "opp_fg_att_allowed_pg": "field goal tries the opponent allows",
-    "opp_points_allowed_pg": "points the opponent allows",
-    "exp_k_points": "expected kicker points",
     "indoor": "dome",
     "wind_mph": "wind",
     "cold": "cold",
@@ -111,7 +93,8 @@ def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | Non
         if row.target is not None:
             models.dst_actual.setdefault(row.defense, {})[row.week] = round(row.target, 2)
         if dst_model is not None:
-            models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, DST_LABELS)
+            labels = DST_LABELS_WITHOUT_LINE if row.context.get("line_estimated") else DST_LABELS
+            models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, labels)
     if kicker_model is not None:
         for row in builder.rows([season], include_unplayed=True):
             models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, KICKER_LABELS)

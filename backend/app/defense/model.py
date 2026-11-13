@@ -31,25 +31,30 @@ class RidgeModel:
         alpha: float,
         metadata: dict | None = None,
         signs: dict[str, int] | None = None,
+        weights: np.ndarray | None = None,
     ):
         """Ridge fit. With `signs` ({feature: +1 or -1}), any feature whose coefficient comes
         out in the wrong direction is dropped (coefficient 0) and the rest refit, one at a
         time, until every coefficient points the expected way. Correlated features (like
         Vegas lines and points per game) otherwise produce flipped signs that make the
-        per-feature explanations misleading."""
-        means = X.mean(axis=0)
-        scales = X.std(axis=0)
+        per-feature explanations misleading.
+
+        `weights` (one per row) weights the fit, the standardization, and the intercept,
+        e.g. to count recent seasons more."""
+        w = np.ones(len(y)) if weights is None else np.asarray(weights, dtype=float) / np.mean(weights)
+        means = np.average(X, axis=0, weights=w)
+        scales = np.sqrt(np.average((X - means) ** 2, axis=0, weights=w))
         scales[scales == 0] = 1.0
         Z = (X - means) / scales
-        intercept = float(y.mean())
+        intercept = float(np.average(y, weights=w))
         active = list(range(len(features)))
         while True:
             coefs = np.zeros(len(features))
             if active:
                 Za = Z[:, active]
-                # Closed-form ridge on centered data: (Z'Z + alpha I)^-1 Z'(y - mean)
-                A = Za.T @ Za + alpha * np.eye(len(active))
-                coefs[active] = np.linalg.solve(A, Za.T @ (y - intercept))
+                # Closed-form weighted ridge on centered data: (Z'WZ + alpha I)^-1 Z'W(y - mean)
+                A = Za.T @ (w[:, None] * Za) + alpha * np.eye(len(active))
+                coefs[active] = np.linalg.solve(A, Za.T @ (w * (y - intercept)))
             if not signs:
                 break
             wrong = [i for i in active if signs.get(features[i], 0) * coefs[i] < 0]

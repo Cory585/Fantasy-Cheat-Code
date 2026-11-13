@@ -3,14 +3,17 @@ import json
 import numpy as np
 import pytest
 
+from app.defense import features as defense_features
 from app.defense.features import (
     EXPECTED_SIGNS,
     FEATURES,
     DefenseFeatureBuilder,
     expected_pa_score,
+    implied_points,
 )
 from app.defense.model import RidgeModel
 from app.defense.scoring import dst_points, points_allowed_score
+from app.services.special_teams import DST_LABELS
 from tests.league_fixture import build_league
 
 
@@ -28,8 +31,9 @@ def test_expected_pa_score_is_smooth_and_matches_tiers_at_the_extremes():
     assert abs(expected_pa_score(13.4) - expected_pa_score(13.6)) < 0.1
 
 
-def test_every_feature_has_an_expected_sign():
+def test_every_feature_has_an_expected_sign_and_a_label():
     assert set(EXPECTED_SIGNS) == set(FEATURES)
+    assert set(DST_LABELS) == set(FEATURES)
 
 
 @pytest.fixture
@@ -53,20 +57,7 @@ def test_matchup_features_favor_the_better_side(builder):
     buf, mia = rows[(2025, 4, "BUF")], rows[(2025, 4, "MIA")]
     assert buf.features["def_favored_by"] == 3.0 and mia.features["def_favored_by"] == -3.0
     assert buf.features["exp_pa_score"] > mia.features["exp_pa_score"]
-    assert buf.features["exp_sacks"] > mia.features["exp_sacks"]  # better rush vs a QB who takes more sacks
-
-
-def test_rest_edge_from_game_dates(tmp_path):
-    conn = build_league(tmp_path / "league.db")
-    # Move BUF's week-2 game (at NE) up three days, so BUF has 3 more days of rest before week 3.
-    conn.execute("UPDATE games SET gameday = date(gameday, '-3 days') WHERE season = 2025 AND week = 2 AND "
-                 "(home_team = 'BUF' OR away_team = 'BUF')")
-    conn.commit()
-    rows = rows_by_key(DefenseFeatureBuilder(conn))
-    # Week 3: NYJ at BUF. BUF had 10 days of rest (week 2 moved up), NYJ had 7.
-    assert rows[(2025, 3, "BUF")].features["rest_edge"] == 3.0
-    assert rows[(2025, 3, "NYJ")].features["rest_edge"] == -3.0
-    assert rows[(2025, 1, "BUF")].features["rest_edge"] == 0.0  # no earlier game this season
+    assert buf.features["opp_sack_rate"] > mia.features["opp_sack_rate"]  # MIA allows more sacks than BUF
 
 
 def test_features_only_use_earlier_weeks(tmp_path):
@@ -76,6 +67,7 @@ def test_features_only_use_earlier_weeks(tmp_path):
     stats = json.loads(conn.execute("SELECT stats FROM team_week_stats WHERE team = 'BUF' AND season = 2025 "
                                     "AND week = 4").fetchone()[0])
     stats["def_sacks"] = 9
+    stats["def_qb_hits"] = 15
     conn.execute("UPDATE team_week_stats SET stats = ? WHERE team = 'BUF' AND season = 2025 AND week = 4",
                  (json.dumps(stats),))
     conn.execute("UPDATE team_game_offense SET sacks = 9 WHERE opponent = 'BUF' AND season = 2025 AND week = 4")
@@ -103,3 +95,50 @@ def test_sign_constrained_fit_drops_wrong_way_features():
                            signs={"good": +1, "flipped": +1})
     assert model.coefs[0] > 0 and model.coefs[1] == 0
     assert "flipped" in model.metadata["dropped_for_sign"]
+
+
+def test_weighted_fit_matches_unweighted_with_equal_weights_and_follows_heavy_rows():
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(200, 2))
+    y = 2 * X[:, 0] + rng.normal(size=200)
+    plain = RidgeModel.fit(X, y, ["a", "b"], 1.0)
+    equal = RidgeModel.fit(X, y, ["a", "b"], 1.0, weights=np.full(200, 3.0))
+    assert np.allclose(plain.coefs, equal.coefs) and plain.intercept == pytest.approx(equal.intercept)
+    # Rows weighted up pull the intercept toward their average.
+    w = np.where(y > 0, 10.0, 1.0)
+    assert RidgeModel.fit(X, y, ["a", "b"], 1.0, weights=w).intercept > plain.intercept
+
+
+def _remove_lines(conn, from_week: int):
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= ?",
+                 (from_week,))
+    conn.commit()
+
+
+def test_games_without_a_line_get_an_estimate_from_both_teams(tmp_path):
+    conn = build_league(tmp_path / "league.db", unplayed_from=5)
+    _remove_lines(conn, 5)
+    rows = rows_by_key(DefenseFeatureBuilder(conn))
+    # Week 5: BUF at NE. BUF's defense faces a weak offense, NE's faces the best one.
+    buf, ne = rows[(2025, 5, "BUF")], rows[(2025, 5, "NE")]
+    assert buf.context["line_estimated"] and not rows[(2025, 4, "BUF")].context["line_estimated"]
+    assert buf.context["opp_implied_points"] is None
+    assert buf.features["opp_implied_points"] < ne.features["opp_implied_points"]
+    assert buf.features["def_favored_by"] > 0 > ne.features["def_favored_by"]
+    assert buf.features["def_favored_by"] == pytest.approx(-ne.features["def_favored_by"])
+
+
+def test_line_estimate_is_fit_to_the_loaded_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr(defense_features, "MIN_LINE_FIT_ROWS", 10)
+    builder = DefenseFeatureBuilder(build_league(tmp_path / "league.db"))
+    assert builder.line_coefs() != defense_features.DEFAULT_LINE_COEFS
+    # The fixture's lines follow scoring exactly, so the fit reproduces them.
+    for g in builder.games:
+        if g["season"] == 2025 and g["week"] >= 3:
+            expected = implied_points(True, g["spread"], g["total"])
+            estimate = builder.estimated_points(2025, g["week"], g["home"], g["away"], True)
+            assert estimate == pytest.approx(expected, abs=0.5)
+
+
+def test_line_estimate_falls_back_to_defaults_with_few_games(builder):
+    assert builder.line_coefs() == defense_features.DEFAULT_LINE_COEFS
