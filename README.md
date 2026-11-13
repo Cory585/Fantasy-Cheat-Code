@@ -7,6 +7,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries |
 | Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets your saved team's best lineup |
 | Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each |
+| Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |
 | My team | `/team/` | Saves your roster and lineup spots in the browser |
 | Player profiles | `/player/?id=…` | Bio, NFL and college stats, and combine results |
 | Tier lists | `/tiers/` | In development |
@@ -38,13 +39,13 @@ flowchart LR
 
     subgraph api["FastAPI app (backend/app)"]
         mw["Middleware<br/>rate limit, body size, security headers"]
-        routes["Routes<br/>/players /trades /start-sit /draft /meta"]
+        routes["Routes<br/>/players /trades /start-sit /draft<br/>/defenses /meta"]
         deps["dependencies.py<br/>reloads data when files change"]
-        services["Services<br/>valuation, trade analyzer, start/sit,<br/>K/DST models, draft planner, outlooks, profiles"]
+        services["Services<br/>valuation, trade analyzer, start/sit,<br/>K/DST models, defense breakdown,<br/>draft planner, outlooks, profiles"]
     end
 
     subgraph web["Browser (frontend/, static)"]
-        pages["Pages<br/>trade, start/sit, draft, team, player"]
+        pages["Pages<br/>trade, start/sit, draft,<br/>defense, team, player"]
         ls[("localStorage<br/>saved team")]
     end
 
@@ -84,7 +85,7 @@ backend/
     main.py        app, middleware, router registration, static site
     config.py      settings from environment variables
     api/           routes, dependency wiring, errors, rate limiting, security headers
-    services/      valuation, trades, start/sit, draft, matchups, outlooks, profiles
+    services/      valuation, trades, start/sit, draft, defense breakdown, matchups, outlooks, profiles
     data/          sync and collect jobs, repositories, caches, sources/ (Sleeper, ESPN, nflverse, weather)
     defense/       DST features, scoring, ridge model, and training
     kicker/        kicker features and training (shares the DST model code)
@@ -105,8 +106,10 @@ pip install -r requirements.txt
 python -m app.data.sync         # player pool and projections (about 15 seconds)
 python -m app.data.collect      # stats, schedules, injuries, ADP (about 10 seconds, optional)
 
-# Optional: history and the kicker/DST matchup models used by start/sit
-python -m app.data.collect --seasons 2022-2026
+# Optional: history for the defense breakdown and the kicker/DST matchup models used by
+# start/sit. The models train on every collected season after the first; more seasons
+# give them more history (2018-2026 takes a few minutes).
+python -m app.data.collect --seasons 2018-2026
 python -m app.defense.train
 python -m app.kicker.train
 
@@ -115,7 +118,8 @@ uvicorn app.main:app --reload
 
 Open http://localhost:8000 for the site and http://localhost:8000/docs for the interactive API
 docs. Without a sync the API uses fictional sample players; without a collect, values use
-provider projections only (no schedule, form, or ADP).
+provider projections only (no schedule, form, or ADP), and the defense breakdown page
+explains how to collect the data it needs.
 
 ## API
 
@@ -129,6 +133,8 @@ provider projections only (no schedule, form, or ADP).
 | `GET /start-sit?player=7564&player=6794&week=11` | Who to start, with confidence and reasons |
 | `POST /start-sit/lineup` | Best lineup from a roster for a week |
 | `GET /draft/plan?teams=12&slot=5&rounds=15` | Your picks and likely targets at each |
+| `GET /defenses?season=2026` | Every defense with position-group ranks, points allowed, and DST points per game |
+| `GET /defenses/{team}` | One defense by position group and unit, with league ranks, fantasy points allowed, and next games' DST projections |
 
 Example trade:
 
@@ -146,7 +152,7 @@ Errors are always `{"detail": "...", "code": "..."}`.
 
 ```
 pip install -r requirements-dev.txt
-pytest                  # everything, about 30 seconds
+pytest                  # everything, about a minute
 pytest -m "not e2e"     # skip the browser tests
 ```
 
@@ -156,7 +162,8 @@ No test contacts an outside provider.
 
 [`backend/README.md`](backend/README.md) covers data sources and the database schema, how trade
 values and start/sit calls are calculated, the draft guide, error codes, rate limits, security
-headers, profile caching, and the test suite.
+headers, profile caching, the kicker and DST models with their backtests, the defense
+breakdown, and the test suite.
 
 ## Next steps
 
