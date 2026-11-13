@@ -68,7 +68,7 @@ def backtest(rows: list[FeatureRow], test_season: int) -> dict:
 
     vegas_idx = [FEATURES.index("opp_implied_points")]
     vegas = RidgeModel.fit(X[:, vegas_idx], y, ["opp_implied_points"], alpha)
-    dst_ppg = Xt[:, FEATURES.index("def_dst_ppg")]
+    dst_ppg = np.array([r.context["def_dst_ppg"] for r in test])
     return {
         "test_season": test_season,
         "train_seasons": sorted({r.season for r in train}),

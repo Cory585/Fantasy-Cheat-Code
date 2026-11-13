@@ -8,41 +8,30 @@ for play-calling tendencies), weighted as if the prior were PRIOR_GAMES games of
 
 Features (opponent = the offense the defense is facing):
     opp_implied_points     Vegas implied points for the opponent (from spread and total)
-    opp_points_pg          opponent points per game
     opp_sack_rate          sacks taken per dropback by the opponent
-    opp_turnover_rate      interceptions + fumbles lost per opponent play
-    opp_epa_per_dropback   opponent passing efficiency
     opp_proe               opponent neutral pass rate over expected (coaching tendency)
     opp_plays_pg           opponent plays per game (pace)
-    opp_qb_rating          season passer rating of the opponent's expected starting QB
-    opp_qb_out             1 if the opponent's usual starting QB is out this week
-    opp_receiver_depth     receiving yards per game of the opponent's top 3 available WR/TE
-    opp_receivers_out      how many of the opponent's top 3 receivers are out this week
-    def_sacks_pg           the defense's sacks per game
-    def_takeaways_pg       the defense's interceptions + fumble recoveries per game
-    def_dst_ppg            the defense's fantasy points per game
-    def_points_allowed_pg  points the defense allows per game
-    def_players_out        defensive players listed out this week
-    home                   1 if the defense is at home
-    wind_mph               game wind speed (0 indoors)
-    cold                   degrees below 40F, in tens (0 indoors)
     opp_qb_sack_rate       sacks taken per dropback by the opponent's expected starting QB
-    opp_qb_int_rate        interceptions per pass attempt by that QB
-    def_sack_rate          sacks the defense makes per opponent dropback
+    opp_qb_int_rate        interceptions per pass attempt by that QB (both adjusted for injuries)
+    def_takeaways_pg       the defense's interceptions + fumble recoveries per game
     def_pressure_pg        the defense's QB hits per game (steadier than sacks)
     def_pass_defended_pg   passes defended per game (a steadier sign of interceptions to come)
-    def_epa_allowed        opponent EPA per dropback against this defense
+    def_players_out        defensive players listed out this week
     def_favored_by         points the defense's team is favored by (trailing offenses pass more)
-    rest_edge              the defense's days of rest minus the opponent's (capped at +/-7)
+    wind_mph               game wind speed (0 indoors)
 
-Matchup features combine both sides, because points come from the interaction (a strong pass
-rush matters more against a QB who takes sacks) and points-allowed scoring is a step function:
+Matchup features combine both sides, because points come from the interaction and
+points-allowed scoring is a step function:
     exp_pa_score           expected points-allowed score if the opponent scores around its implied
                            points (normal, sd TEAM_SCORE_SD)
-    exp_sacks              opponent dropbacks per game x defense sack rate x the expected QB's sack
-                           rate / league sack rate
     exp_takeaways          opponent plays per game x defense takeaway rate x opponent giveaway rate
                            / league giveaway rate
+
+Earlier versions also used opponent scoring, turnover rate, passing efficiency, QB passer rating
+and availability, and receiver injuries; the defense's sacks, sack rate, points allowed, fantasy
+points per game, and pass defense EPA; expected sacks; rest; home; and cold. Once the Vegas line
+is in, none of them improved the out-of-sample backtests, and the sign constraint was dropping
+most of them anyway (they're correlated with the line and with each other).
 """
 
 import json
@@ -50,29 +39,20 @@ import math
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
 
 from app.defense.scoring import dst_points, points_allowed_score
 
 FEATURES = [
-    "opp_implied_points", "opp_points_pg", "opp_sack_rate", "opp_turnover_rate", "opp_epa_per_dropback",
-    "opp_proe", "opp_plays_pg", "opp_qb_rating", "opp_qb_out", "opp_receiver_depth", "opp_receivers_out",
-    "def_sacks_pg", "def_takeaways_pg", "def_dst_ppg", "def_points_allowed_pg", "def_players_out",
-    "home", "wind_mph", "cold",
-    "opp_qb_sack_rate", "opp_qb_int_rate", "def_sack_rate", "def_pressure_pg", "def_pass_defended_pg",
-    "def_epa_allowed", "def_favored_by", "rest_edge",
-    "exp_pa_score", "exp_sacks", "exp_takeaways",
+    "opp_implied_points", "opp_sack_rate", "opp_proe", "opp_plays_pg", "opp_qb_sack_rate", "opp_qb_int_rate",
+    "def_takeaways_pg", "def_pressure_pg", "def_pass_defended_pg", "def_players_out", "def_favored_by",
+    "wind_mph", "exp_pa_score", "exp_takeaways",
 ]
 
 # Direction each feature should push a defense's projection (+1 helps the defense).
 EXPECTED_SIGNS = {
-    "opp_implied_points": -1, "opp_points_pg": -1, "opp_sack_rate": +1, "opp_turnover_rate": +1,
-    "opp_epa_per_dropback": -1, "opp_proe": +1, "opp_plays_pg": +1, "opp_qb_rating": -1, "opp_qb_out": +1,
-    "opp_receiver_depth": -1, "opp_receivers_out": +1, "def_sacks_pg": +1, "def_takeaways_pg": +1,
-    "def_dst_ppg": +1, "def_points_allowed_pg": -1, "def_players_out": -1, "home": +1, "wind_mph": +1, "cold": +1,
-    "opp_qb_sack_rate": +1, "opp_qb_int_rate": +1, "def_sack_rate": +1, "def_pressure_pg": +1,
-    "def_pass_defended_pg": +1, "def_epa_allowed": -1, "def_favored_by": +1, "rest_edge": +1,
-    "exp_pa_score": +1, "exp_sacks": +1, "exp_takeaways": +1,
+    "opp_implied_points": -1, "opp_sack_rate": +1, "opp_proe": +1, "opp_plays_pg": +1, "opp_qb_sack_rate": +1,
+    "opp_qb_int_rate": +1, "def_takeaways_pg": +1, "def_pressure_pg": +1, "def_pass_defended_pg": +1,
+    "def_players_out": -1, "def_favored_by": +1, "wind_mph": +1, "exp_pa_score": +1, "exp_takeaways": +1,
 }
 
 PRIOR_GAMES = 4.0  # how many games' worth of weight the prior gets
@@ -81,12 +61,10 @@ QB_PRIOR_ATTEMPTS = 150.0
 LEAGUE_QB_SACK_RATE = 0.068
 LEAGUE_QB_INT_RATE = 0.023
 LEAGUE_TURNOVER_RATE = 0.021  # interceptions + fumbles lost per offensive play
-MAX_REST_EDGE = 7.0
 TEAM_SCORE_SD = 10.0  # how far a team's score typically lands from its implied points
 OUT_STATUSES = {"Out", "Doubtful"}
 INDOOR_ROOFS = {"dome", "closed"}
 DEFENSIVE_POSITIONS = {"DE", "DT", "NT", "DL", "LB", "ILB", "OLB", "MLB", "CB", "S", "FS", "SS", "DB", "SAF"}
-RECEIVER_POSITIONS = {"WR", "TE"}
 DEFAULT_WIND = 8.0  # typical outdoor wind when a value is missing
 
 
@@ -102,19 +80,6 @@ class FeatureRow:
     features: dict[str, float]
     target: float | None = None  # actual DST points, for games already played
     context: dict = field(default_factory=dict)  # human-readable details (QB name, weather, ...)
-
-
-def passer_rating(completions: float, attempts: float, yards: float, tds: float, ints: float) -> float:
-    """NFL passer rating (0-158.3)."""
-    if attempts <= 0:
-        return 0.0
-    def clamp(x):
-        return max(0.0, min(2.375, x))
-    a = clamp((completions / attempts - 0.3) * 5)
-    b = clamp((yards / attempts - 3) * 0.25)
-    c = clamp(tds / attempts * 20)
-    d = clamp(2.375 - ints / attempts * 25)
-    return (a + b + c + d) / 6 * 100
 
 
 def implied_points(team_is_home: bool, spread: float | None, total: float | None) -> float | None:
@@ -166,11 +131,7 @@ class DefenseFeatureBuilder:
         self.scored = defaultdict(dict)  # (season, team) -> week -> points scored
         self.allowed = defaultdict(dict)
         self.coach = {}  # (season, team) -> head coach (from any game)
-        self.gamedays = defaultdict(dict)  # (season, team) -> week -> ISO date
         for g in self.games:
-            if g["gameday"]:
-                self.gamedays[(g["season"], g["away"])][g["week"]] = g["gameday"]
-                self.gamedays[(g["season"], g["home"])][g["week"]] = g["gameday"]
             for team, coach in ((g["away"], g["away_coach"]), (g["home"], g["home_coach"])):
                 if coach:
                     self.coach[(g["season"], team)] = coach
@@ -202,23 +163,17 @@ class DefenseFeatureBuilder:
                 (self.first_season,)):
             self.defense[(season, team)][week] = json.loads(stats)
 
-        # QBs and receivers per game.
+        # QBs per game.
         self.qbs = defaultdict(lambda: defaultdict(dict))  # (season, team) -> week -> gsis -> stats
-        self.receivers = defaultdict(lambda: defaultdict(dict))
         self.names = {}
-        for gsis, season, week, team, position, name, stats in c.execute(
-            """SELECT gsis_id, season, week, team, position, name, stats FROM player_week_stats
-               WHERE season_type = 'REG' AND position IN ('QB', 'WR', 'TE') AND season >= ?""",
+        for gsis, season, week, team, name, stats in c.execute(
+            """SELECT gsis_id, season, week, team, name, stats FROM player_week_stats
+               WHERE season_type = 'REG' AND position = 'QB' AND season >= ?""",
             (self.first_season,)):
             s = json.loads(stats)
             self.names[gsis] = name
-            if position == "QB":
-                self.qbs[(season, team)][week][gsis] = {k: float(s.get(k) or 0) for k in
-                    ("attempts", "completions", "passing_yards", "passing_tds", "passing_interceptions",
-                     "sacks_suffered")}
-            else:
-                self.receivers[(season, team)][week][gsis] = {
-                    "targets": float(s.get("targets") or 0), "yards": float(s.get("receiving_yards") or 0)}
+            self.qbs[(season, team)][week][gsis] = {
+                k: float(s.get(k) or 0) for k in ("attempts", "passing_interceptions", "sacks_suffered")}
 
         # Injury reports: (season, week, team) -> gsis -> (position, status)
         self.injuries = defaultdict(dict)
@@ -299,63 +254,52 @@ class DefenseFeatureBuilder:
         f: dict[str, float] = {}
         ctx: dict = {}
 
-        # Opponent scoring and Vegas.
-        f["opp_points_pg"] = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(self.scored, s_, t, w_, lambda x: x), "ppg")
-        implied = implied_points(not is_home, g["spread"], g["total"])
-        f["opp_implied_points"] = implied if implied is not None else f["opp_points_pg"]
-        ctx["opp_implied_points"] = implied
-
-        # Opponent offense tendencies and efficiency.
-        f["opp_sack_rate"] = self._blend(s, opponent, w, lambda s_, t, w_: self._ratio(s_, t, w_, "sacks", "dropbacks"), "sack_rate")
-        f["opp_turnover_rate"] = self._blend(
-            s, opponent, w,
-            lambda s_, t, w_: self._turnover_rate(s_, t, w_), "to_rate")
-        f["opp_epa_per_dropback"] = self._blend(s, opponent, w, lambda s_, t, w_: self._ratio(s_, t, w_, "epa", "dropbacks"), "epa")
-        f["opp_plays_pg"] = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(self.offense, s_, t, w_, lambda r: r["plays"]), "plays")
-        f["opp_proe"], ctx["opp_coach"] = self._proe(s, opponent, w)
-
-        # Opponent QB and receivers, adjusted for this week's injury report.
-        report = self.injuries.get((s, w, opponent), {})
-        (f["opp_qb_rating"], f["opp_qb_out"], ctx["opp_qb"],
-         f["opp_qb_sack_rate"], f["opp_qb_int_rate"]) = self._expected_qb(s, opponent, w, report)
-        f["opp_receiver_depth"], f["opp_receivers_out"], ctx["opp_receivers_out"] = self._receivers(s, opponent, w, report)
-
-        # The defense itself.
         def def_rate(fn):
             return lambda s_, t, w_: self._per_game(self.defense, s_, t, w_, fn)
-        f["def_sacks_pg"] = self._blend(s, defense, w, def_rate(lambda d: float(d.get("def_sacks") or 0)), "sacks")
+
+        # Vegas.
+        implied = implied_points(not is_home, g["spread"], g["total"])
+        ctx["opp_implied_points"] = implied
+        if implied is None:
+            implied = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(
+                self.scored, s_, t, w_, lambda x: x), "ppg")
+        f["opp_implied_points"] = implied
+        favored = None if g["spread"] is None else (g["spread"] if is_home else -g["spread"])
+        f["def_favored_by"] = float(favored) if favored is not None else 0.0
+
+        # Opponent offense tendencies.
+        f["opp_sack_rate"] = self._blend(s, opponent, w, lambda s_, t, w_: self._ratio(
+            s_, t, w_, "sacks", "dropbacks"), "sack_rate")
+        opp_turnover_rate = self._blend(s, opponent, w, lambda s_, t, w_: self._turnover_rate(s_, t, w_), "to_rate")
+        f["opp_plays_pg"] = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(
+            self.offense, s_, t, w_, lambda r: r["plays"]), "plays")
+        f["opp_proe"], ctx["opp_coach"] = self._proe(s, opponent, w)
+
+        # Opponent QB, adjusted for this week's injury report.
+        report = self.injuries.get((s, w, opponent), {})
+        (ctx["opp_qb_out"], ctx["opp_qb"],
+         f["opp_qb_sack_rate"], f["opp_qb_int_rate"]) = self._expected_qb(s, opponent, w, report)
+
+        # The defense itself.
         f["def_takeaways_pg"] = self._blend(s, defense, w, def_rate(
             lambda d: float(d.get("def_interceptions") or 0) + float(d.get("fumble_recovery_opp") or 0)), "takeaways")
-        f["def_points_allowed_pg"] = self._blend(
-            s, defense, w, lambda s_, t, w_: self._per_game(self.allowed, s_, t, w_, lambda x: x), "allowed")
-        f["def_dst_ppg"] = self._blend(s, defense, w, self._dst_ppg, "dst_ppg")
         f["def_pressure_pg"] = self._blend(s, defense, w, def_rate(lambda d: float(d.get("def_qb_hits") or 0)), "qb_hits")
         f["def_pass_defended_pg"] = self._blend(
             s, defense, w, def_rate(lambda d: float(d.get("def_pass_defended") or 0)), "pass_defended")
-        f["def_sack_rate"] = self._blend(s, defense, w, lambda s_, t, w_: self._ratio(
-            s_, t, w_, "sacks", "dropbacks", self.offense_against), "def_sack_rate")
-        f["def_epa_allowed"] = self._blend(s, defense, w, lambda s_, t, w_: self._ratio(
-            s_, t, w_, "epa", "dropbacks", self.offense_against), "def_epa_allowed")
-        favored = None if g["spread"] is None else (g["spread"] if is_home else -g["spread"])
-        f["def_favored_by"] = float(favored) if favored is not None else 0.0
-        f["rest_edge"] = self._rest_edge(s, w, defense, opponent)
-
-        # Matchup interactions.
-        f["exp_pa_score"] = expected_pa_score(f["opp_implied_points"])
-        opp_dropbacks = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(
-            self.offense, s_, t, w_, lambda r: r["dropbacks"]), "dropbacks")
-        f["exp_sacks"] = opp_dropbacks * f["def_sack_rate"] * f["opp_qb_sack_rate"] / LEAGUE_QB_SACK_RATE
-        def_takeaway_rate = self._blend(s, defense, w, lambda s_, t, w_: self._turnover_rate(
-            s_, t, w_, self.offense_against), "def_to_rate")
-        f["exp_takeaways"] = f["opp_plays_pg"] * def_takeaway_rate * f["opp_turnover_rate"] / LEAGUE_TURNOVER_RATE
         own_report = self.injuries.get((s, w, defense), {})
         out_defenders = [gsis for gsis, (pos, status) in own_report.items()
                          if status in OUT_STATUSES and pos in DEFENSIVE_POSITIONS]
         f["def_players_out"] = float(len(out_defenders))
+        # Not a model feature: the "defense season average" baseline in the backtests.
+        ctx["def_dst_ppg"] = self._blend(s, defense, w, self._dst_ppg, "dst_ppg")
 
-        # Venue and weather.
-        f["home"] = 1.0 if is_home else 0.0
-        f["wind_mph"], f["cold"], ctx["weather"] = self._weather(g)
+        # Matchup interactions.
+        f["exp_pa_score"] = expected_pa_score(f["opp_implied_points"])
+        def_takeaway_rate = self._blend(s, defense, w, lambda s_, t, w_: self._turnover_rate(
+            s_, t, w_, self.offense_against), "def_to_rate")
+        f["exp_takeaways"] = f["opp_plays_pg"] * def_takeaway_rate * opp_turnover_rate / LEAGUE_TURNOVER_RATE
+
+        f["wind_mph"], _, ctx["weather"] = self._weather(g)
 
         target = None
         if played:
@@ -394,13 +338,12 @@ class DefenseFeatureBuilder:
         return (oe_sum + prior * prior_plays) / (oe_n + prior_plays), coach
 
     def _expected_qb(self, season, team, week, report):
-        """(passer rating, 1 if the usual starter is out, name, sack rate, interception rate) of the
-        QB expected to start. Rates are blended with league-typical ones over QB_PRIOR_ATTEMPTS."""
+        """(1 if the usual starter is out, name, sack rate, interception rate) of the QB expected
+        to start. Rates are blended with league-typical ones over QB_PRIOR_ATTEMPTS."""
         by_week = self.qbs.get((season, team), {})
         played = sorted(w for w in by_week if w < week)
-        league = 90.0
         if not played:
-            return league, 0.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE
+            return 0.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE
         last = by_week[played[-1]]
         starter = max(last, key=lambda q: last[q]["attempts"])
         out = report.get(starter, (None, None))[1] in OUT_STATUSES
@@ -414,52 +357,15 @@ class DefenseFeatureBuilder:
             expected = max(totals, key=totals.get) if totals else None
 
         if expected is None:
-            return league - 15, 1.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE  # unknown backup
+            return 1.0, None, LEAGUE_QB_SACK_RATE, LEAGUE_QB_INT_RATE  # unknown backup
         sums = defaultdict(float)
         for w in played:
             for k, v in by_week[w].get(expected, {}).items():
                 sums[k] += v
-        rating = passer_rating(sums["completions"], sums["attempts"], sums["passing_yards"],
-                               sums["passing_tds"], sums["passing_interceptions"])
-        attempts = sums["attempts"]
-        blended = (rating * attempts + league * QB_PRIOR_ATTEMPTS) / (attempts + QB_PRIOR_ATTEMPTS)
-        sacks = sums["sacks_suffered"]
+        attempts, sacks = sums["attempts"], sums["sacks_suffered"]
         sack_rate = (sacks + LEAGUE_QB_SACK_RATE * QB_PRIOR_ATTEMPTS) / (attempts + sacks + QB_PRIOR_ATTEMPTS)
         int_rate = (sums["passing_interceptions"] + LEAGUE_QB_INT_RATE * QB_PRIOR_ATTEMPTS) / (attempts + QB_PRIOR_ATTEMPTS)
-        return blended, 1.0 if out else 0.0, self.names.get(expected), sack_rate, int_rate
-
-    def _rest_edge(self, season, week, defense, opponent) -> float:
-        """Days since the defense's last game minus the opponent's (0 in week 1 or without dates)."""
-        def rest(team):
-            days = self.gamedays.get((season, team), {})
-            before = [d for w, d in days.items() if w < week]
-            if week not in days or not before:
-                return None
-            return (date.fromisoformat(days[week]) - date.fromisoformat(max(before))).days
-
-        mine, theirs = rest(defense), rest(opponent)
-        if mine is None or theirs is None:
-            return 0.0
-        return max(-MAX_REST_EDGE, min(MAX_REST_EDGE, float(mine - theirs)))
-
-    def _receivers(self, season, team, week, report):
-        """Yards per game of the top 3 available WR/TE (by targets), and how many top-3 are out."""
-        by_week = self.receivers.get((season, team), {})
-        totals = defaultdict(lambda: {"targets": 0.0, "yards": 0.0, "games": 0})
-        for w, players in by_week.items():
-            if w < week:
-                for gsis, st in players.items():
-                    t = totals[gsis]
-                    t["targets"] += st["targets"]
-                    t["yards"] += st["yards"]
-                    t["games"] += 1
-        if not totals:
-            return 150.0, 0.0, []
-        ranked = sorted(totals, key=lambda g_: totals[g_]["targets"], reverse=True)
-        out = [g_ for g_ in ranked[:3] if report.get(g_, (None, None))[1] in OUT_STATUSES]
-        available = [g_ for g_ in ranked if g_ not in out][:3]
-        depth = sum(totals[g_]["yards"] / totals[g_]["games"] for g_ in available)
-        return depth, float(len(out)), [self.names.get(g_) for g_ in out]
+        return 1.0 if out else 0.0, self.names.get(expected), sack_rate, int_rate
 
     def _weather(self, g):
         indoor = (g["roof"] or "").lower() in INDOOR_ROOFS

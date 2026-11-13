@@ -11,6 +11,7 @@ from app.defense.features import (
 )
 from app.defense.model import RidgeModel
 from app.defense.scoring import dst_points, points_allowed_score
+from app.services.special_teams import DST_LABELS
 from tests.league_fixture import build_league
 
 
@@ -28,8 +29,9 @@ def test_expected_pa_score_is_smooth_and_matches_tiers_at_the_extremes():
     assert abs(expected_pa_score(13.4) - expected_pa_score(13.6)) < 0.1
 
 
-def test_every_feature_has_an_expected_sign():
+def test_every_feature_has_an_expected_sign_and_a_label():
     assert set(EXPECTED_SIGNS) == set(FEATURES)
+    assert set(DST_LABELS) == set(FEATURES)
 
 
 @pytest.fixture
@@ -53,20 +55,7 @@ def test_matchup_features_favor_the_better_side(builder):
     buf, mia = rows[(2025, 4, "BUF")], rows[(2025, 4, "MIA")]
     assert buf.features["def_favored_by"] == 3.0 and mia.features["def_favored_by"] == -3.0
     assert buf.features["exp_pa_score"] > mia.features["exp_pa_score"]
-    assert buf.features["exp_sacks"] > mia.features["exp_sacks"]  # better rush vs a QB who takes more sacks
-
-
-def test_rest_edge_from_game_dates(tmp_path):
-    conn = build_league(tmp_path / "league.db")
-    # Move BUF's week-2 game (at NE) up three days, so BUF has 3 more days of rest before week 3.
-    conn.execute("UPDATE games SET gameday = date(gameday, '-3 days') WHERE season = 2025 AND week = 2 AND "
-                 "(home_team = 'BUF' OR away_team = 'BUF')")
-    conn.commit()
-    rows = rows_by_key(DefenseFeatureBuilder(conn))
-    # Week 3: NYJ at BUF. BUF had 10 days of rest (week 2 moved up), NYJ had 7.
-    assert rows[(2025, 3, "BUF")].features["rest_edge"] == 3.0
-    assert rows[(2025, 3, "NYJ")].features["rest_edge"] == -3.0
-    assert rows[(2025, 1, "BUF")].features["rest_edge"] == 0.0  # no earlier game this season
+    assert buf.features["opp_sack_rate"] > mia.features["opp_sack_rate"]  # MIA allows more sacks than BUF
 
 
 def test_features_only_use_earlier_weeks(tmp_path):
@@ -76,6 +65,7 @@ def test_features_only_use_earlier_weeks(tmp_path):
     stats = json.loads(conn.execute("SELECT stats FROM team_week_stats WHERE team = 'BUF' AND season = 2025 "
                                     "AND week = 4").fetchone()[0])
     stats["def_sacks"] = 9
+    stats["def_qb_hits"] = 15
     conn.execute("UPDATE team_week_stats SET stats = ? WHERE team = 'BUF' AND season = 2025 AND week = 4",
                  (json.dumps(stats),))
     conn.execute("UPDATE team_game_offense SET sacks = 9 WHERE opponent = 'BUF' AND season = 2025 AND week = 4")
