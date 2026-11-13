@@ -4,7 +4,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 
 | Tool | Page | What it does |
 |---|---|---|
-| Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries |
+| Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries; explains why each side wins or loses and breaks down every player's strengths and concerns |
 | Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets your saved team's best lineup |
 | Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each |
 | Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |

@@ -126,6 +126,33 @@ All sources here are public APIs or published data files. No scraping is needed.
 Each valuation in the `/trades/analyze` response includes the projection used and an `outlook`
 with remaining opponents, schedule rank (1 = easiest at the position), and recent points per game.
 
+### Why a side wins or loses, and each player's strengths
+
+Every player in the response also gets a breakdown (`app/services/valuation.py`):
+`position_rank` by projection, a `tier` for the league size (RB1 = top 12 RBs in a 12-team
+league), whether they'd `starter` given the lineup slots, and plain-language `strengths` and
+`concerns`: top-3 or starting status, points over replacement, remaining schedule, recent form
+(adjusted for the schedule) against projections, the injury discount, whether Sleeper and ESPN
+agree (within 5%) or disagree (15% or more), and that kickers and defenses are streamable.
+
+Each side gets `reasons` (`app/services/trade_reasons.py`), most important first and marked
+`plus`, `minus`, or `neutral`:
+
+| Reason | Example |
+|---|---|
+| `value` | Receives 132 points of value for 108 sent (+24) |
+| `best_player` | Gets the best player in the deal: Jahmyr Gibbs (RB1, 108 value) (3+ players in the trade) |
+| `roster_spots` | Consolidates 2 players into 1, opening 1 roster spot for a waiver pickup |
+| `starters` | Gets 1 starter back for 2 sent, in a league with these lineup slots |
+| `positions` | Stronger at RB: +22 points of value / Thinner at WR: −46 points of value |
+| `schedule` | Players coming in have easier remaining schedules (6% more points allowed by their opponents) |
+| `form` | Gets a player whose recent form points above projections |
+| `injury` | Takes on injury risk / Moves injury risk |
+| `uncertainty` | Sleeper and ESPN disagree on a player coming in |
+
+The trade page shows these as a "Why Team A wins / Team B loses" panel under the verdict and a
+card per player below the value bars.
+
 ## Draft guide
 
 `GET /draft/plan` (and the page at `/draft/`) lays out a snake draft for your league size,
