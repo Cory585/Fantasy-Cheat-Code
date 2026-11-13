@@ -42,3 +42,19 @@ def test_connect_adds_new_columns_to_old_databases(tmp_path):
     conn = db.connect(path)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(games)")}
     assert {"away_coach", "home_coach"} <= columns
+
+
+def test_connect_renames_relocated_teams_in_old_databases(tmp_path):
+    path = tmp_path / "old.db"
+    conn = db.connect(path)
+    db.upsert(conn, "games", [{"game_id": "2019_01_DEN_OAK", "season": 2019, "week": 1,
+                               "away_team": "DEN", "home_team": "OAK"},
+                              {"game_id": "2015_01_STL_SD", "season": 2015, "week": 1,
+                               "away_team": "STL", "home_team": "SD"}])
+    db.upsert(conn, "injuries", [{"gsis_id": "00-1", "season": 2019, "week": 1, "season_type": "REG",
+                                  "team": "OAK"}])
+    conn.close()
+    conn = db.connect(path)
+    games = {r["game_id"]: (r["away_team"], r["home_team"]) for r in conn.execute("SELECT * FROM games")}
+    assert games == {"2019_01_DEN_OAK": ("DEN", "LV"), "2015_01_STL_SD": ("LAR", "LAC")}
+    assert conn.execute("SELECT team FROM injuries").fetchone()[0] == "LV"
