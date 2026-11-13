@@ -74,6 +74,14 @@ def test_dataset_urls_cover_every_parser():
     assert set(nflverse.dataset_urls(2026)) == set(nflverse.PARSERS)
 
 
+def test_relocated_franchises_use_their_current_code():
+    games = nflverse.parse_games("game_id,season,week,away_team,home_team\n"
+                                 "2019_01_DEN_OAK,2019,1,DEN,OAK\n2015_01_STL_SD,2015,1,STL,SD\n")
+    assert [(g["away_team"], g["home_team"]) for g in games] == [("DEN", "LV"), ("LAR", "LAC")]
+    injuries = nflverse.parse_injuries("gsis_id,season,week,game_type,team,full_name\n00-1,2019,1,REG,OAK,X\n")
+    assert injuries[0]["team"] == "LV"
+
+
 def test_team_abbreviations_match_the_rest_of_the_app():
     games = nflverse.parse_games("game_id,season,week,away_team,home_team\n2026_10_LA_SF,2026,10,LA,SF\n")
     assert (games[0]["away_team"], games[0]["home_team"]) == ("LAR", "SF")

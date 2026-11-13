@@ -231,6 +231,13 @@ MIGRATIONS = [
 ]
 
 
+# Team columns from sources that used a relocated franchise's old code (see
+# app.data.sources.nflverse.TEAM_ALIASES), renamed in databases collected before the fix.
+TEAM_RENAMES = {"OAK": "LV", "SD": "LAC", "STL": "LAR", "LA": "LAR"}
+TEAM_COLUMNS = [("games", "away_team"), ("games", "home_team"), ("injuries", "team"),
+                ("snap_counts", "team"), ("snap_counts", "opponent")]
+
+
 def connect(path: Path) -> sqlite3.Connection:
     """Open (and create if needed) the database, with the schema applied."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +254,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+    cases = " ".join(f"WHEN '{old}' THEN '{new}'" for old, new in TEAM_RENAMES.items())
+    olds = ", ".join(f"'{old}'" for old in TEAM_RENAMES)
+    for table, column in TEAM_COLUMNS:
+        if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
+            continue  # a very old table without the column; nothing to rename
+        conn.execute(f"UPDATE OR REPLACE {table} SET {column} = CASE {column} {cases} END "
+                     f"WHERE {column} IN ({olds})")
     conn.commit()
 
 

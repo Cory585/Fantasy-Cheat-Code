@@ -18,7 +18,10 @@ from app.data.sources.http import RateLimitedClient
 RELEASES = "https://github.com/nflverse/nflverse-data/releases/download"
 
 # nflverse abbreviations that differ from the ones used elsewhere in the app (Sleeper's).
-TEAM_ALIASES = {"LA": "LAR"}
+# Relocated franchises get their current code in every season: nflverse's stats files already
+# do that, but its schedules and injury reports keep the old city (OAK through 2019, SD through
+# 2016, STL through 2015), which split a franchise's games from its stats.
+TEAM_ALIASES = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
 
 
 def dataset_urls(season: int) -> dict[str, str]:
