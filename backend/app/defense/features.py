@@ -354,8 +354,13 @@ class DefenseFeatureBuilder:
             stats = self.defense.get((s, defense), {}).get(w)
             allowed = g["away_score"] if is_home else g["home_score"]
             if stats is not None:
-                target = dst_points(stats, allowed)
+                target = dst_points(stats, allowed, self._sacks_made(s, defense, w))
         return FeatureRow(s, w, g["game_id"], g["espn_id"], defense, opponent, is_home, f, target, ctx)
+
+    def _sacks_made(self, season, defense, week) -> float | None:
+        """Sacks by `defense` in that game from play-by-play (team sacks included), if collected."""
+        game = self.offense_against.get((season, defense), {}).get(week)
+        return None if game is None else game["sacks"]
 
     def _turnover_rate(self, season, team, week, table=None):
         rows = self._before((self.offense if table is None else table).get((season, team), {}), week)
@@ -365,7 +370,7 @@ class DefenseFeatureBuilder:
     def _dst_ppg(self, season, team, week):
         games = self._before(self.defense.get((season, team), {}), week)
         allowed = self.allowed.get((season, team), {})
-        points = [dst_points(stats, allowed[w]) for w, stats in self.defense.get((season, team), {}).items()
+        points = [dst_points(stats, allowed[w], self._sacks_made(season, team, w)) for w, stats in self.defense.get((season, team), {}).items()
                   if w < week and w in allowed]
         return sum(points) / len(points) if games and points else None
 

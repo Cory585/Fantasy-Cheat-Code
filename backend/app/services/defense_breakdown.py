@@ -180,10 +180,13 @@ class LeagueDefenses:
             if (team, week) not in allowed:
                 continue
             t = self.teams[team]
+            # Play-by-play sacks include team sacks the stat line (players' credited sacks) misses.
+            against = offense_against.get((team, week))
+            sacks = against[1] if against else _g(line, "def_sacks")
             t.games += 1
             t.points_allowed += allowed[(team, week)]
-            t.dst_points += dst_points(line, allowed[(team, week)])
-            t.sacks += _g(line, "def_sacks")
+            t.dst_points += dst_points(line, allowed[(team, week)], sacks)
+            t.sacks += sacks
             t.qb_hits += _g(line, "def_qb_hits")
             t.takeaways += _g(line, "def_interceptions") + _g(line, "fumble_recovery_opp")
             opp_line = lines.get((opponents[(team, week)], week), {})

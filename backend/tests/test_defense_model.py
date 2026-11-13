@@ -20,6 +20,22 @@ from tests.league_fixture import build_league
 def test_dst_points():
     stats = {"def_sacks": 3, "def_interceptions": 1, "fumble_recovery_opp": 1, "def_tds": 1}
     assert dst_points(stats, 10) == 3 + 2 + 2 + 6 + 4
+    # Play-by-play sacks (team sacks included) replace the players' credited sacks when known.
+    assert dst_points(stats, 10, sacks=4) == 4 + 2 + 2 + 6 + 4
+
+
+def test_targets_count_sacks_from_play_by_play(tmp_path):
+    conn = build_league(tmp_path / "league.db")
+    # One of BUF's week-4 sacks wasn't credited to a player: the stat line says 2, play-by-play 3.
+    conn.execute("UPDATE team_game_offense SET sacks = 3 WHERE opponent = 'BUF' AND season = 2025 AND week = 4")
+    stats = json.loads(conn.execute("SELECT stats FROM team_week_stats WHERE team = 'BUF' AND season = 2025 "
+                                    "AND week = 4").fetchone()[0])
+    stats["def_sacks"] = 2
+    conn.execute("UPDATE team_week_stats SET stats = ? WHERE team = 'BUF' AND season = 2025 AND week = 4",
+                 (json.dumps(stats),))
+    conn.commit()
+    row = rows_by_key(DefenseFeatureBuilder(conn))[(2025, 4, "BUF")]
+    assert row.target == dst_points(stats, 22, sacks=3) == dst_points(stats, 22) + 1
 
 
 def test_expected_pa_score_is_smooth_and_matches_tiers_at_the_extremes():
