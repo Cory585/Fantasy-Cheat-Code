@@ -21,6 +21,7 @@ from app.data.adp import load_adp
 from app.data.profile_cache import ProfileCache
 from app.data.sources.espn_athletes import EspnAthleteSource
 from app.data.sources.http import RateLimitedClient
+from app.services.defense_breakdown import DefenseBreakdowns
 from app.services.draft import DraftPlanner
 from app.services.player_profile import LocalPlayerData
 from app.services.profiles import ProfileService
@@ -234,6 +235,14 @@ def get_profile_service() -> ProfileService:
                 ttl=settings.profile_ttl_hours * 3600,
             )
         return _profile_service
+
+
+_defense_breakdowns = DefenseBreakdowns(settings.database_path)
+
+
+def get_defense_breakdowns() -> DefenseBreakdowns:
+    """Team defense breakdowns from the collected database (cached until it changes)."""
+    return _defense_breakdowns
 
 
 def get_local_player_data() -> LocalPlayerData:
