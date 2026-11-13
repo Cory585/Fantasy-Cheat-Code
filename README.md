@@ -154,6 +154,7 @@ Errors are always `{"detail": "...", "code": "..."}`.
 pip install -r requirements-dev.txt
 pytest                  # everything, about a minute
 pytest -m "not e2e"     # skip the browser tests
+pytest -m realdata      # check the data and DST model against real NFL history (needs 2018-2026 collected)
 ```
 
 No test contacts an outside provider.
