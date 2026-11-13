@@ -25,7 +25,7 @@ import numpy as np
 
 from app.config import DATA_DIR, settings
 from app.defense.model import RidgeModel, evaluate
-from app.defense.train import FIRST_TRAIN_SEASON, choose_alpha, to_arrays
+from app.defense.train import choose_alpha, first_season_with_prior, to_arrays
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 
 log = logging.getLogger(__name__)
@@ -112,12 +112,6 @@ def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, lis
         "backtests": backtests,
     })
     return model, backtests
-
-
-def first_season_with_prior(conn: sqlite3.Connection) -> int:
-    """The season after the earliest one with team stats (that one is only the prior)."""
-    earliest = conn.execute("SELECT MIN(season) FROM team_week_stats WHERE season_type = 'REG'").fetchone()[0]
-    return FIRST_TRAIN_SEASON if earliest is None else earliest + 1
 
 
 def main() -> None:
