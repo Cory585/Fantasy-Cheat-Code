@@ -3,11 +3,13 @@ import json
 import numpy as np
 import pytest
 
+from app.defense import features as defense_features
 from app.defense.features import (
     EXPECTED_SIGNS,
     FEATURES,
     DefenseFeatureBuilder,
     expected_pa_score,
+    implied_points,
 )
 from app.defense.model import RidgeModel
 from app.defense.scoring import dst_points, points_allowed_score
@@ -105,3 +107,38 @@ def test_weighted_fit_matches_unweighted_with_equal_weights_and_follows_heavy_ro
     # Rows weighted up pull the intercept toward their average.
     w = np.where(y > 0, 10.0, 1.0)
     assert RidgeModel.fit(X, y, ["a", "b"], 1.0, weights=w).intercept > plain.intercept
+
+
+def _remove_lines(conn, from_week: int):
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= ?",
+                 (from_week,))
+    conn.commit()
+
+
+def test_games_without_a_line_get_an_estimate_from_both_teams(tmp_path):
+    conn = build_league(tmp_path / "league.db", unplayed_from=5)
+    _remove_lines(conn, 5)
+    rows = rows_by_key(DefenseFeatureBuilder(conn))
+    # Week 5: BUF at NE. BUF's defense faces a weak offense, NE's faces the best one.
+    buf, ne = rows[(2025, 5, "BUF")], rows[(2025, 5, "NE")]
+    assert buf.context["line_estimated"] and not rows[(2025, 4, "BUF")].context["line_estimated"]
+    assert buf.context["opp_implied_points"] is None
+    assert buf.features["opp_implied_points"] < ne.features["opp_implied_points"]
+    assert buf.features["def_favored_by"] > 0 > ne.features["def_favored_by"]
+    assert buf.features["def_favored_by"] == pytest.approx(-ne.features["def_favored_by"])
+
+
+def test_line_estimate_is_fit_to_the_loaded_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr(defense_features, "MIN_LINE_FIT_ROWS", 10)
+    builder = DefenseFeatureBuilder(build_league(tmp_path / "league.db"))
+    assert builder.line_coefs() != defense_features.DEFAULT_LINE_COEFS
+    # The fixture's lines follow scoring exactly, so the fit reproduces them.
+    for g in builder.games:
+        if g["season"] == 2025 and g["week"] >= 3:
+            expected = implied_points(True, g["spread"], g["total"])
+            estimate = builder.estimated_points(2025, g["week"], g["home"], g["away"], True)
+            assert estimate == pytest.approx(expected, abs=0.5)
+
+
+def test_line_estimate_falls_back_to_defaults_with_few_games(builder):
+    assert builder.line_coefs() == defense_features.DEFAULT_LINE_COEFS

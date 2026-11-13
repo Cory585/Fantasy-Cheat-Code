@@ -41,6 +41,12 @@ DST_LABELS = {
     "exp_pa_score": "expected points-allowed score",
     "exp_takeaways": "expected takeaways",
 }
+# Games without a Vegas line yet use an estimate of it (see DefenseFeatureBuilder.estimated_points).
+DST_LABELS_WITHOUT_LINE = {
+    **DST_LABELS,
+    "opp_implied_points": "opponent's projected points",
+    "def_favored_by": "projected point spread",
+}
 KICKER_LABELS = {
     "team_implied_points": "team's Vegas total",
     "team_favored_by": "point spread",
@@ -87,7 +93,8 @@ def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | Non
         if row.target is not None:
             models.dst_actual.setdefault(row.defense, {})[row.week] = round(row.target, 2)
         if dst_model is not None:
-            models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, DST_LABELS)
+            labels = DST_LABELS_WITHOUT_LINE if row.context.get("line_estimated") else DST_LABELS
+            models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, labels)
     if kicker_model is not None:
         for row in builder.rows([season], include_unplayed=True):
             models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, KICKER_LABELS)

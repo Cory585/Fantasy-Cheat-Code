@@ -2,7 +2,8 @@
 
 Every feature for a game in week W uses only information available before kickoff:
 season-to-date stats from weeks before W, that week's injury report, the closing Vegas
-line, and game-time weather. Early in a season, season-to-date stats are thin, so each one
+line (estimated from both teams' scoring when there isn't one yet, see
+`DefenseFeatureBuilder.estimated_points`), and game-time weather. Early in a season, season-to-date stats are thin, so each one
 is blended with a prior (the previous season's value, or the head coach's previous season
 for play-calling tendencies), weighted as if the prior were PRIOR_GAMES games of data.
 
@@ -40,6 +41,8 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from app.defense.scoring import dst_points, points_allowed_score
 
 FEATURES = [
@@ -66,6 +69,12 @@ OUT_STATUSES = {"Out", "Doubtful"}
 INDOOR_ROOFS = {"dome", "closed"}
 DEFENSIVE_POSITIONS = {"DE", "DT", "NT", "DL", "LB", "ILB", "OLB", "MLB", "CB", "S", "FS", "SS", "DB", "SAF"}
 DEFAULT_WIND = 8.0  # typical outdoor wind when a value is missing
+# Games without a Vegas line (more than a week out) get implied points from
+#   intercept + a x team points per game + b x opponent points allowed per game + c x home,
+# fit on the loaded games that have lines. These defaults, from 2019-2025 lines, are used when
+# fewer than MIN_LINE_FIT_ROWS team-games are available to fit.
+DEFAULT_LINE_COEFS = (-4.9, 0.67, 0.50, 1.6)
+MIN_LINE_FIT_ROWS = 100
 
 
 @dataclass
@@ -193,6 +202,7 @@ class DefenseFeatureBuilder:
             pass  # no weather collected yet
 
         self._league_cache = {}
+        self._line_coefs = None
 
     # ---------- helpers ----------
 
@@ -235,6 +245,41 @@ class DefenseFeatureBuilder:
         d = sum(r[den] for r in rows)
         return sum(r[num] for r in rows) / d if d else None
 
+    def _scoring(self, season, team, week) -> tuple[float, float]:
+        """(points scored, points allowed) per game before `week`, blended with the prior."""
+        return (
+            self._blend(season, team, week, lambda s_, t, w_: self._per_game(self.scored, s_, t, w_, lambda x: x), "ppg"),
+            self._blend(season, team, week, lambda s_, t, w_: self._per_game(self.allowed, s_, t, w_, lambda x: x), "allowed"),
+        )
+
+    def estimated_points(self, season, week, team, opponent, team_is_home) -> float:
+        """Points `team` is expected to score against `opponent`, for games without a Vegas line:
+        a linear fit of Vegas implied points on the team's scoring and the opponent's points
+        allowed (see DEFAULT_LINE_COEFS). Raw points per game alone ignores the opponent and
+        swings more than lines do, which made the model's biggest feature noisy for later weeks."""
+        intercept, a, b, c = self.line_coefs()
+        return (intercept + a * self._scoring(season, team, week)[0]
+                + b * self._scoring(season, opponent, week)[1] + c * (1.0 if team_is_home else 0.0))
+
+    def line_coefs(self) -> tuple[float, float, float, float]:
+        if self._line_coefs is None:
+            seasons_with_prior = {s for (s, team) in self.scored if (s - 1, team) in self.scored}
+            X, y = [], []
+            for g in self.games:
+                if g["season"] not in seasons_with_prior:
+                    continue  # the first loaded season has no prior, so its early weeks are noise
+                for team, opp, home in ((g["home"], g["away"], True), (g["away"], g["home"], False)):
+                    implied = implied_points(home, g["spread"], g["total"])
+                    if implied is not None:
+                        X.append([1.0, self._scoring(g["season"], team, g["week"])[0],
+                                  self._scoring(g["season"], opp, g["week"])[1], 1.0 if home else 0.0])
+                        y.append(implied)
+            if len(y) >= MIN_LINE_FIT_ROWS:
+                self._line_coefs = tuple(float(v) for v in np.linalg.lstsq(np.array(X), np.array(y), rcond=None)[0])
+            else:
+                self._line_coefs = DEFAULT_LINE_COEFS
+        return self._line_coefs
+
     # ---------- features ----------
 
     def rows(self, seasons: list[int], include_unplayed: bool = False) -> list[FeatureRow]:
@@ -257,15 +302,18 @@ class DefenseFeatureBuilder:
         def def_rate(fn):
             return lambda s_, t, w_: self._per_game(self.defense, s_, t, w_, fn)
 
-        # Vegas.
+        # Vegas, or an estimate of the line when there isn't one yet.
         implied = implied_points(not is_home, g["spread"], g["total"])
         ctx["opp_implied_points"] = implied
+        ctx["line_estimated"] = implied is None
         if implied is None:
-            implied = self._blend(s, opponent, w, lambda s_, t, w_: self._per_game(
-                self.scored, s_, t, w_, lambda x: x), "ppg")
+            implied = self.estimated_points(s, w, opponent, defense, not is_home)
+        if g["spread"] is not None:
+            favored = g["spread"] if is_home else -g["spread"]
+        else:
+            favored = self.estimated_points(s, w, defense, opponent, is_home) - implied
         f["opp_implied_points"] = implied
-        favored = None if g["spread"] is None else (g["spread"] if is_home else -g["spread"])
-        f["def_favored_by"] = float(favored) if favored is not None else 0.0
+        f["def_favored_by"] = float(favored)
 
         # Opponent offense tendencies.
         f["opp_sack_rate"] = self._blend(s, opponent, w, lambda s_, t, w_: self._ratio(
