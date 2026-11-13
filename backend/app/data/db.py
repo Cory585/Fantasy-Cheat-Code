@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS games (
     temp         REAL,
     wind         REAL,
     div_game     INTEGER,
-    espn_id      TEXT
+    espn_id      TEXT,
+    away_coach   TEXT,
+    home_coach   TEXT
 );
 CREATE INDEX IF NOT EXISTS games_season_week ON games (season, week);
 
@@ -170,6 +172,46 @@ CREATE TABLE IF NOT EXISTS espn_player_market (
     PRIMARY KEY (espn_id, snapshot_date)
 );
 
+-- Offense play-calling and efficiency per game, summarized from play-by-play.
+CREATE TABLE IF NOT EXISTS team_game_offense (
+    game_id            TEXT NOT NULL,
+    team               TEXT NOT NULL,  -- the offense
+    season             INTEGER NOT NULL,
+    week               INTEGER NOT NULL,
+    season_type        TEXT NOT NULL,
+    opponent           TEXT,
+    plays              INTEGER,
+    dropbacks          INTEGER,
+    sacks              INTEGER,
+    interceptions      INTEGER,
+    fumbles_lost       INTEGER,
+    dropback_epa       REAL,  -- summed; divide by dropbacks
+    neutral_plays      INTEGER,
+    neutral_dropbacks  INTEGER,
+    pass_oe_sum        REAL,  -- summed neutral pass rate over expected (0-100 scale)
+    pass_oe_n          INTEGER,
+    PRIMARY KEY (game_id, team)
+);
+CREATE INDEX IF NOT EXISTS team_game_offense_season ON team_game_offense (season, week);
+
+-- Forecast weather during upcoming games (kickoff + 3 hours). Joins to games.espn_id.
+CREATE TABLE IF NOT EXISTS game_weather (
+    espn_event_id      TEXT PRIMARY KEY,
+    season             INTEGER,
+    week               INTEGER,
+    away_team          TEXT,
+    home_team          TEXT,
+    kickoff            TEXT,
+    venue              TEXT,
+    city               TEXT,
+    indoor             INTEGER,
+    temperature_f      REAL,
+    wind_mph           REAL,
+    precip_probability REAL,
+    precipitation_in   REAL,
+    fetched_at         TEXT NOT NULL
+);
+
 -- When each dataset was last collected, and how many rows it produced.
 CREATE TABLE IF NOT EXISTS collection_runs (
     dataset    TEXT NOT NULL,
@@ -181,6 +223,14 @@ CREATE TABLE IF NOT EXISTS collection_runs (
 """
 
 
+# Columns added after a table was first released: (table, column, type). Applied to
+# existing databases on connect, since CREATE TABLE IF NOT EXISTS won't add them.
+MIGRATIONS = [
+    ("games", "away_coach", "TEXT"),
+    ("games", "home_coach", "TEXT"),
+]
+
+
 def connect(path: Path) -> sqlite3.Connection:
     """Open (and create if needed) the database, with the schema applied."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,7 +238,16 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")  # lets the API read while a collection writes
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, kind in MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+    conn.commit()
 
 
 def upsert(conn: sqlite3.Connection, table: str, rows: Iterable[Mapping]) -> int:

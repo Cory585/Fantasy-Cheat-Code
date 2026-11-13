@@ -28,6 +28,16 @@ class Settings:
     # Share of a player's projection that comes from schedule-adjusted recent form
     # (the rest comes from the Sleeper/ESPN projection). 0 turns form off.
     form_weight: float = field(default_factory=lambda: float(os.getenv("FORM_WEIGHT", "0.3")))
+    # Kicker and DST models written by `python -m app.kicker.train` / `python -m app.defense.train`.
+    # Start/sit uses them when present.
+    dst_model_path: Path = field(
+        default_factory=lambda: Path(os.getenv("DST_MODEL_PATH", str(DATA_DIR / "defense_model.json")))
+    )
+    kicker_model_path: Path = field(
+        default_factory=lambda: Path(os.getenv("KICKER_MODEL_PATH", str(DATA_DIR / "kicker_model.json")))
+    )
+    # Share of a kicker's or defense's weekly projection that comes from its matchup model.
+    model_weight: float = field(default_factory=lambda: float(os.getenv("MODEL_WEIGHT", "0.5")))
     # Minimum seconds between requests to the same external host (rate limiting).
     request_interval_seconds: float = field(
         default_factory=lambda: float(os.getenv("REQUEST_INTERVAL_SECONDS", "1.0"))

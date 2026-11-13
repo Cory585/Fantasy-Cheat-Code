@@ -28,3 +28,17 @@ def test_record_run(tmp_path):
     db.record_run(conn, "games", 2026, 300)
     row = conn.execute("SELECT rows FROM collection_runs WHERE dataset='games' AND season=2026").fetchone()
     assert row["rows"] == 300
+
+
+def test_connect_adds_new_columns_to_old_databases(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    # The games table as first released, before the coach columns existed.
+    old.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY, season INTEGER NOT NULL, week INTEGER, espn_id TEXT)")
+    old.commit()
+    old.close()
+    conn = db.connect(path)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(games)")}
+    assert {"away_coach", "home_coach"} <= columns

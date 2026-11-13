@@ -47,7 +47,7 @@ class Effect(str, Enum):
 
 
 class Reason(BaseModel):
-    kind: str = Field(description="projection, matchup, vegas, form, injury, bye, played, or estimate")
+    kind: str = Field(description="projection, matchup, vegas, form, model, injury, bye, played, or estimate")
     text: str
     effect: Effect = Effect.NEUTRAL
 

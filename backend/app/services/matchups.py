@@ -5,13 +5,18 @@ Built from the collected database (`python -m app.data.collect`). Without it, st
 falls back to provider projections only.
 """
 
+import logging
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from app.models.player import Position
+from app.models.player import Player, Position
 from app.models.trade import ScoringFormat
 from app.services.outlook import OutlookBuilder
+from app.services.special_teams import ModelEstimate, TeamModels, load_team_models
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,8 @@ class MatchupData:
     # gsis_id -> week -> fantasy points (regular season, this season).
     history: dict[str, dict[int, float]] = field(default_factory=dict)
     gsis_by_espn: dict[int, str] = field(default_factory=dict)
+    # Kicker and DST model predictions and actual DST points (see app/services/special_teams.py).
+    team_models: TeamModels = field(default_factory=TeamModels)
 
     @property
     def available(self) -> bool:
@@ -71,15 +78,33 @@ class MatchupData:
         gsis = self.gsis_by_espn.get(espn_id) if espn_id else None
         return self.history.get(gsis, {}) if gsis else {}
 
+    def history_for(self, player: Player) -> dict[int, float]:
+        """Weekly fantasy points this season. Defenses are scored from team stats, by team."""
+        if player.position == Position.DST:
+            return self.team_models.dst_actual.get(player.team, {})
+        return self.player_history(player.espn_id)
 
-def load_matchups(conn: sqlite3.Connection, season: int, scoring: ScoringFormat) -> MatchupData:
+    def model_estimate(self, player: Player, week: int) -> ModelEstimate | None:
+        """The kicker or DST model's prediction for the player's team that week, if trained."""
+        by_team = {Position.K: self.team_models.kicker, Position.DST: self.team_models.dst}.get(player.position)
+        return by_team.get(player.team, {}).get(week) if by_team else None
+
+
+def load_matchups(conn: sqlite3.Connection, season: int, scoring: ScoringFormat,
+                  dst_model_path: Path | None = None, kicker_model_path: Path | None = None) -> MatchupData:
     builder = OutlookBuilder(conn, season=season, scoring=scoring)
+    try:
+        team_models = load_team_models(conn, season, dst_model_path, kicker_model_path)
+    except sqlite3.Error as error:  # e.g. a database collected before play-calling existed
+        log.error("Couldn't build kicker/DST model inputs: %s", error)
+        team_models = TeamModels()
     return MatchupData(
         season=season,
         schedule=_schedule(conn, season),
         defense_factors=builder.defense_factors(),
         history=_history(conn, season, builder),
         gsis_by_espn=builder.gsis_by_espn(),
+        team_models=team_models,
     )
 
 
