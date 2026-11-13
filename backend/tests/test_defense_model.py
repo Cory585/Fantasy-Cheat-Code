@@ -103,3 +103,15 @@ def test_sign_constrained_fit_drops_wrong_way_features():
                            signs={"good": +1, "flipped": +1})
     assert model.coefs[0] > 0 and model.coefs[1] == 0
     assert "flipped" in model.metadata["dropped_for_sign"]
+
+
+def test_weighted_fit_matches_unweighted_with_equal_weights_and_follows_heavy_rows():
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(200, 2))
+    y = 2 * X[:, 0] + rng.normal(size=200)
+    plain = RidgeModel.fit(X, y, ["a", "b"], 1.0)
+    equal = RidgeModel.fit(X, y, ["a", "b"], 1.0, weights=np.full(200, 3.0))
+    assert np.allclose(plain.coefs, equal.coefs) and plain.intercept == pytest.approx(equal.intercept)
+    # Rows weighted up pull the intercept toward their average.
+    w = np.where(y > 0, 10.0, 1.0)
+    assert RidgeModel.fit(X, y, ["a", "b"], 1.0, weights=w).intercept > plain.intercept

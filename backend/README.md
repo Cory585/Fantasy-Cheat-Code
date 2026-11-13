@@ -217,7 +217,7 @@ change. Without them, kickers and defenses use the plain matchup factor above.
 | Model | Features (`app/defense/features.py`, `app/kicker/features.py`) |
 |---|---|
 | DST | Opponent Vegas total and expected points-allowed score; opponent sack, turnover, and pass rates, pace, and efficiency; the expected opposing QB's passer rating, sack rate, and interception rate (with injuries); opponent receiver injuries; the defense's sacks, sack rate, QB hits, passes defended, takeaways, and pass defense EPA; expected sacks and takeaways (both sides of the matchup combined); defenders out; spread; rest; home; wind; cold |
-| Kicker | Team Vegas total and scoring; FG and PAT attempts per game; how often drives stall into FGs; pace and passing efficiency; FG accuracy (shrunk toward 85%); share of 50+ yard attempts; kicker points and FG tries the opponent allows; expected kicker points; dome, wind, cold, altitude, home |
+| Kicker | Team Vegas total; point spread (favorites kick more); FG accuracy (shrunk toward 85%) and PAT accuracy (toward 95%); share of 50+ yard attempts; kicker points the opponent allows; dome, wind, cold, altitude, home |
 
 Each training run prints out-of-sample backtests: fit on earlier seasons, score on the next.
 Mean absolute error per game (lower is better) and average weekly rank correlation (how well it
@@ -225,14 +225,33 @@ orders teams, higher is better), as of week 9 of 2026:
 
 | Test season | DST model | DST, Vegas only | Kicker model | Kicker, before (PPG × matchup) | Kicker, Vegas only |
 |---|---|---|---|---|---|
-| 2024 | 4.00 / 0.35 | 4.04 / 0.33 | 3.78 / 0.23 | 4.08 / 0.11 | 3.82 / 0.20 |
-| 2025 | 4.07 / 0.33 | 4.12 / 0.34 | 3.75 / 0.20 | 3.91 / 0.17 | 3.80 / 0.11 |
-| 2026 (weeks 1-9) | 3.78 / 0.31 | 3.82 / 0.30 | 3.79 / 0.08 | 4.04 / 0.11 | 3.79 / 0.04 |
+| 2024 | 4.00 / 0.35 | 4.04 / 0.33 | 3.77 / 0.23 | 4.08 / 0.11 | 3.82 / 0.20 |
+| 2025 | 4.07 / 0.33 | 4.12 / 0.34 | 3.73 / 0.22 | 3.91 / 0.17 | 3.80 / 0.11 |
+| 2026 (weeks 1-9) | 3.78 / 0.31 | 3.82 / 0.30 | 3.79 / 0.07 | 4.04 / 0.11 | 3.79 / 0.04 |
 
 Both are mostly noise week to week (R² around 0.1 for DST and under 0.05 for kickers), so the
 gains are modest. The newer DST features (QB-specific rates, pass rush, coverage, spread,
 rest, and the matchup combinations) changed DST error by less than 0.02 points per game. The
 kicker model cuts error by 4-7% against the points-per-game estimate start/sit used before.
+
+The kicker model is deliberately small. Team scoring, pace, passing efficiency, attempts per
+game, how often drives stall into field goals, the opponent's points and FG tries allowed,
+and an expected-points estimate built from TD and FG drive rates were all tried. None added
+anything out of sample once the Vegas line was in, so they were dropped. The spread matters
+beyond the implied total: favorites kick more, because they take the points late and run out
+the clock. Kicking has also changed: 50+ yard attempts went from 14% of tries in 2019 to 26%
+in 2026, and league kicker scoring rose from about 7.4 to 8.5 points per game. So the kicker
+model weights recent seasons more (a 2-season half-life), and with 4+ seasons its intercept
+comes from the league trend rather than the lagging training average. That makes projections
+unbiased (their mean matches the season's). Because kicker scores are right-skewed, it costs
+about 0.01 in MAE for a lower RMSE.
+
+The kicker job trains on every season in the database after the first. Collecting older
+seasons (`python -m app.data.collect --seasons 2017-2026`) gives it more history to learn the
+trend from: backtested on 2019-2026, the model then averages R² 0.029 (0.021 before these
+changes), and it orders kickers better than the Vegas-only baseline in 7 of 8 seasons (its
+MAE is lower in 5).
+
 `MODEL_WEIGHT` isn't tuned: provider projections for past weeks aren't stored, so the blend
 with them can't be backtested yet.
 
