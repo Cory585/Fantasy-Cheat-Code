@@ -271,3 +271,37 @@ def test_lineup_is_as_good_as_any_assignment(players, slots):
         if all(p is None or p.position in SLOT_POSITIONS[s] for p, s in zip(choice, spots)):
             best = max(best, sum(points[p.id] for p in chosen))
     assert result.projected_total == pytest.approx(best, abs=0.1)
+
+
+# ---------- Tiers ----------
+
+from app.services.tiers import tier_breaks  # noqa: E402
+
+tier_values = st.lists(st.floats(-500, 500, allow_nan=False), max_size=120).map(lambda v: sorted(v, reverse=True))
+
+
+@given(values=tier_values)
+def test_tiers_cover_every_value_once_in_order(values):
+    breaks = tier_breaks(values)
+    if not values:
+        assert breaks == []
+        return
+    assert breaks[0] == 0
+    assert breaks == sorted(set(breaks))
+    assert all(0 <= b < len(values) for b in breaks)
+
+
+@given(values=tier_values)
+def test_tiers_never_overlap(values):
+    breaks = tier_breaks(values)
+    ends = breaks[1:] + [len(values)]
+    tiers = [values[a:b] for a, b in zip(breaks, ends)]
+    assert all(tiers)
+    for upper, lower in zip(tiers, tiers[1:]):
+        assert min(upper) >= max(lower)
+
+
+@given(values=tier_values, scale=st.sampled_from([0.125, 0.5, 2.0, 16.0]))
+def test_tiers_ignore_units(values, scale):
+    # Powers of two scale exactly, so points vs. hundreds of points can't change the tiers.
+    assert tier_breaks(values) == tier_breaks([v * scale for v in values])
