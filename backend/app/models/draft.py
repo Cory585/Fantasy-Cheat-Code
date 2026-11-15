@@ -22,6 +22,16 @@ class DraftTarget(BaseModel):
     adp: float | None = Field(default=None, description="Average draft position (None if the player has none)")
     projection: float
     rank: int = Field(description="1-based position in the board order (ADP, then projection)")
+    tier: int | None = Field(default=None, description="Tier at the player's position (None past the tiered depth)")
+
+
+class TierAlert(BaseModel):
+    """A position whose best tier left at this pick is about to run dry."""
+
+    position: Position
+    tier: int = Field(description="The best tier still available at the position at this pick")
+    left: int = Field(description="Players from that tier likely still available at this pick")
+    left_at_next: int = Field(description="How many of them are likely still there at your next pick")
 
 
 class PlannedPick(BaseModel):
@@ -33,6 +43,10 @@ class PlannedPick(BaseModel):
     position_mix: dict[Position, int] = Field(
         default_factory=dict,
         description="Positions of the players other teams likely take before your next pick",
+    )
+    tier_alerts: list[TierAlert] = Field(
+        default_factory=list,
+        description="Positions whose best remaining tier is likely gone (or down to one player) by your next pick",
     )
 
 
