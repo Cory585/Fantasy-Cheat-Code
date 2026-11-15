@@ -9,6 +9,7 @@ from app.api.dependencies import (
     get_outlooks,
     get_player_repository,
     get_profile_service,
+    get_stat_tags,
 )
 from app.data.league_store import LeagueStore
 from app.data.repository import InMemoryPlayerRepository
@@ -39,6 +40,7 @@ def use_sample_players(tmp_path):
     app.dependency_overrides[get_local_player_data] = lambda: LocalPlayerData(None)
     app.dependency_overrides[get_defense_breakdowns] = lambda: DefenseBreakdowns(None)
     app.dependency_overrides[get_league_store] = lambda: leagues
+    app.dependency_overrides[get_stat_tags] = lambda: ({}, None)
     limiter.reset()
     yield
     app.dependency_overrides.clear()
