@@ -1,0 +1,14 @@
+# Lint run by CI and the pre-push hook: real errors (syntax, undefined names, unused imports)
+# and security checks (bandit's S rules). Style is left alone.
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[lint]
+select = ["E9", "F", "S", "B006", "B904"]
+ignore = [
+    "S101",  # assert is how tests check things
+    "S311",  # `random` drives simulations and jitter, never secrets
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108", "S112", "S603", "S607"]

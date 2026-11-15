@@ -94,7 +94,7 @@ class LocalPlayerData:
                 continue
             # Column names come from the fixed DRILLS list, never from input.
             others = [r[0] for r in conn.execute(
-                f"SELECT {drill.key} FROM combine WHERE position = ? AND {drill.key} IS NOT NULL", (row["position"],)
+                f"SELECT {drill.key} FROM combine WHERE position = ? AND {drill.key} IS NOT NULL", (row["position"],)  # noqa: S608 - drill keys are a fixed list
             )]
             drills.append(CombineDrill(
                 key=drill.key, label=drill.label, value=value, unit=drill.unit,

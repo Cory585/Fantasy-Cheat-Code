@@ -99,12 +99,12 @@ class LeagueStore:
 
     def list(self, owner: str) -> list[League]:
         rows = self._run(lambda conn: conn.execute(
-            f"SELECT {COLUMNS} FROM leagues WHERE owner = ? ORDER BY created_at, id", (owner,)).fetchall())
+            f"SELECT {COLUMNS} FROM leagues WHERE owner = ? ORDER BY created_at, id", (owner,)).fetchall())  # noqa: S608 - COLUMNS is a constant
         return [_league(row) for row in rows]
 
     def get(self, owner: str, league_id: str) -> League | None:
         row = self._run(lambda conn: conn.execute(
-            f"SELECT {COLUMNS} FROM leagues WHERE owner = ? AND id = ?", (owner, league_id)).fetchone())
+            f"SELECT {COLUMNS} FROM leagues WHERE owner = ? AND id = ?", (owner, league_id)).fetchone())  # noqa: S608 - COLUMNS is a constant
         return _league(row) if row else None
 
     def create(self, owner: str, name: str, slots: dict[str, int], roster: list[str], limit: int) -> League:
@@ -122,7 +122,7 @@ class LeagueStore:
             league_id = secrets.token_urlsafe(9)
             conn.execute("INSERT INTO leagues VALUES (?, ?, ?, ?, ?, ?, ?)",
                          (league_id, owner, name, json.dumps(slots), json.dumps(roster), now, now))
-            return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()
+            return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()  # noqa: S608 - COLUMNS is a constant
 
         return _league(self._run(work))
 
@@ -133,7 +133,7 @@ class LeagueStore:
                 (name, json.dumps(slots), json.dumps(roster), time.time(), owner, league_id)).rowcount
             if not changed:
                 return None
-            return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()
+            return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()  # noqa: S608 - COLUMNS is a constant
 
         row = self._run(work)
         return _league(row) if row else None

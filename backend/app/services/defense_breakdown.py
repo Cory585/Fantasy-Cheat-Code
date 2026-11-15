@@ -206,7 +206,7 @@ class LeagueDefenses:
         group_of = {pos: g.key for g in GROUPS for pos in g.positions}
         placeholders = ",".join("?" * len(DEFENSIVE_POSITIONS))
         for gsis, team, name, position, stats in conn.execute(
-                f"SELECT gsis_id, team, name, position, stats FROM player_week_stats "
+                f"SELECT gsis_id, team, name, position, stats FROM player_week_stats "  # noqa: S608 - only "?" placeholders
                 f"WHERE season = ? AND season_type = 'REG' AND position IN ({placeholders})",
                 (s, *sorted(DEFENSIVE_POSITIONS))):
             if team not in self.teams:

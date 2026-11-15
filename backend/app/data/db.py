@@ -259,7 +259,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for table, column in TEAM_COLUMNS:
         if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
             continue  # a very old table without the column; nothing to rename
-        conn.execute(f"UPDATE OR REPLACE {table} SET {column} = CASE {column} {cases} END "
+        conn.execute(f"UPDATE OR REPLACE {table} SET {column} = CASE {column} {cases} END "  # noqa: S608 - fixed table and column lists
                      f"WHERE {column} IN ({olds})")
     conn.commit()
 
@@ -271,7 +271,7 @@ def upsert(conn: sqlite3.Connection, table: str, rows: Iterable[Mapping]) -> int
         return 0
     columns = list(rows[0].keys())
     placeholders = ", ".join(f":{c}" for c in columns)
-    sql = f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+    sql = f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"  # noqa: S608 - tables and columns come from our parsers, values are bound
     with conn:
         conn.executemany(sql, rows)
     return len(rows)

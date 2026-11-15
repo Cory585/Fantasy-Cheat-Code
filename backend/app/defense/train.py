@@ -12,7 +12,6 @@ collecting older seasons (`--seasons 2018-2026`) gives it more history and more 
 """
 
 import argparse
-import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
