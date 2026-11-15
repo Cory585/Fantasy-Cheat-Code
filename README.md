@@ -5,6 +5,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Tool | Page | What it does |
 |---|---|---|
 | Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries; explains why each side wins or loses and breaks down every player's strengths and concerns |
+| Player finder | `/finder/` | Finds players by tag: slot or outside receiver, deep threat, high target share, red-zone target, workhorse or goal-line back, hot streak, rookie, and more |
 | Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets the best lineup for any of your leagues |
 | Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each |
 | Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |
@@ -41,13 +42,13 @@ flowchart LR
 
     subgraph api["FastAPI app (backend/app)"]
         mw["Middleware<br/>rate limit, body size, security headers"]
-        routes["Routes<br/>/players /trades /start-sit /draft<br/>/defenses /leagues /meta"]
+        routes["Routes<br/>/players /trades /start-sit /draft<br/>/defenses /leagues /tags /meta"]
         deps["dependencies.py<br/>reloads data when files change"]
         services["Services<br/>valuation, trade analyzer, start/sit,<br/>K/DST models, defense breakdown,<br/>draft planner, outlooks, profiles"]
     end
 
     subgraph web["Browser (frontend/, static)"]
-        pages["Pages<br/>trade, start/sit, draft,<br/>defense, team, profile, player"]
+        pages["Pages<br/>trade, start/sit, draft,<br/>defense, finder, team, profile, player"]
         ls[("localStorage<br/>profile key, theme")]
     end
 
