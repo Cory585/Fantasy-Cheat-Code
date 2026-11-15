@@ -2607,3 +2607,19 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 .ridge-2 { fill: var(--ridge-2); }
 .ridge-3 { fill: var(--ridge-3); }
 .ridge-4 { fill: var(--ridge-4); }
+
+/* A star's headshot, dithered in the page's hue, in the open sky beside the page title. */
+.star-portrait {
+  position: absolute;
+  right: max(0.5rem, calc(50vw - 600px));
+  top: 4.25rem;
+  width: min(44vw, 330px);
+  height: auto;
+  image-rendering: pixelated;
+  color: var(--land-portrait);
+}
+
+/* The nav wraps onto two rows on phones: keep the portrait below it. */
+@media (max-width: 640px) {
+  .star-portrait { top: 7rem; width: 40vw; }
+}

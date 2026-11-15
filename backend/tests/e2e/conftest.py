@@ -147,7 +147,9 @@ def page(browser, base_url):
         if "fonts.googleapis.com" in url:
             return route.fulfill(status=200, content_type="text/css", body="")
         if "a.espncdn.com" in url:
-            return route.fulfill(status=200, content_type="image/png", body=TINY_PNG)
+            # ESPN's CDN allows cross-origin reads; the backdrop's dithered portrait needs that.
+            return route.fulfill(status=200, content_type="image/png", body=TINY_PNG,
+                                 headers={"Access-Control-Allow-Origin": "*"})
         return route.fulfill(status=204, body="")
 
     context.route(lambda url: not url.startswith(base_url), offline)

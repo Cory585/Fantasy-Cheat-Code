@@ -141,4 +141,173 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(drawLandscape, 150);
   });
+
+  // ---------- Star portrait ----------
+
+  // Only the main tool pages (the ones with a masthead) get the portrait.
+  if (!document.querySelector(".masthead")) return;
+
+  const COLS = 160, ROWS = 116; // dither resolution (ESPN headshots are 350x254)
+  const FADE_MS = 1400, HOLD_MS = 5200, GAP_MS = 600, FADE_STEPS = 16;
+  const STAR_COUNT = 16;
+  const BAYER = [
+    [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21],
+  ].map((row) => row.map((v) => (v + 0.5) / 64));
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "star-portrait";
+  canvas.width = COLS;
+  canvas.height = ROWS;
+  backdrop.insertBefore(canvas, near);
+  const ctx = canvas.getContext("2d");
+  const frame = ctx.createImageData(COLS, ROWS);
+
+  let ink = [0, 0, 0];
+  function readInk() {
+    const match = getComputedStyle(canvas).color.match(/[\d.]+/g);
+    ink = match ? match.slice(0, 3).map(Number) : [0, 0, 0];
+  }
+
+  let density = null; // per-pixel ink density in [0, 1] for the current star
+  let level = 0; // how far it has faded in, in [0, 1]
+
+  function render() {
+    const px = frame.data;
+    for (let y = 0; y < ROWS; y++) {
+      const row = BAYER[y & 7];
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        const on = density && density[i] * level > row[x & 7];
+        px[i * 4] = ink[0];
+        px[i * 4 + 1] = ink[1];
+        px[i * 4 + 2] = ink[2];
+        px[i * 4 + 3] = on ? 255 : 0;
+      }
+    }
+    ctx.putImageData(frame, 0, 0);
+  }
+
+  // Turn a headshot into ink density: the silhouette always gets some ink, and darker
+  // areas get more, after stretching the contrast so every photo reads about the same.
+  function toDensity(img) {
+    const scratch = document.createElement("canvas");
+    scratch.width = COLS;
+    scratch.height = ROWS;
+    const sctx = scratch.getContext("2d", { willReadFrequently: true });
+    sctx.drawImage(img, 0, 0, COLS, ROWS);
+    const { data } = sctx.getImageData(0, 0, COLS, ROWS);
+    const lum = new Float32Array(COLS * ROWS);
+    let lo = 1, hi = 0;
+    for (let i = 0; i < lum.length; i++) {
+      lum[i] = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255;
+      if (data[i * 4 + 3] > 128) {
+        lo = Math.min(lo, lum[i]);
+        hi = Math.max(hi, lum[i]);
+      }
+    }
+    const span = Math.max(hi - lo, 0.01);
+    const out = new Float32Array(COLS * ROWS);
+    for (let i = 0; i < out.length; i++) {
+      const dark = 1 - clamp01((lum[i] - lo) / span);
+      out[i] = (data[i * 4 + 3] / 255) * (0.07 + 0.93 * Math.pow(dark, 1.35));
+    }
+    return out;
+  }
+
+  function loadImage(player) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous"; // ESPN's CDN allows it, so the canvas can read pixels
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = `https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.espn_id}.png&w=350&h=254`;
+    });
+  }
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const visible = () =>
+    document.hidden
+      ? new Promise((resolve) =>
+          document.addEventListener("visibilitychange", function on() {
+            if (!document.hidden) {
+              document.removeEventListener("visibilitychange", on);
+              resolve();
+            }
+          }))
+      : Promise.resolve();
+
+  // Step the fade in chunky increments so it reads as a dither dissolve, not a blend.
+  function fade(from, to) {
+    return new Promise((resolve) => {
+      const start = performance.now();
+      const tick = (now) => {
+        const t = clamp01((now - start) / FADE_MS);
+        level = from + (to - from) * Math.round(t * FADE_STEPS) / FADE_STEPS;
+        render();
+        if (t < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  async function stars() {
+    const response = await fetch("/players", { headers: { accept: "application/json" } });
+    if (!response.ok) return [];
+    const players = (await response.json()).filter(
+      (p) => ["QB", "RB", "WR", "TE"].includes(p.position) && Number.isInteger(p.espn_id) && p.espn_id > 0,
+    );
+    players.sort((a, b) => b.ros_projection - a.ros_projection);
+    const top = players.slice(0, STAR_COUNT);
+    for (let i = top.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [top[i], top[j]] = [top[j], top[i]];
+    }
+    return top;
+  }
+
+  async function run() {
+    const list = await stars();
+    if (!list.length) return;
+    readInk();
+    let failures = 0;
+    for (let i = 0; failures < list.length; i = (i + 1) % list.length) {
+      let img;
+      try {
+        img = await loadImage(list[i]);
+      } catch (e) {
+        failures++;
+        continue;
+      }
+      failures = 0;
+      density = toDensity(img);
+      if (reduceMotion.matches) {
+        level = 1;
+        render();
+        return;
+      }
+      await visible();
+      await fade(0, 1);
+      await wait(HOLD_MS);
+      await visible();
+      await fade(1, 0);
+      await wait(GAP_MS);
+    }
+  }
+
+  // Recolor when the theme changes.
+  const recolor = () => {
+    readInk();
+    render();
+  };
+  new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", recolor);
+
+  run().catch(() => {
+    // Decorative only: if players or images can't load, the landscape stays without a portrait.
+  });
 })();
