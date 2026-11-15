@@ -21,9 +21,11 @@ from app.data.adp import load_adp
 from app.data.league_store import LeagueStore
 from app.data.profile_cache import ProfileCache
 from app.data.sources.espn_athletes import EspnAthleteSource
+from app.data.sources.espn_draft import EspnDraftSource
 from app.data.sources.http import RateLimitedClient
 from app.services.defense_breakdown import DefenseBreakdowns
 from app.services.draft import DraftPlanner
+from app.services.live_draft import LiveDrafts
 from app.services.player_profile import LocalPlayerData
 from app.services.profiles import ProfileService
 from app.services.matchups import MatchupData, load_matchups
@@ -296,3 +298,32 @@ _league_store = LeagueStore(settings.league_db_path, max_total=settings.max_stor
 def get_league_store() -> LeagueStore:
     """The leagues saved on each profile."""
     return _league_store
+
+
+_live_drafts: LiveDrafts | None = None
+_live_drafts_lock = threading.Lock()
+
+
+def get_live_drafts() -> LiveDrafts:
+    """Live ESPN draft sessions, created on first use. Reads use a short timeout and a size
+    cap; the per-host spacing is small because each session already polls only every few
+    seconds, and many leagues can be drafting at once."""
+    global _live_drafts
+    with _live_drafts_lock:
+        if _live_drafts is None:
+            client = RateLimitedClient(
+                min_interval=0.2,
+                max_retries=1,
+                backoff_base=1.0,
+                timeout=8.0,
+                total_timeout=10.0,
+                max_response_bytes=5 * 1024 * 1024,
+                max_retry_delay=2.0,
+            )
+            _live_drafts = LiveDrafts(
+                EspnDraftSource(client),
+                poll_seconds=settings.live_draft_poll_seconds,
+                ttl_seconds=settings.live_draft_session_hours * 3600,
+                max_sessions=settings.live_draft_max_sessions,
+            )
+        return _live_drafts

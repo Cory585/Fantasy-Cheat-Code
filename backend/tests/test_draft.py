@@ -142,3 +142,57 @@ def test_board_stops_at_the_player_pool():
     plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=12, slot=1, rounds=3)
     assert len(plan.board) == len(SAMPLE_PLAYERS)
     assert plan.picks[-1].position_mix == {}
+
+
+# ---------- Live drafts (players already taken) ----------
+
+def test_drafted_players_leave_the_board_and_past_picks_drop_out():
+    # 4 teams, slot 2: picks 2 and 7. Picks 1-3 are in, so pick 2 is past.
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=2, rounds=2, targets_per_pick=2,
+                                             drafted=frozenset({"rb1", "qb1", "wr2"}), picks_made=3)
+    assert plan.picks_made == 3
+    assert [p.pick.overall for p in plan.picks] == [7]
+    taken = {"rb1", "qb1", "wr2"}
+    assert not taken & {t.player_id for t in plan.board}
+    assert len(plan.board) == 8 - 3  # one mock entry per pick still to come
+    # Pick 7 is the 4th pick from now, so the top 3 remaining players are assumed gone first.
+    assert plan.picks[0].targets[0].player_id == plan.board[3].player_id
+    assert [t.rank for t in plan.board] == list(range(1, 6))
+
+
+def test_picks_made_counts_players_outside_the_pool():
+    # Two picks are in, but only one drafted player is in the pool.
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=3, rounds=1, targets_per_pick=1,
+                                             drafted=frozenset({"qb1", "not-in-pool"}), picks_made=2)
+    assert plan.picks_made == 2
+    assert plan.picks[0].targets[0].player_id == plan.board[0].player_id != "qb1"
+
+
+def test_picks_made_is_at_least_the_drafted_players_found():
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=4, rounds=1, drafted=frozenset({"qb1", "qb2"}))
+    assert plan.picks_made == 2
+
+
+def test_finished_draft_has_no_picks_left():
+    plan = DraftPlanner(SAMPLE_PLAYERS).plan(teams=4, slot=1, rounds=1, picks_made=4)
+    assert (plan.picks, plan.board) == ([], [])
+
+
+def test_draft_plan_endpoint_takes_drafted_players():
+    resp = client.get("/draft/plan", params=[("teams", 4), ("slot", 2), ("rounds", 2), ("picks_made", 3),
+                                             ("drafted", "rb1"), ("drafted", "qb1"), ("drafted", "wr2")])
+    assert resp.status_code == 200
+    plan = resp.json()
+    assert plan["picks_made"] == 3
+    assert [p["pick"]["overall"] for p in plan["picks"]] == [7]
+    assert "qb1" not in {t["player_id"] for t in plan["board"]}
+
+
+@pytest.mark.parametrize("params", [
+    [("slot", 1), ("picks_made", -1)],
+    [("slot", 1), ("picks_made", 501)],
+    [("slot", 1)] + [("drafted", str(i)) for i in range(501)],
+    [("slot", 1), ("drafted", "x" * 65)],
+])
+def test_draft_plan_rejects_bad_drafted_lists(params):
+    assert client.get("/draft/plan", params=params).status_code == 422

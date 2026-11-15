@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from app.api import defenses, draft, errors, leagues, meta, players, start_sit, tags, trades
+from app.api import defenses, draft, errors, leagues, live_draft, meta, players, start_sit, tags, trades
 from app.api.errors import error_response
 from app.api.static import SiteFiles
 from app.api.security import add_security_headers
@@ -36,6 +36,9 @@ limiter = RateLimiter(
         Rule("league-changes", burst=settings.league_change_burst, per_second=settings.league_change_per_second,
              matches=_is_leagues, methods=frozenset({"POST", "DELETE"})),
         Rule("league-edits", burst=60, per_second=1, matches=_is_leagues, methods=frozenset({"PUT"})),
+        # Connecting a live draft reads ESPN and holds the league's cookies in memory.
+        Rule("live-draft-start", burst=6, per_second=0.05,
+             matches=lambda path: path == "/draft/live", methods=frozenset({"POST"})),
     ],
     trust_proxy=settings.trust_proxy,
     proxy_hops=settings.trusted_proxy_hops,
@@ -78,6 +81,7 @@ app.include_router(players.router)
 app.include_router(trades.router)
 app.include_router(meta.router)
 app.include_router(draft.router)
+app.include_router(live_draft.router)
 app.include_router(start_sit.router)
 app.include_router(defenses.router)
 app.include_router(leagues.router)

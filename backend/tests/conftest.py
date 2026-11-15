@@ -4,6 +4,7 @@ from app.api.dependencies import (
     get_adp,
     get_defense_breakdowns,
     get_league_store,
+    get_live_drafts,
     get_local_player_data,
     get_matchups,
     get_outlooks,
@@ -18,6 +19,13 @@ from app.main import app, limiter
 from app.services.defense_breakdown import DefenseBreakdowns
 from app.services.matchups import MatchupData
 from app.services.player_profile import LocalPlayerData
+
+
+class NoNetworkLiveDrafts:
+    """Default live draft sessions in tests: never contacts ESPN."""
+
+    def __getattr__(self, name):
+        raise AssertionError("tests must not read real ESPN drafts; override get_live_drafts")
 
 
 class NoNetworkProfiles:
@@ -40,6 +48,7 @@ def use_sample_players(tmp_path):
     app.dependency_overrides[get_local_player_data] = lambda: LocalPlayerData(None)
     app.dependency_overrides[get_defense_breakdowns] = lambda: DefenseBreakdowns(None)
     app.dependency_overrides[get_league_store] = lambda: leagues
+    app.dependency_overrides[get_live_drafts] = NoNetworkLiveDrafts
     app.dependency_overrides[get_stat_tags] = lambda: ({}, None)
     limiter.reset()
     yield

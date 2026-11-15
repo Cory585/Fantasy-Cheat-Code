@@ -74,6 +74,57 @@
       </fieldset>
     </form>
 
+    <section class="live-draft" id="live-draft" aria-labelledby="live-heading">
+      <h2 id="live-heading" class="live-heading">Follow your ESPN draft live</h2>
+      <form class="live-connect" id="live-form" novalidate>
+        <p class="section-note">Picks show up here a few seconds after they're made on ESPN, and the plan below
+          updates around them. Your league ID is the number after <code>leagueId=</code> in your ESPN league's address.</p>
+        <div class="live-fields">
+          <label class="live-field">
+            <span>League ID</span>
+            <input id="live-league" class="team-name-input" inputmode="numeric" pattern="[0-9]{1,12}" maxlength="12"
+              autocomplete="off" spellcheck="false" required>
+          </label>
+          <button type="submit" class="btn btn-cta" id="live-connect">Connect</button>
+        </div>
+        <details class="live-private">
+          <summary>Private league?</summary>
+          <p class="section-note">ESPN only shows private leagues to members, so this page needs two cookies from a
+            browser where you're signed in to ESPN: open ESPN Fantasy, open developer tools (F12), and under
+            Application (or Storage), Cookies, copy <code>espn_s2</code> and <code>SWID</code>. They're used only
+            to read your league's draft from ESPN, kept in the server's memory until you disconnect or for a few
+            hours, and never saved.</p>
+          <div class="live-fields">
+            <label class="live-field">
+              <span>espn_s2</span>
+              <input id="live-s2" class="team-name-input" type="password" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="live-field">
+              <span>SWID</span>
+              <input id="live-swid" class="team-name-input" type="password" autocomplete="off" spellcheck="false"
+                placeholder="{XXXXXXXX-XXXX-...}">
+            </label>
+          </div>
+        </details>
+      </form>
+      <div class="live-connected" id="live-connected" hidden>
+        <div class="live-summary">
+          <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+          <strong id="live-name"></strong>
+          <span class="player-meta" id="live-progress"></span>
+        </div>
+        <div class="live-fields">
+          <label class="live-field">
+            <span>Your team</span>
+            <select id="live-team"></select>
+          </label>
+          <button type="button" class="btn btn-quiet" id="live-disconnect">Disconnect</button>
+        </div>
+        <ol class="live-picks" id="live-picks" aria-label="Latest picks"></ol>
+      </div>
+      <p class="live-message" id="live-message" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="draft-section" aria-labelledby="timeline-heading">
       <h2 id="timeline-heading" class="section-heading">When you're on the clock</h2>
       <p class="section-note" id="timeline-summary"></p>
@@ -118,7 +169,7 @@
         <ul>
           <li>Suggestions that account for your roster so far, not just ADP.</li>
           <li>Tiers, so you can see when a position is about to run dry.</li>
-          <li>Live draft tracking: mark picks as they happen and update what's left.</li>
+          <li>Live drafts on Sleeper and Yahoo, and marking picks by hand when a league can't be connected.</li>
         </ul>
       </div>
       <div>
