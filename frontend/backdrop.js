@@ -165,6 +165,49 @@
   const ctx = canvas.getContext("2d");
   const frame = ctx.createImageData(COLS, ROWS);
 
+  // Each team's home jersey color as [hue, saturation %]. While a star is showing, the
+  // landscape (and the page tint that follows it) shifts to their jersey's hue.
+  const JERSEYS = {
+    ARI: [345, 30], ATL: [352, 28], BAL: [250, 30], BUF: [218, 32], CAR: [200, 30], CHI: [222, 26],
+    CIN: [16, 34], CLE: [26, 28], DAL: [216, 26], DEN: [18, 34], DET: [201, 32], GB: [158, 26],
+    HOU: [204, 26], IND: [212, 30], JAX: [189, 30], KC: [352, 32], LAC: [201, 32], LAR: [222, 30],
+    LV: [220, 4], MIA: [184, 32], MIN: [266, 28], NE: [212, 26], NO: [40, 26], NYG: [224, 30],
+    NYJ: [158, 28], PHI: [186, 28], PIT: [42, 30], SEA: [206, 26], SF: [2, 30], TB: [0, 30],
+    TEN: [211, 30], WAS: [356, 26],
+  };
+  const root = document.documentElement;
+  let hue = parseFloat(getComputedStyle(root).getPropertyValue("--land-hue")) || 148;
+  let sat = parseFloat(getComputedStyle(root).getPropertyValue("--land-sat")) || 22;
+
+  function setTint(h, s) {
+    hue = h;
+    sat = s;
+    root.style.setProperty("--land-hue", h.toFixed(1));
+    root.style.setProperty("--land-sat", `${s.toFixed(1)}%`);
+  }
+
+  // Glide to a team's jersey hue the short way round the color wheel, recoloring the
+  // portrait's ink as it goes. Instant when the user prefers reduced motion.
+  function tintTo(team, ms) {
+    const jersey = JERSEYS[team];
+    if (!jersey) return;
+    const toHue = hue + ((((jersey[0] - hue) % 360) + 540) % 360) - 180;
+    if (reduceMotion.matches || !ms) {
+      setTint(toHue, jersey[1]);
+      readInk();
+      return;
+    }
+    const fromHue = hue, fromSat = sat, start = performance.now();
+    const tick = (now) => {
+      const t = clamp01((now - start) / ms);
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
+      setTint(fromHue + (toHue - fromHue) * e, fromSat + (jersey[1] - fromSat) * e);
+      readInk();
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   let ink = [0, 0, 0];
   function readInk() {
     const match = getComputedStyle(canvas).color.match(/[\d.]+/g);
@@ -334,11 +377,13 @@
       failures = 0;
       density = toDensity(img);
       if (reduceMotion.matches) {
+        tintTo(list[i].team, 0);
         level = 1;
         render();
         return;
       }
       await visible();
+      tintTo(list[i].team, FADE_MS);
       await fade(0, 1);
       await wait(HOLD_MS);
       await visible();
