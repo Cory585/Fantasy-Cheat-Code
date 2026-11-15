@@ -194,6 +194,32 @@ CREATE TABLE IF NOT EXISTS team_game_offense (
 );
 CREATE INDEX IF NOT EXISTS team_game_offense_season ON team_game_offense (season, week);
 
+-- How each player was used per game, from play-by-play (targets by field location, deep,
+-- red-zone, end-zone, and third-down targets; red-zone and goal-line carries).
+CREATE TABLE IF NOT EXISTS player_game_usage (
+    game_id             TEXT NOT NULL,
+    gsis_id             TEXT NOT NULL,
+    season              INTEGER NOT NULL,
+    week                INTEGER NOT NULL,
+    season_type         TEXT NOT NULL,
+    team                TEXT,
+    targets             INTEGER,
+    targets_left        INTEGER,
+    targets_middle      INTEGER,  -- between the numbers: mostly slot receivers and tight ends
+    targets_right       INTEGER,
+    air_yards           REAL,
+    deep_targets        INTEGER,  -- 20+ air yards
+    behind_los_targets  INTEGER,  -- at or behind the line (screens, swings)
+    red_zone_targets    INTEGER,
+    end_zone_targets    INTEGER,
+    third_down_targets  INTEGER,  -- third and fourth down
+    carries             INTEGER,
+    red_zone_carries    INTEGER,
+    goal_line_carries   INTEGER,  -- inside the 5
+    PRIMARY KEY (game_id, gsis_id)
+);
+CREATE INDEX IF NOT EXISTS player_game_usage_season ON player_game_usage (season, gsis_id);
+
 -- Forecast weather during upcoming games (kickoff + 3 hours). Joins to games.espn_id.
 CREATE TABLE IF NOT EXISTS game_weather (
     espn_event_id      TEXT PRIMARY KEY,

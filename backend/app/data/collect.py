@@ -16,7 +16,9 @@ Datasets:
     injuries           nflverse: weekly injury report and practice participation
     combine            nflverse: NFL Scouting Combine results since 2000 (40, bench, jumps, agility)
     playcalling        nflverse play-by-play, summarized per offense per game: neutral pass rate
-                       over expected (coaching tendency), pace, sacks, turnovers, EPA per dropback
+                       over expected (coaching tendency), pace, sacks, turnovers, EPA per dropback;
+                       and per player per game: targets by field location, deep, red-zone, and
+                       end-zone targets, goal-line carries (player_game_usage)
     weather            ESPN venues + Open-Meteo forecasts for unplayed games this week and next
 
 teams, espn_market, players, games, combine, and weather cover every season (or only the
@@ -55,8 +57,11 @@ def current_season(today: date | None = None) -> int:
     return today.year if today.month >= 3 else today.year - 1
 
 
-def collect_dataset(client: RateLimitedClient, dataset: str, season: int) -> tuple[str, list[dict]]:
-    """Fetch one dataset. Returns (table name, rows)."""
+def collect_dataset(
+    client: RateLimitedClient, dataset: str, season: int
+) -> tuple[str, list[dict]] | dict[str, list[dict]]:
+    """Fetch one dataset. Returns (table name, rows), or {table name: rows} for a dataset that
+    fills several tables."""
     if dataset == "teams":
         return "teams", espn.fetch_site_teams(client)
     if dataset == "espn_market":
@@ -67,7 +72,7 @@ def collect_dataset(client: RateLimitedClient, dataset: str, season: int) -> tup
     if dataset in NFLVERSE_DATASETS:
         return dataset, NflverseSource(client).fetch(dataset, season)
     if dataset == "playcalling":
-        return "team_game_offense", fetch_team_game_offense(client, season)
+        return fetch_team_game_offense(client, season)
     if dataset == "weather":
         return "game_weather", fetch_upcoming_weather(client, season)
     raise ValueError(f"Unknown dataset '{dataset}'. Choose from: {', '.join(ALL_DATASETS)}")
@@ -86,8 +91,9 @@ def collect(datasets: list[str], seasons: list[int], conn) -> dict[str, int | Ex
                 key = f"{dataset}:{season}"
                 log.info("Collecting %s (%s season)...", dataset, season)
                 try:
-                    table, rows = collect_dataset(client, dataset, season)
-                    count = db.upsert(conn, table, rows)
+                    result = collect_dataset(client, dataset, season)
+                    tables = result if isinstance(result, dict) else dict([result])
+                    count = sum(db.upsert(conn, table, rows) for table, rows in tables.items())
                     db.record_run(conn, dataset, season, count)
                     results[key] = count
                     log.info("  %s: %d rows", key, count)

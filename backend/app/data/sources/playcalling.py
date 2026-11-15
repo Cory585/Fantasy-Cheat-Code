@@ -10,6 +10,12 @@ counts needed for tendency and efficiency metrics:
   game script.
 - Plays per game (pace), dropbacks, sacks taken, interceptions, fumbles lost, and EPA per
   dropback (QB/passing efficiency).
+
+The same pass also keeps one row per player per game (`player_game_usage`) with where and
+how they were used: targets by field location (left/middle/right, which is how the player
+tags tell slot receivers from outside ones, since public data has no alignment), deep and
+behind-the-line targets, red-zone and end-zone targets, third-down targets, and red-zone
+and goal-line carries.
 """
 
 import csv
@@ -27,8 +33,15 @@ def pbp_url(season: int) -> str:
     return f"{RELEASES}/pbp/play_by_play_{season}.csv.gz"
 
 
-def fetch_team_game_offense(client: RateLimitedClient, season: int) -> list[dict]:
-    return parse_play_by_play(gzip.decompress(client.get_bytes(pbp_url(season))).decode("utf-8"))
+DEEP_AIR_YARDS = 20
+RED_ZONE = 20  # yards from the end zone
+GOAL_LINE = 5
+
+
+def fetch_team_game_offense(client: RateLimitedClient, season: int) -> dict[str, list[dict]]:
+    """Both summaries from one download: {"team_game_offense": [...], "player_game_usage": [...]}."""
+    teams, usage = parse_play_by_play_tables(gzip.decompress(client.get_bytes(pbp_url(season))).decode("utf-8"))
+    return {"team_game_offense": teams, "player_game_usage": usage}
 
 
 def _f(value: str | None) -> float | None:
@@ -46,9 +59,62 @@ def _team(value: str) -> str:
 
 def parse_play_by_play(text: str) -> list[dict]:
     """One row per (game, offense) with summed play-calling and efficiency counts."""
+    return parse_play_by_play_tables(text)[0]
+
+
+USAGE_COUNTS = (
+    "targets", "targets_left", "targets_middle", "targets_right", "air_yards", "deep_targets",
+    "behind_los_targets", "red_zone_targets", "end_zone_targets", "third_down_targets",
+    "carries", "red_zone_carries", "goal_line_carries",
+)
+
+
+def _usage_row(usage: dict, play: dict, player: str, team: str) -> dict:
+    key = (play["game_id"], player)
+    row = usage.get(key)
+    if row is None:
+        row = usage[key] = {"game_id": play["game_id"], "gsis_id": player, "season": int(play["season"]),
+                            "week": int(play["week"]), "season_type": play.get("season_type") or "REG",
+                            "team": team, **{name: 0 for name in USAGE_COUNTS}}
+    return row
+
+
+def _count_usage(usage: dict, play: dict, team: str) -> None:
+    if play.get("two_point_attempt") == "1" or play.get("sack") == "1":
+        return
+    yardline, down = _f(play.get("yardline_100")), _f(play.get("down"))
+    red_zone = yardline is not None and yardline <= RED_ZONE
+    receiver = play.get("receiver_player_id")
+    if play.get("pass_attempt") == "1" and receiver and receiver != "NA":
+        row = _usage_row(usage, play, receiver, team)
+        row["targets"] += 1
+        location = play.get("pass_location")
+        if location in ("left", "middle", "right"):
+            row[f"targets_{location}"] += 1
+        air = _f(play.get("air_yards"))
+        if air is not None:
+            row["air_yards"] += air
+            row["deep_targets"] += air >= DEEP_AIR_YARDS
+            row["behind_los_targets"] += air <= 0
+            row["end_zone_targets"] += yardline is not None and air >= yardline
+        row["red_zone_targets"] += red_zone
+        row["third_down_targets"] += down is not None and down >= 3
+    rusher = play.get("rusher_player_id")
+    if play.get("rush_attempt") == "1" and rusher and rusher != "NA":
+        row = _usage_row(usage, play, rusher, team)
+        row["carries"] += 1
+        row["red_zone_carries"] += red_zone
+        row["goal_line_carries"] += yardline is not None and yardline <= GOAL_LINE
+
+
+def parse_play_by_play_tables(text: str) -> tuple[list[dict], list[dict]]:
+    """(one row per game and offense, one row per game and player who was targeted or ran)."""
     games: dict[tuple[str, str], dict] = {}
+    usage: dict[tuple[str, str], dict] = {}
     for play in csv.DictReader(io.StringIO(text.lstrip("﻿"))):
         offense, defense = play.get("posteam"), play.get("defteam")
+        if offense and play.get("play_type") != "no_play":
+            _count_usage(usage, play, _team(offense))
         dropback = play.get("qb_dropback") == "1"
         rush = play.get("rush") == "1"
         if not offense or not defense or not (dropback or rush) or play.get("play_type") == "no_play":
@@ -91,4 +157,6 @@ def parse_play_by_play(text: str) -> list[dict]:
     for row in games.values():
         row["dropback_epa"] = round(row["dropback_epa"], 4)
         row["pass_oe_sum"] = round(row["pass_oe_sum"], 4)
-    return list(games.values())
+    for row in usage.values():
+        row["air_yards"] = round(row["air_yards"], 1)
+    return list(games.values()), list(usage.values())
