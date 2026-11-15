@@ -331,11 +331,35 @@ position groups and units across the league, from `app/services/defense_breakdow
 
 Breakdowns are computed once per season and rebuilt when the database changes.
 
-### Your team and lineup
+### Leagues, your team, and lineup
 
-The **My team** page (`/team/`) saves a roster (up to 40 players) and your league's lineup spots
-in the browser's `localStorage` (key `fcc.team.v1`). There are no accounts: the team stays on that
-device, and nothing is stored on the server. The start/sit page's **My lineup** mode sends the
+A profile holds up to **10 leagues**, each with its own name, lineup spots (0 to 5 of each), and
+roster (up to 40 players). There are no accounts: the browser makes a random profile key
+(32 bytes, base64url, kept in `localStorage` as `fcc.profile.v1`) and sends it with every league
+request as `X-Profile-Key`. The server stores only the key's SHA-256, in
+`backend/data/leagues.db` (gitignored; `LEAGUE_DB_PATH`), and every query is scoped to it, so
+one profile can't see or change another's leagues. The **Profile** page (`/profile/`) adds,
+renames, and removes leagues, and shows the key so the same leagues can be opened on another
+device. **My team** (`/team/`) and **Start/sit** (`/start-sit/`) each have a league picker
+(or take `?league=<id>`). A team saved by the earlier single-team version (`fcc.team.v1`) is
+moved into a league the first time the profile loads with none.
+
+| Request | Does |
+|---|---|
+| `GET /leagues` | `{"leagues": [...], "max_leagues": 10}`, oldest first |
+| `POST /leagues` | Adds one: `{"name": "Work league", "slots": {"SUPERFLEX": 1}, "roster": ["4984"]}` (missing spots get the defaults). `201` |
+| `GET /leagues/{id}` | One league |
+| `PUT /leagues/{id}` | Replaces its name, spots, and roster (same body as `POST`) |
+| `DELETE /leagues/{id}` | Removes it. `204` |
+
+Errors: `401 profile_key_required` (missing or malformed key), `404 league_not_found` (no such
+league on this profile), `409 league_limit` (already 10), `503 leagues_unavailable` (the store
+couldn't be read or written), `503 leagues_full` (the server holds `MAX_STORED_LEAGUES`,
+default 100,000, across all profiles). The 10-league check and the insert share a transaction,
+so simultaneous requests can't slip past the cap. Making and removing leagues is rate limited
+(see below).
+
+The start/sit page's **My lineup** mode sends the chosen league's
 roster and spots to `POST /start-sit/lineup`:
 
 ```json
@@ -360,13 +384,15 @@ stable for clients to branch on:
 | Status | Codes |
 |---|---|
 | 400 | `bad_request` (including unparseable bodies) |
-| 404 | `not_found`, `player_not_found` |
+| 401 | `profile_key_required` |
+| 404 | `not_found`, `player_not_found`, `league_not_found` |
 | 405 | `method_not_allowed` |
+| 409 | `league_limit` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
 | 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
 | 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
 | 500 | `internal_error` (details are logged on the server, never returned) |
-| 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `upstream_timeout` |
+| 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `leagues_unavailable`, `leagues_full`, `upstream_timeout` |
 
 Validation errors don't echo the submitted input back. Browsers that hit a missing page get
 `frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
@@ -376,7 +402,12 @@ Validation errors don't echo the submitted input back. Browsers that hit a missi
 | Bucket | Applies to | Burst | Sustained |
 |---|---|---|---|
 | `all` | every request | 300 | 5 per second |
-| `upstream` | endpoints that call outside providers (`.../profile`) | 10 | 1 every 5 seconds |
+| `upstream` | endpoints that call outside providers (`/players/{id}/profile`) | 10 | 1 every 5 seconds |
+| `league-changes` | making or removing a league (`POST /leagues`, `DELETE /leagues/{id}`) | 12 | 4 a minute |
+| `league-edits` | saving a league (`PUT /leagues/{id}`) | 60 | 1 per second |
+
+A rule can be limited to certain methods, so reading leagues only counts against `all`. The
+league-change limits can be tuned with `LEAGUE_CHANGE_BURST` and `LEAGUE_CHANGES_PER_SECOND`.
 
 Set `RATE_LIMIT_ENABLED=0` to turn them off. Behind a reverse proxy, set `TRUST_PROXY=1` so
 clients are keyed on `X-Forwarded-For`. Proxies append the address they saw, so the client is

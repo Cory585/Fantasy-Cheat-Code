@@ -5,10 +5,11 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Tool | Page | What it does |
 |---|---|---|
 | Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries; explains why each side wins or loses and breaks down every player's strengths and concerns |
-| Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets your saved team's best lineup |
+| Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets the best lineup for any of your leagues |
 | Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each |
 | Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |
-| My team | `/team/` | Saves your roster and lineup spots in the browser |
+| My team | `/team/` | Saves your roster and lineup spots for each league |
+| Profile | `/profile/` | Holds your leagues (up to 10): add, rename, remove, and move them to another device |
 | Player profiles | `/player/?id=…` | Bio, NFL and college stats, and combine results |
 | Tier lists | `/tiers/` | In development |
 
@@ -35,18 +36,19 @@ flowchart LR
         db[("fantasy.db<br/>SQLite stats, market, weather")]
         models[("defense_model.json<br/>kicker_model.json")]
         profiles[("profiles.db<br/>ESPN profile cache")]
+        leaguesdb[("leagues.db<br/>leagues per profile")]
     end
 
     subgraph api["FastAPI app (backend/app)"]
         mw["Middleware<br/>rate limit, body size, security headers"]
-        routes["Routes<br/>/players /trades /start-sit /draft<br/>/defenses /meta"]
+        routes["Routes<br/>/players /trades /start-sit /draft<br/>/defenses /leagues /meta"]
         deps["dependencies.py<br/>reloads data when files change"]
         services["Services<br/>valuation, trade analyzer, start/sit,<br/>K/DST models, defense breakdown,<br/>draft planner, outlooks, profiles"]
     end
 
     subgraph web["Browser (frontend/, static)"]
-        pages["Pages<br/>trade, start/sit, draft,<br/>defense, team, player"]
-        ls[("localStorage<br/>saved team")]
+        pages["Pages<br/>trade, start/sit, draft,<br/>defense, team, profile, player"]
+        ls[("localStorage<br/>profile key, theme")]
     end
 
     sleeper --> sync
@@ -67,6 +69,7 @@ flowchart LR
     mw --> routes
     services -- "on demand, rate-limited" --> espnAth
     services <--> profiles
+    routes <--> leaguesdb
 
     pages -- "fetch JSON" --> mw
     pages <--> ls
