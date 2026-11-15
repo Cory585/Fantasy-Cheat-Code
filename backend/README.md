@@ -75,6 +75,7 @@ one snapshot per day, so trends in rostered % and ADP build up over time.
 | `injuries` | nflverse | Weekly injury report status and practice participation |
 | `espn_player_market` | ESPN Fantasy | Rostered %, started %, ADP, auction value, standard and PPR draft rank |
 | `team_game_offense` | nflverse play-by-play | Per offense per game: neutral pass rate over expected (coaching tendency), plays, dropbacks, sacks taken, turnovers, EPA per dropback |
+| `player_game_usage` | nflverse play-by-play | Per player per game: targets by field location (left/middle/right), air yards, deep (20+), behind-the-line, red-zone, end-zone, and third-down targets; red-zone and goal-line carries |
 | `game_weather` | ESPN venues + [Open-Meteo](https://open-meteo.com) | Forecast temperature, wind, and precipitation for the 3 hours from kickoff, for unplayed games (Open-Meteo data is CC BY 4.0, free for non-commercial use) |
 | `collection_runs` | | When each dataset was last collected |
 
@@ -374,6 +375,33 @@ benched `alternative` and how often the starter outscores them (`probability`, `
 `close_calls` lists the closest spots. Roster ids no longer in the player pool are skipped and
 returned in `missing_ids`, so a saved team keeps working. Errors: `422 invalid_lineup` (no spots),
 `422 invalid_week`, `404 player_not_found` (none of the roster is in the pool).
+
+## Player tags
+
+`GET /tags` returns 35 tags for quick lookup, each with what earns it, how many players have it,
+and every player's tags with the numbers behind them (`?player=<id>` for one player). The
+**Player finder** page (`/finder/`) filters by them, and player profiles link to it.
+
+| Category | Tags |
+|---|---|
+| Role | Slot receiver, outside receiver, deep threat, possession receiver, after-the-catch threat, screen and short-area target, alpha receiver, receiving tight end, workhorse back, committee back, pass-catching back, goal-line back, rushing QB, gunslinger, high-volume passer |
+| Usage | High target share, air-yards leader, red-zone target, end-zone target, red-zone carries, third-down target, full-time snaps, part-time role, snaps rising |
+| Trend | Hot streak, cold streak, boom or bust, steady producer, TD-dependent, trending adds (ESPN) |
+| Status | Rookie, injury designation, on bye this week, easy or tough schedule ahead |
+
+Role, usage, and trend tags use the current season's regular-season games (3+ games, and 15+
+targets for receiving-style tags) from `player_week_stats`, `player_game_usage`, and
+`snap_counts`; they're rebuilt when the data reloads. Thresholds are in each tag's
+`description` and in `app/services/tags.py`.
+
+**Slot vs outside.** No public data charts where a receiver lines up, so it's estimated from
+where and how deep they're targeted: slot receivers are thrown to between the numbers and short
+(a quarter or more of targets in the middle at a 10.5-yard average depth or less, 18%+ in the
+middle at 8.5 yards or less, or any 6.5-yard average depth or less); outside receivers are
+thrown to near the sidelines and deeper (20% or less in the middle at 10+ yards). On 2026 data
+this puts Amon-Ra St. Brown, Khalil Shakir, Zay Flowers, and Keenan Allen in the slot and
+DK Metcalf, George Pickens, Chris Olave, and Matthew Golden outside. A receiver who moves
+around may get neither tag.
 
 ## Errors, limits, and security
 

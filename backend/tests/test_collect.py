@@ -48,3 +48,12 @@ def test_seasonless_datasets_run_once(tmp_path, monkeypatch):
     monkeypatch.setattr(collect, "collect_dataset", fake)
     collect.collect(["games", "injuries"], [2024, 2025], db.connect(tmp_path / "t.db"))
     assert calls == [("games", 2025), ("injuries", 2024), ("injuries", 2025)]
+
+
+def test_a_dataset_can_fill_several_tables(tmp_path, monkeypatch):
+    rows = {"team_game_offense": [{"game_id": "g", "team": "KC", "season": 2026, "week": 1, "season_type": "REG"}],
+            "player_game_usage": [{"game_id": "g", "gsis_id": "p", "season": 2026, "week": 1, "season_type": "REG"}]}
+    monkeypatch.setattr(collect, "collect_dataset", lambda client, dataset, season: rows)
+    conn = db.connect(tmp_path / "t.db")
+    assert collect.collect(["playcalling"], [2026], conn) == {"playcalling:2026": 2}
+    assert conn.execute("SELECT count(*) FROM player_game_usage").fetchone()[0] == 1

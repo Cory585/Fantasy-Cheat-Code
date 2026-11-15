@@ -29,6 +29,8 @@ from app.services.profiles import ProfileService
 from app.services.matchups import MatchupData, load_matchups
 from app.services.outlook import OutlookBuilder
 from app.services.start_sit import StartSitAdvisor
+from app.models.tags import PlayerTag
+from app.services.tags import TagBuilder
 from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
 
@@ -58,6 +60,7 @@ class ReloadingPlayerData:
         self._adp: dict[int, float] = {}
         self._matchups = MatchupData()
         self._meta: dict = {}
+        self._tags: dict[str, list[PlayerTag]] = {}
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
         with self._lock:
@@ -68,6 +71,13 @@ class ReloadingPlayerData:
         with self._lock:
             self._refresh()
             return self._adp
+
+    def tags(self) -> tuple[dict[str, list[PlayerTag]], int | None]:
+        """Stat-based player tags and the season they come from."""
+        with self._lock:
+            self._refresh()
+            season = self._meta.get("season")
+            return self._tags, int(season) if season is not None else None
 
     def matchups(self) -> tuple[MatchupData, dict]:
         """Weekly matchup data and the player cache's metadata (season, weeks, scoring)."""
@@ -94,11 +104,13 @@ class ReloadingPlayerData:
             log.warning("No player cache at %s; using sample data. Run `python -m app.data.sync`.", self._cache_path)
             self._repo, self._outlooks = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
             self._matchups, self._meta = MatchupData(), {}
+            self._tags = {}
         else:
             self._repo = InMemoryPlayerRepository(players)
             self._outlooks = self._build_outlooks(players)
             self._meta = self._load_meta()
             self._matchups = self._load_matchups()
+            self._tags = self._build_tags(players)
             log.info("Loaded %d players (%d with schedule/form outlooks)", len(players), len(self._outlooks))
         self._adp = self._load_adp()
         self._versions = versions
@@ -128,6 +140,22 @@ class ReloadingPlayerData:
         except (sqlite3.Error, KeyError, ValueError) as error:
             log.error("Couldn't load matchups from %s: %s", self._db_paths[0], error)
             return MatchupData()
+
+    def _build_tags(self, players) -> dict[str, list[PlayerTag]]:
+        if not self._db_paths or not self._db_paths[0].exists() or "season" not in self._meta:
+            return {}
+        try:
+            conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
+            try:
+                return TagBuilder(
+                    conn, int(self._meta["season"]),
+                    ScoringFormat(self._meta.get("scoring", settings.default_scoring)),
+                ).build(players)
+            finally:
+                conn.close()
+        except (sqlite3.Error, KeyError, ValueError) as error:
+            log.error("Couldn't build player tags from %s: %s", self._db_paths[0], error)
+            return {}
 
     def _load_adp(self) -> dict[int, float]:
         if not self._db_paths or not self._db_paths[0].exists():
@@ -182,6 +210,11 @@ def get_outlooks() -> dict[str, PlayerOutlook]:
 def get_adp() -> dict[int, float]:
     """Latest ESPN average draft position by ESPN id (empty without a collected database)."""
     return _data.adp()
+
+
+def get_stat_tags() -> tuple[dict[str, list[PlayerTag]], int | None]:
+    """Stat-based player tags (empty without a collected database) and their season."""
+    return _data.tags()
 
 
 def get_matchups() -> tuple[MatchupData, dict]:
