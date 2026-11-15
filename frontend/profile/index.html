@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profile</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='16' rx='14' ry='9' fill='%237a4422'/%3E%3Cpath d='M10 16h12M13 14v4M16 14v4M19 14v4' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/vendor/lenis.css">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/theme-boot.js"></script>
+</head>
+<body>
+  <nav class="site-nav" aria-label="Main">
+    <div class="site-nav-inner">
+      <a class="site-name" href="/">Fantasy Cheat Code</a>
+      <ul class="nav-links">
+        <li><a href="/">Trade analyzer</a></li>
+        <li><a href="/tiers/">Tier lists</a></li>
+        <li><a href="/start-sit/">Start/sit</a></li>
+        <li><a href="/draft/">Draft masterclass</a></li>
+        <li><a href="/defense/">Defenses</a></li>
+        <li><a href="/team/">My team</a></li>
+        <li><a href="/profile/" aria-current="page">Profile</a></li>
+      </ul>
+      <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
+        <span class="theme-icon" aria-hidden="true"></span>
+        <span class="theme-label">Dark mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>Profile</h1>
+      <p class="lede">Keep a team for each league you play in, up to 10. My team and Start/sit let you pick which one to use.</p>
+      <p class="data-status" id="profile-status" role="status" aria-live="polite"></p>
+    </div>
+  </header>
+
+  <main class="profile-page">
+    <section class="team-panel" aria-labelledby="leagues-heading">
+      <div class="section-head">
+        <div>
+          <h2 id="leagues-heading" class="section-heading">Leagues</h2>
+          <p class="section-note" id="league-count"></p>
+        </div>
+      </div>
+      <form class="league-create" id="league-create">
+        <label class="team-field">
+          <span>New league</span>
+          <input id="league-name" class="team-name-input" maxlength="40" placeholder="League name" autocomplete="off" required>
+        </label>
+        <button type="submit" class="btn btn-cta" id="league-add">Add league</button>
+      </form>
+      <ul class="league-list" id="league-list" aria-live="polite"></ul>
+    </section>
+
+    <section class="team-panel" aria-labelledby="key-heading">
+      <h2 id="key-heading" class="section-heading">This profile</h2>
+      <p class="section-note">There's no sign-in. Your leagues belong to a private key kept in this browser. Copy it to open the same leagues on another device, and keep it to yourself: anyone with it can change them.</p>
+      <div class="profile-key">
+        <input id="profile-key" class="team-name-input profile-key-input" type="password" readonly aria-label="Profile key">
+        <button type="button" class="btn btn-quiet" id="key-show" aria-pressed="false">Show</button>
+        <button type="button" class="btn btn-quiet" id="key-copy">Copy</button>
+      </div>
+      <form class="league-create" id="key-form">
+        <label class="team-field">
+          <span>Use a key from another device (copy this one first if you want to come back to it)</span>
+          <input id="key-input" class="team-name-input" autocomplete="off" spellcheck="false" placeholder="Paste a profile key">
+        </label>
+        <button type="submit" class="btn btn-quiet">Switch profile</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/theme.js"></script>
+  <script src="/backdrop.js"></script>
+  <script src="/vendor/gsap.min.js"></script>
+  <script src="/vendor/lenis.min.js"></script>
+  <script src="/motion.js"></script>
+  <script src="/league-store.js"></script>
+  <script src="/profile/profile.js"></script>
+</body>
+</html>
