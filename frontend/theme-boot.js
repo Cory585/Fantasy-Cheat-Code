@@ -6,3 +6,10 @@ try {
   const saved = localStorage.getItem("theme");
   if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
 } catch (e) {}
+
+// Each page has its own single-hue landscape (see /backdrop.js). Tag the page now so the
+// hue-tinted colors in styles.css are right on first paint.
+document.documentElement.dataset.land =
+  { tiers: "tiers", "start-sit": "start-sit", draft: "draft", defense: "defense", team: "team" }[
+    location.pathname.split("/")[1]
+  ] || "trade";
