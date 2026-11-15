@@ -2623,3 +2623,10 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 @media (max-width: 640px) {
   .star-portrait { top: 7rem; width: 40vw; }
 }
+
+/* ---------- Motion (motion.js) ---------- */
+
+/* Soft ring around a focused field; motion.js animates --ring as you focus and type. */
+.is-ringed {
+  box-shadow: 0 0 0 var(--ring, 0px) color-mix(in srgb, var(--focus) 26%, transparent);
+}
