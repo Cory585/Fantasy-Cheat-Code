@@ -8,15 +8,22 @@ from tests.e2e.conftest import XSS_NAME
 
 pytestmark = pytest.mark.e2e
 
-KEY = "fcc.team.v1"
+KEY = "fcc.team.v1"  # where the single-team version kept the team; moved into a league on load
 ROSTER = ["qb1", "qb2", "rb1", "rb2", "rb3", "wr1", "wr2", "wr3", "te1", "te2", "k1", "dst1"]
 
 
 def saved(page):
-    return json.loads(page.evaluate(f"localStorage.getItem('{KEY}')") or "null")
+    """The first league on the page's profile, once any pending save has gone out."""
+    expect(page.locator("#save-status")).not_to_have_text("Saving…")
+    leagues = page.evaluate("""async () => {
+        const r = await fetch('/leagues', {headers: {'X-Profile-Key': localStorage.getItem('fcc.profile.v1')}});
+        return (await r.json()).leagues;
+    }""")
+    return leagues[0] if leagues else None
 
 
 def seed(page, roster=ROSTER, **extra):
+    """Saves a team the way the old single-team version did, so loading a page moves it into a league."""
     team = {"name": "Test Squad", "roster": roster, **extra}
     page.add_init_script(f"localStorage.setItem('{KEY}', {json.dumps(json.dumps(team))})")
 
@@ -68,7 +75,8 @@ def test_clear_needs_two_clicks(page):
     assert saved(page)["roster"]
     page.click("#clear-team")
     expect(page.locator(".roster-empty")).to_be_visible()
-    assert saved(page) is None
+    league = saved(page)
+    assert league["roster"] == [] and league["name"] == "Test Squad"  # the league stays
 
 
 def test_bad_saved_data_is_ignored(page):
@@ -155,3 +163,18 @@ def test_team_page_fits_a_phone(page):
         page.goto(path)
         page.wait_for_load_state("networkidle")
         assert page.evaluate("document.documentElement.scrollWidth") <= 375, path
+
+
+def test_old_saved_team_moves_into_a_league(page):
+    seed(page)
+    page.goto("/team/")
+    expect(page.locator(".team-item")).to_have_count(len(ROSTER))
+    expect(page.locator("#team-name-input")).to_have_value("Test Squad")
+    assert page.evaluate(f"localStorage.getItem('{KEY}')") is None
+    assert saved(page)["roster"] == ROSTER
+    # Reloading doesn't make a second copy.
+    page.reload()
+    expect(page.locator(".team-item")).to_have_count(len(ROSTER))
+    count = page.evaluate("""async () => (await (await fetch('/leagues',
+        {headers: {'X-Profile-Key': localStorage.getItem('fcc.profile.v1')}})).json()).leagues.length""")
+    assert count == 1
