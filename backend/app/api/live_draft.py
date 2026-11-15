@@ -40,6 +40,7 @@ PRIVATE = ("espn_private_league",
            "ESPN says this league is private. Add your espn_s2 and SWID cookies, or check that they're current.")
 NOT_FOUND = ("espn_league_not_found", "ESPN has no league with that id for that season.")
 UPSTREAM = ("espn_unavailable", "Couldn't read the draft from ESPN. Try again in a moment.")
+ENDED = ("live_draft_not_found", "That live draft session has ended. Connect the league again.")
 
 
 def _espn_error(error: Exception) -> ApiError:
@@ -54,7 +55,7 @@ def _espn_error(error: Exception) -> ApiError:
 def _session(drafts: LiveDrafts, session_id: str) -> Session:
     session = drafts.get(session_id)
     if session is None:
-        raise ApiError(404, "live_draft_not_found", "That live draft session has ended. Connect the league again.")
+        raise ApiError(404, *ENDED)
     return session
 
 
@@ -99,7 +100,8 @@ def _event(name: str, data: dict | str) -> str:
 async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players) -> StreamingResponse:
     """A `draft` event (the LiveDraft JSON) now and whenever a pick comes in or the status
     changes; `problem` events ({code, detail}) when ESPN can't be read. The stream ends once
-    the draft is complete, the cookies stop working, or it has run its maximum length."""
+    the draft is complete, the cookies stop working, the session ends, or it has run its
+    maximum length."""
     session = _session(drafts, session_id)
     pool = players.list()
     deadline = time.monotonic() + settings.live_draft_stream_hours * 3600
@@ -108,6 +110,10 @@ async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Play
         yield f"retry: {int(drafts.poll_seconds * 1000)}\n\n"
         last = None
         while True:
+            # Disconnecting (or expiry) ends the stream too, so ESPN stops being read with the cookies.
+            if not drafts.is_active(session):
+                yield _event("problem", {"code": ENDED[0], "detail": ENDED[1]})
+                return
             try:
                 draft = await asyncio.to_thread(drafts.snapshot, session)
             except (LeaguePrivate, LeagueNotFound) as error:

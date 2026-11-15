@@ -282,3 +282,31 @@ def test_event_stream_stops_when_access_is_lost(use_source):
     session_id = start().json()["session_id"]
     events = read_events(session_id)
     assert events == [("problem", {"code": "espn_private_league", "detail": events[0][1]["detail"]})]
+
+
+def test_is_active_does_not_extend_a_session():
+    clock = Clock()
+    drafts = LiveDrafts(FakeSource(make_draft()), ttl_seconds=60, clock=clock)
+    session, _ = drafts.create("777", 2026, None)
+    clock.now += 59
+    assert drafts.is_active(session)
+    clock.now += 2
+    assert not drafts.is_active(session)
+    drafts.remove(session.id)
+    assert not drafts.is_active(session)
+
+
+def test_event_stream_stops_once_the_session_is_removed(use_source):
+    source, drafts = use_source(make_draft())
+    session_id = start().json()["session_id"]
+    real_snapshot = drafts.snapshot
+
+    def snapshot_then_disconnect(session):
+        draft = real_snapshot(session)
+        drafts.remove(session.id)  # as if the page disconnected mid-stream
+        return draft
+
+    drafts.snapshot = snapshot_then_disconnect
+    events = read_events(session_id)
+    assert [name for name, _ in events] == ["draft", "problem"]
+    assert events[1][1]["code"] == "live_draft_not_found"

@@ -69,6 +69,11 @@ class LiveDrafts:
                 session.last_used = now
             return session
 
+    def is_active(self, session: Session) -> bool:
+        """Whether the session is still kept (not removed or expired), without counting as a use."""
+        with self._lock:
+            return self._sessions.get(session.id) is session and self._clock() - session.last_used <= self._ttl
+
     def remove(self, session_id: str) -> bool:
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
