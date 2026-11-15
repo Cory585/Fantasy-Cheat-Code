@@ -2581,3 +2581,29 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   .df-tile-value { font-size: 1.375rem; }
   .df-allowed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------- Landscape backdrop (backdrop.js) ---------- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(var(--sky-top), var(--sky-low) 62%);
+}
+
+.land {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 58vh;
+  display: block;
+}
+
+.ridge-0 { fill: var(--ridge-0); }
+.ridge-1 { fill: var(--ridge-1); }
+.ridge-2 { fill: var(--ridge-2); }
+.ridge-3 { fill: var(--ridge-3); }
+.ridge-4 { fill: var(--ridge-4); }
