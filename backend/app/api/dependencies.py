@@ -18,6 +18,7 @@ from app.data.sample_players import SAMPLE_PLAYERS
 from app.models.player import PlayerOutlook
 from app.models.trade import ScoringFormat
 from app.data.adp import load_adp
+from app.data.league_store import LeagueStore
 from app.data.profile_cache import ProfileCache
 from app.data.sources.espn_athletes import EspnAthleteSource
 from app.data.sources.http import RateLimitedClient
@@ -254,3 +255,11 @@ def get_trade_analyzer(
     outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
 ) -> TradeAnalyzer:
     return TradeAnalyzer(repo, ValuationService(repo, outlooks))
+
+
+_league_store = LeagueStore(settings.league_db_path, max_total=settings.max_stored_leagues)
+
+
+def get_league_store() -> LeagueStore:
+    """The leagues saved on each profile."""
+    return _league_store

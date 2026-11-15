@@ -1,14 +1,17 @@
 "use strict";
 
-// My team: a roster and lineup spots saved in this browser (see /team-store.js). Every
-// change saves right away; the start/sit page reads the same entry to set a lineup.
+// My team: the roster and lineup spots for one of the profile's leagues (see
+// /league-store.js), picked at the top. Changes save to the server a moment after the last
+// edit; the start/sit page reads the same leagues to set a lineup. With no leagues yet, the
+// first change makes one.
 
 (() => {
   const { el, loadPlayers, loadMeta, avatar, profileUrl, createSearch, POSITIONS } = window.PlayerUI;
-  const Store = window.TeamStore;
+  const Store = window.LeagueStore;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("save-status"),
+    picker: $("league-picker"),
     name: $("team-name-input"),
     steppers: $("slot-steppers"),
     reset: $("slots-reset"),
@@ -21,16 +24,130 @@
     toLineup: $("to-lineup"),
   };
   const SLOT_LABELS = { FLEX: "FLEX (RB/WR/TE)", SUPERFLEX: "SUPERFLEX (QB/RB/WR/TE)" };
+  const SAVE_DELAY = 600;
+  const NEW_LEAGUE_NAME = "My league";
 
-  let team = Store.load();
+  const blank = () => ({ id: null, name: "", slots: { ...Store.DEFAULT_SLOTS }, roster: [] });
+
+  let leagues = [];
+  let team = blank(); // the league being edited; id is null until the first save makes it
+  let savedName = "";
   let players = new Map();
   let clearArmed = null;
   let firstWeek = 1; // byes before the current week are already past
 
-  function persist(message = "Saved in this browser.") {
-    const ok = Store.save(team);
-    els.status.textContent = ok ? message : "This browser isn't allowing the page to save. Changes last until you leave.";
-    els.status.classList.toggle("is-error", !ok);
+  // ---------- Saving ----------
+
+  let dirty = false;
+  let saveTimer = null;
+  let inFlight = null;
+  let doneMessage = "Saved.";
+
+  const snapshot = () => ({
+    name: team.name.trim() || savedName || NEW_LEAGUE_NAME,
+    slots: { ...team.slots },
+    roster: [...team.roster],
+  });
+
+  function say(message, isError = false) {
+    els.status.textContent = message;
+    els.status.classList.toggle("is-error", isError);
+  }
+
+  function persist(message = "Saved.") {
+    dirty = true;
+    doneMessage = message;
+    say("Saving…");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, SAVE_DELAY);
+  }
+
+  // Sends the latest edits. Saves run one at a time, so they reach the server in order.
+  async function flush() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (inFlight) await inFlight;
+    if (!dirty) return;
+    dirty = false;
+    const body = snapshot();
+    const editing = team;
+    inFlight = (async () => {
+      try {
+        const saved = editing.id ? await Store.save(editing.id, body) : await Store.create(body);
+        if (!editing.id) {
+          editing.id = saved.id;
+          Store.setActive(saved.id);
+          writeUrl();
+        }
+        leagues = editing.id && leagues.some((x) => x.id === saved.id)
+          ? leagues.map((x) => (x.id === saved.id ? saved : x))
+          : [...leagues, saved];
+        if (editing === team) savedName = saved.name;
+        renderPicker();
+        renderLink();
+        if (!dirty) say(doneMessage);
+      } catch (error) {
+        if (editing === team) dirty = true; // try again with the next change
+        say(`${error.message} Your last change isn't saved yet.`, true);
+      } finally {
+        inFlight = null;
+      }
+    })();
+    await inFlight;
+  }
+
+  // Leaving with an edit still waiting: send it anyway.
+  function flushOnLeave() {
+    if (!dirty || !team.id) return;
+    dirty = false;
+    Store.save(team.id, snapshot(), { keepalive: true }).catch(() => {});
+  }
+
+  // ---------- Which league ----------
+
+  function writeUrl() {
+    const params = new URLSearchParams(location.search);
+    if (!team.id) return; // keep a ?league= link until the leagues load
+    params.set("league", team.id);
+    const query = params.toString();
+    history.replaceState(null, "", query ? `${location.pathname}?${query}` : location.pathname);
+  }
+
+  function useLeague(league) {
+    team = league ? { id: league.id, ...Store.clean(league) } : blank();
+    savedName = league?.name || "";
+    els.name.value = team.name;
+    writeUrl();
+    renderPicker();
+    renderSteppers();
+    renderRoster();
+    renderLink();
+  }
+
+  function renderPicker() {
+    if (!leagues.length) {
+      const note = el("p", "section-note", "Your first change here makes a league. Add more on your ");
+      const link = el("a", null, "profile");
+      link.href = "/profile/";
+      note.append(link, ".");
+      els.picker.replaceChildren(note);
+      return;
+    }
+    els.picker.replaceChildren(Store.picker({
+      id: "league-select",
+      leagues,
+      active: leagues.find((x) => x.id === team.id) || null,
+      onSelect: switchLeague,
+    }));
+  }
+
+  async function switchLeague(id) {
+    await flush();
+    const league = leagues.find((x) => x.id === id);
+    if (!league) return;
+    useLeague(league);
+    say(`Editing ${league.name}.`);
+    $("league-select")?.focus();
   }
 
   // ---------- Lineup spots ----------
@@ -79,7 +196,7 @@
     const missing = team.roster.length - known.length;
     els.count.textContent = `${team.roster.length} of ${Store.MAX_ROSTER} players`
       + (missing && players.size ? ` (${missing} no longer in the player pool)` : "");
-    els.clear.disabled = team.roster.length === 0 && !team.name;
+    els.clear.disabled = team.roster.length === 0;
     if (!team.roster.length) {
       els.roster.replaceChildren(el("p", "roster-empty", "No players yet. Search above to add your roster."));
       return;
@@ -135,7 +252,8 @@
   }
 
   function renderLink() {
-    const ready = team.roster.length > 0 && Object.values(team.slots).some((n) => n > 0);
+    const ready = Boolean(team.id) && team.roster.length > 0 && Object.values(team.slots).some((n) => n > 0);
+    els.toLineup.href = team.id ? `/start-sit/?mode=lineup&league=${encodeURIComponent(team.id)}` : "/start-sit/?mode=lineup";
     els.toLineup.classList.toggle("is-disabled", !ready);
     els.toLineup.setAttribute("aria-disabled", String(!ready));
   }
@@ -143,11 +261,17 @@
   // ---------- Events ----------
 
   function bind() {
-    els.name.value = team.name;
     els.name.addEventListener("input", () => {
       team.name = els.name.value.slice(0, Store.MAX_NAME);
-      persist();
-      els.clear.disabled = team.roster.length === 0 && !team.name;
+      if (team.name.trim()) persist();
+      else say("Give the league a name.", true);
+    });
+    els.name.addEventListener("blur", () => {
+      if (!team.name.trim() && savedName) {
+        team.name = savedName;
+        els.name.value = savedName;
+        say("");
+      }
     });
     els.steppers.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-slot]");
@@ -164,44 +288,48 @@
         els.clear.textContent = "Click again to clear";
         clearArmed = setTimeout(() => {
           clearArmed = null;
-          els.clear.textContent = "Clear team";
+          els.clear.textContent = "Clear roster";
         }, 3000);
         return;
       }
       clearTimeout(clearArmed);
       clearArmed = null;
-      els.clear.textContent = "Clear team";
-      Store.clear();
-      team = Store.load();
-      els.name.value = "";
-      els.status.textContent = "Team cleared.";
-      renderSteppers();
+      els.clear.textContent = "Clear roster";
+      team.roster = [];
+      persist("Roster cleared.");
       renderRoster();
       renderLink();
     });
-    els.toLineup.addEventListener("click", (event) => {
+    els.toLineup.addEventListener("click", async (event) => {
       if (els.toLineup.getAttribute("aria-disabled") === "true") {
         event.preventDefault();
-        els.status.textContent = "Add players to your roster first.";
-        els.search.focus();
+        say(team.roster.length ? "Saving your team…" : "Add players to your roster first.");
+        if (!team.roster.length) els.search.focus();
+        return;
+      }
+      if (dirty || inFlight) {
+        // Save first, so the lineup uses the latest roster.
+        event.preventDefault();
+        await flush();
+        location.href = els.toLineup.href;
       }
     });
-    // Another tab changed the team: pick up its version.
-    window.addEventListener("storage", (event) => {
-      if (event.key !== Store.KEY) return;
-      team = Store.load();
-      els.name.value = team.name;
-      renderSteppers();
-      renderRoster();
-      renderLink();
+    window.addEventListener("pagehide", flushOnLeave);
+    // Another tab changed the leagues: pick up their version, unless this one has unsaved edits.
+    Store.onChange(async () => {
+      if (dirty || inFlight) return;
+      try {
+        leagues = (await Store.list()).leagues;
+      } catch {
+        return;
+      }
+      useLeague(leagues.find((x) => x.id === team.id) || Store.activeLeague(leagues));
     });
   }
 
   async function init() {
     bind();
-    renderSteppers();
-    renderRoster();
-    renderLink();
+    useLeague(null);
     createSearch({
       input: els.search,
       list: els.results,
@@ -211,8 +339,19 @@
       full: () => (team.roster.length >= Store.MAX_ROSTER
         ? `A roster can hold up to ${Store.MAX_ROSTER} players. Remove one to add another.` : null),
     });
+    const leaguesLoaded = Store.list().then(
+      (result) => {
+        leagues = result.leagues;
+        // An edit made before the leagues arrived belongs to a new league; keep it.
+        if (!dirty) useLeague(Store.activeLeague(leagues));
+        if (!Store.isPersistent()) {
+          say("This browser isn't letting the page keep your profile key, so your team is only reachable until you leave.", true);
+        }
+      },
+      (error) => say(`Couldn't load your leagues: ${error.message}`, true),
+    );
     try {
-      const [loaded, meta] = await Promise.all([loadPlayers(), loadMeta()]);
+      const [loaded, meta] = await Promise.all([loadPlayers(), loadMeta(), leaguesLoaded]);
       players = loaded;
       firstWeek = meta?.current_week ?? 1;
     } catch (error) {

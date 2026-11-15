@@ -92,6 +92,7 @@
 :root[data-land="draft"] { --land-hue: 14; --land-sat: 26%; }
 :root[data-land="defense"] { --land-hue: 262; --land-sat: 18%; }
 :root[data-land="team"] { --land-hue: 182; }
+:root[data-land="profile"] { --land-hue: 322; --land-sat: 16%; }
 
 * { box-sizing: border-box; }
 
@@ -2772,3 +2773,113 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 .is-ringed {
   box-shadow: 0 0 0 var(--ring, 0px) color-mix(in srgb, var(--focus) 26%, transparent);
 }
+
+/* ---------- Profile and league pickers ---------- */
+
+.profile-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.league-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.league-create .team-field { flex: 1 1 14rem; min-width: 0; }
+.profile-page .team-name-input { min-width: 0; width: 100%; }
+.league-create .btn { min-height: 2.75rem; }
+
+.league-list {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.league-card {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.league-card.is-active { border-left-color: var(--turf); }
+
+.league-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.league-card-name {
+  font-size: 1.375rem;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.league-badge {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--turf);
+  border-radius: 999px;
+  color: var(--turf);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.league-card-meta { margin: 0; color: var(--muted); font-size: 0.875rem; }
+
+.league-card-actions { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.league-card-actions a.btn { text-decoration: none; color: var(--ink); display: inline-flex; align-items: center; }
+.league-remove:hover:not(:disabled) { color: var(--bad); border-color: var(--bad); }
+
+.league-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  width: 100%;
+}
+
+.league-rename .team-name-input { flex: 1 1 12rem; min-height: 2.25rem; }
+.league-full { margin: 0; }
+
+.profile-key { display: flex; gap: 0.375rem; }
+.profile-key-input { flex: 1 1 auto; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.875rem; }
+
+/* The league picker on My team and Start/sit. */
+.league-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.league-picker-label { flex-basis: 100%; margin-bottom: -0.125rem; color: var(--muted); font-size: 0.875rem; font-weight: 600; }
+.league-select { min-width: 12rem; max-width: 100%; }
+.league-select:disabled { cursor: default; opacity: 1; }
+.league-manage { color: var(--muted); font-size: 0.875rem; }
+.league-manage:hover { color: var(--ink); }
+
+:root[data-theme="dark"] .league-card.is-active { border-left-color: var(--good); }
+:root[data-theme="dark"] .league-badge { color: var(--good); border-color: var(--good); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .league-card.is-active { border-left-color: var(--good); }
+  :root:not([data-theme="light"]) .league-badge { color: var(--good); border-color: var(--good); }
+}
+
+@media (max-width: 760px) {
+  .profile-page { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ss-league[hidden] { display: none; }
+.ss-league .league-picker { align-self: end; }

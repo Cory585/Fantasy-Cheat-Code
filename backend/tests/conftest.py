@@ -3,12 +3,14 @@ import pytest
 from app.api.dependencies import (
     get_adp,
     get_defense_breakdowns,
+    get_league_store,
     get_local_player_data,
     get_matchups,
     get_outlooks,
     get_player_repository,
     get_profile_service,
 )
+from app.data.league_store import LeagueStore
 from app.data.repository import InMemoryPlayerRepository
 from app.data.sample_players import SAMPLE_PLAYERS
 from app.main import app, limiter
@@ -25,8 +27,10 @@ class NoNetworkProfiles:
 
 
 @pytest.fixture(autouse=True)
-def use_sample_players():
-    """Keep tests deterministic regardless of whether a synced player cache exists."""
+def use_sample_players(tmp_path):
+    """Keep tests deterministic regardless of whether a synced player cache exists. Leagues go
+    to a fresh database per test, never the real one."""
+    leagues = LeagueStore(tmp_path / "leagues.db")
     app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(SAMPLE_PLAYERS)
     app.dependency_overrides[get_adp] = lambda: {}
     app.dependency_overrides[get_outlooks] = lambda: {}
@@ -34,6 +38,7 @@ def use_sample_players():
     app.dependency_overrides[get_profile_service] = NoNetworkProfiles
     app.dependency_overrides[get_local_player_data] = lambda: LocalPlayerData(None)
     app.dependency_overrides[get_defense_breakdowns] = lambda: DefenseBreakdowns(None)
+    app.dependency_overrides[get_league_store] = lambda: leagues
     limiter.reset()
     yield
     app.dependency_overrides.clear()

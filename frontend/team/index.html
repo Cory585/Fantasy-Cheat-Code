@@ -23,6 +23,7 @@
         <li><a href="/draft/">Draft masterclass</a></li>
         <li><a href="/defense/">Defenses</a></li>
         <li><a href="/team/" aria-current="page">My team</a></li>
+        <li><a href="/profile/">Profile</a></li>
       </ul>
       <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
         <span class="theme-icon" aria-hidden="true"></span>
@@ -34,7 +35,7 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>My Team</h1>
-      <p class="lede">Enter your roster and lineup once. The start/sit guide uses it to set your best lineup each week.</p>
+      <p class="lede">Enter your roster and lineup for each league once. The start/sit guide uses them to set your best lineup each week.</p>
       <p class="data-status" id="save-status" role="status" aria-live="polite"></p>
     </div>
     <div class="masthead-controls">
@@ -45,9 +46,10 @@
   <main class="team-page">
     <section class="team-panel" aria-labelledby="settings-heading">
       <h2 id="settings-heading" class="section-heading">League settings</h2>
+      <div id="league-picker"></div>
       <label class="team-field">
-        <span>Team name</span>
-        <input id="team-name-input" class="team-name-input" maxlength="40" placeholder="My team" autocomplete="off">
+        <span>League name</span>
+        <input id="team-name-input" class="team-name-input" maxlength="40" placeholder="My league" autocomplete="off">
       </label>
       <fieldset class="setup-group">
         <legend>Starting lineup</legend>
@@ -63,7 +65,7 @@
           <h2 id="roster-heading" class="section-heading">Roster</h2>
           <p class="section-note" id="roster-count"></p>
         </div>
-        <button type="button" class="btn btn-quiet" id="clear-team">Clear team</button>
+        <button type="button" class="btn btn-quiet" id="clear-team">Clear roster</button>
       </div>
       <div class="search">
         <input type="search" class="player-search" id="team-search" placeholder="Search players or teams to add"
@@ -74,7 +76,7 @@
       <div class="team-roster" id="team-roster" aria-live="polite"></div>
     </section>
 
-    <p class="value-note team-privacy">Your team is saved in this browser only. When you ask for a lineup, the page sends this app just the player ids and lineup spots.</p>
+    <p class="value-note team-privacy">Your leagues are saved on this app's server under a private profile key kept in this browser. See your <a href="/profile/">profile</a> to add leagues or use them on another device.</p>
   </main>
 
   <script src="/theme.js"></script>
@@ -83,7 +85,7 @@
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
   <script src="/player-search.js"></script>
-  <script src="/team-store.js"></script>
+  <script src="/league-store.js"></script>
   <script src="/team/team.js"></script>
 </body>
 </html>
