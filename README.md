@@ -158,9 +158,38 @@ pip install -r requirements-dev.txt
 pytest                  # everything, about a minute
 pytest -m "not e2e"     # skip the browser tests
 pytest -m realdata      # check the data and DST model against real NFL history (needs 2018-2026 collected)
+ruff check .            # lint (errors and security rules, see ruff.toml)
 ```
 
 No test contacts an outside provider.
+
+## Safety checks (CI)
+
+Every pull request and push to `main` runs five checks in GitHub Actions
+(`.github/workflows/ci.yml`):
+
+| Check | What it stops |
+|---|---|
+| Guard (`scripts/guard.py`) | Secrets (private keys, API tokens, hardcoded passwords), `.env`/key/database files, `backend/data/`, files over 1 MB, merge-conflict markers, leftover debuggers, and AI attribution in commit messages |
+| Secret scan (gitleaks) | Secrets anywhere in the pushed commits, with gitleaks' full rule set |
+| Lint (ruff, `node --check`) | Python errors (undefined names, unused imports), security issues (bandit rules), and JavaScript that doesn't parse |
+| Tests | The full suite, browser tests included |
+| Dependency audit (pip-audit) | Dependencies with known vulnerabilities |
+
+Dependabot opens weekly PRs for outdated pip packages and Actions.
+
+The same guard runs locally before you commit and push. Turn the hooks on once per clone:
+
+```
+git config core.hooksPath .githooks
+```
+
+`pre-commit` checks what's staged; `pre-push` checks every commit being pushed and runs ruff.
+A line that trips the guard on purpose can end with `guard: allow`. `--no-verify` skips the
+hooks, but CI still runs.
+
+To make the checks binding, protect `main` on GitHub (Settings > Branches): require a pull
+request and require the five CI checks to pass before merging.
 
 ## More detail
 
