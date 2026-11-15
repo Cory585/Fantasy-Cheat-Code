@@ -1,0 +1,12 @@
+# Sourced by the hooks: sets PYTHON to the project's virtualenv, or any Python 3 on PATH.
+root=$(git rev-parse --show-toplevel)
+for candidate in "$root/backend/.venv/Scripts/python.exe" "$root/backend/.venv/bin/python" python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys; sys.exit(sys.version_info < (3, 10))" 2>/dev/null; then
+    PYTHON=$candidate
+    return 0 2>/dev/null || break
+  fi
+done
+if [ -z "$PYTHON" ]; then
+  echo "git hook: no Python 3.10+ found; skipping the guard. CI will still check." >&2
+  exit 0
+fi
