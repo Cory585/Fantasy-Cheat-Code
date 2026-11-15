@@ -7,7 +7,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries; explains why each side wins or loses and breaks down every player's strengths and concerns |
 | Player finder | `/finder/` | Finds players by tag: slot or outside receiver, deep threat, high target share, red-zone target, workhorse or goal-line back, hot streak, rookie, and more |
 | Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets the best lineup for any of your leagues |
-| Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each, and follows an ESPN draft live as picks are made |
+| Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each, warns when a position's best tier is about to run dry, and follows an ESPN draft live as picks are made |
 | Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |
 | My team | `/team/` | Saves your roster and lineup spots for each league |
 | Profile | `/profile/` | Holds your leagues (up to 10): add, rename, remove, and move them to another device |
@@ -205,4 +205,4 @@ breakdown, and the test suite.
 
 - Tier lists page.
 - Lineup impact in the trade analyzer (`TradeAnalyzer._lineup_impact`, optimal lineup before and after).
-- Draft guide that accounts for your roster so far, tiers, and positional runs.
+- Draft guide that accounts for your roster so far.
