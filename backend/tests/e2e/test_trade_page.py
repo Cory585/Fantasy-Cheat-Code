@@ -1,0 +1,35 @@
+import pytest
+from playwright.sync_api import expect
+
+pytestmark = pytest.mark.e2e
+
+
+def test_trade_explains_both_sides_and_breaks_down_each_player(page):
+    page.goto("/#a=rb1&b=wr2,rb3")
+    why = page.locator(".tr-why-side")
+    expect(why).to_have_count(2)
+    expect(why.nth(0).locator("h3")).to_have_text("Why Team A wins")
+    expect(why.nth(1).locator("h3")).to_have_text("Why Team B loses")
+    first = why.nth(0).locator(".tr-reason").first
+    expect(first).to_have_class("tr-reason is-plus")
+    expect(first).to_contain_text("Receives 268 points of value for 180 sent (+88)")
+    expect(why.nth(1)).to_contain_text("Gets the best player in the deal: Sample RB One")
+    expect(why.nth(1)).to_contain_text("Consolidates 2 players into 1")
+
+    cards = page.locator(".tr-player")
+    expect(cards).to_have_count(3)
+    side_a_card = page.locator(".tr-breakdown-a .tr-player")
+    expect(side_a_card.locator(".tr-player-name")).to_have_text("Sample RB One")
+    expect(side_a_card.locator(".tr-tier")).to_have_text("RB1")
+    expect(side_a_card.locator(".tr-traits-plus")).to_contain_text("Top-3 RB")
+    injured = page.locator(".tr-breakdown-b .tr-player", has_text="Sample RB Three")
+    expect(injured.locator(".tr-traits-minus")).to_contain_text("Listed Q: trade value cut to 90%")
+    # Cards are sorted by value, and each shows its share of the side.
+    expect(page.locator(".tr-breakdown-b .tr-player-name").first).to_have_text("Sample WR Two")
+    expect(page.locator(".tr-breakdown-b .tr-player").first).to_contain_text("60%")  # 160 of 268
+    assert not page.problems.errors
+
+
+def test_even_trade_says_so(page):
+    page.goto("/#a=qb1&b=qb2")
+    expect(page.locator(".tr-why-side h3").first).to_have_text("Team A: an even deal")

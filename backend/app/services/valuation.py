@@ -11,6 +11,8 @@ TODO:
   - Blend in tier data and a real injury-risk model.
 """
 
+from dataclasses import dataclass
+
 from app.data.repository import PlayerRepository
 from app.models.player import Player, PlayerOutlook, Position
 from app.models.trade import LeagueSettings, PlayerValuation
@@ -22,6 +24,19 @@ INJURY_DISCOUNT = {"Q": 0.9, "D": 0.75, "O": 0.6, "IR": 0.2}
 
 # Positions that can fill a FLEX lineup slot.
 FLEX_POSITIONS = (Position.RB, Position.WR, Position.TE)
+# Providers this far apart (relative to their average) make a projection shaky; this close, solid.
+PROJECTIONS_DISAGREE = 0.15
+PROJECTIONS_AGREE = 0.05
+TOP_AT_POSITION = 3
+STREAMABLE = (Position.K, Position.DST)
+PROVIDER_NAMES = {"sleeper": "Sleeper", "espn": "ESPN"}
+
+
+@dataclass
+class _LeagueTable:
+    levels: dict[Position, float]  # replacement-level projection
+    starters: dict[Position, int]  # players at the position who start league-wide (flex included)
+    ranks: dict[str, int]  # player id -> rank at the position by projection
 
 
 class ValuationService:
@@ -37,12 +52,15 @@ class ValuationService:
 
     def replacement_level(self, position: Position, league: LeagueSettings) -> float:
         """Projection of the best player at `position` not expected to start in this league."""
+        return self._table(league).levels[position]
+
+    def _table(self, league: LeagueSettings) -> _LeagueTable:
         key = (league.num_teams, tuple(sorted(league.roster_slots.items())))
         if key not in self._levels:
             self._levels[key] = self._replacement_levels(league)
-        return self._levels[key][position]
+        return self._levels[key]
 
-    def _replacement_levels(self, league: LeagueSettings) -> dict[Position, float]:
+    def _replacement_levels(self, league: LeagueSettings) -> _LeagueTable:
         """Fill every team's lineup with the best available players, then take the best
         leftover at each position as its replacement level.
 
@@ -64,10 +82,12 @@ class ValuationService:
             taken[best] += 1
 
         # A pool too small to have anyone left over (e.g. the sample data) gets a 0 baseline.
-        return {
+        levels = {
             pos: self.projection(pools[pos][taken[pos]]) if taken[pos] < len(pools[pos]) else 0.0
             for pos in Position
         }
+        ranks = {p.id: i + 1 for pos in Position for i, p in enumerate(pools[pos])}
+        return _LeagueTable(levels, taken, ranks)
 
     def value(self, player: Player, league: LeagueSettings) -> PlayerValuation:
         outlook = self._outlooks.get(player.id)
@@ -75,13 +95,23 @@ class ValuationService:
         notes = outlook_notes(player, outlook)
         value = max(projection - self.replacement_level(player.position, league), 0.0)
 
+        factor = 1.0
         if player.injury_status:
             factor = INJURY_DISCOUNT.get(player.injury_status, 1.0)
             value *= factor
             notes.append(f"Injury status {player.injury_status}: value x{factor}")
 
+        table = self._table(league)
+        rank = table.ranks.get(player.id)
+        starter = rank is not None and rank <= table.starters[player.position]
+        tier = f"{player.position.value}{(rank - 1) // max(league.num_teams, 1) + 1}" if rank else None
+        strengths, concerns = player_traits(
+            player, outlook, league, rank=rank, tier=tier, starter=starter, value=value,
+            injury_factor=factor, replacement=table.levels[player.position])
         return PlayerValuation(
-            player=player, value=round(value, 2), projection=round(projection, 2), outlook=outlook, notes=notes
+            player=player, value=round(value, 2), projection=round(projection, 2), outlook=outlook, notes=notes,
+            position_rank=rank, tier=tier, starter=starter if rank else None,
+            strengths=strengths, concerns=concerns,
         )
 
 
@@ -109,6 +139,62 @@ def outlook_notes(player: Player, outlook: PlayerOutlook | None) -> list[str]:
                 f"Recent form ({outlook.recent_ppg:.1f} pts/game over this schedule) is running {direction} projections"
             )
     return notes
+
+
+def player_traits(player: Player, outlook: PlayerOutlook | None, league: LeagueSettings, *, rank: int | None,
+                  tier: str | None, starter: bool, value: float, injury_factor: float,
+                  replacement: float) -> tuple[list[str], list[str]]:
+    """(strengths, concerns): plain-language reasons a player is worth having, or worth less."""
+    strengths, concerns = [], []
+    pos = player.position.value
+    teams = league.num_teams
+
+    if rank is not None:
+        where = f"{ordinal(rank)} at {pos} by rest-of-season projection"
+        if rank <= TOP_AT_POSITION:
+            strengths.append(f"Top-{TOP_AT_POSITION} {pos}: {where}")
+        elif starter:
+            strengths.append(f"{tier} who starts in a {teams}-team league ({where})")
+        else:
+            concerns.append(f"Below the starting line in a {teams}-team league ({where}): bench depth")
+
+    if value > 0 and replacement > 0:
+        strengths.append(f"{value:.0f} points better than a replacement-level {pos} the rest of the season")
+    elif value <= 0 and replacement > 0:
+        concerns.append(f"No value over replacement: a similar {pos} is likely on waivers")
+
+    if outlook is not None:
+        label = schedule_label(outlook.sos_rank, outlook.sos_teams)
+        if label == "easy":
+            strengths.append(f"{_rank_phrase(outlook.sos_rank, 'easiest')} remaining schedule for {pos}s")
+        elif label == "hard":
+            hardest = outlook.sos_teams - outlook.sos_rank + 1
+            concerns.append(f"{_rank_phrase(hardest, 'hardest')} remaining schedule for {pos}s")
+        if outlook.form_projection is not None and outlook.recent_ppg is not None and outlook.provider_projection:
+            trend = outlook.form_projection - outlook.provider_projection
+            if abs(trend) >= 0.1 * outlook.provider_projection:
+                direction = "above" if trend > 0 else "below"
+                text = (f"Recent form ({outlook.recent_ppg:.1f} pts/game), adjusted for the remaining schedule, "
+                        f"points {direction} projections")
+                (strengths if trend > 0 else concerns).append(text)
+
+    if player.injury_status:
+        concerns.append(f"Listed {player.injury_status}: trade value cut to {injury_factor:.0%}")
+
+    sources = {k: v for k, v in player.projection_sources.items() if v}
+    if len(sources) >= 2:
+        low, high = min(sources.values()), max(sources.values())
+        spread = (high - low) / (sum(sources.values()) / len(sources))
+        named = " vs ".join(f"{PROVIDER_NAMES.get(k, k)} {v:.0f}" for k, v in sorted(sources.items()))
+        if spread >= PROJECTIONS_DISAGREE:
+            concerns.append(f"Projections disagree ({named}), so the outlook is less certain")
+        elif spread <= PROJECTIONS_AGREE:
+            strengths.append(f"Projections agree ({named})")
+
+    if player.position in STREAMABLE:
+        group = "Kickers" if player.position == Position.K else "Defenses"
+        concerns.append(f"{group} swing week to week and are easy to stream")
+    return strengths, concerns
 
 
 def _rank_phrase(rank: int, superlative: str) -> str:

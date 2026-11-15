@@ -594,6 +594,141 @@ function valueBars(analysis) {
   return wrap;
 }
 
+// Why each side comes out ahead or behind: the API's reasons, marked plus, minus, or neutral.
+const REASON_ICONS = { plus: "+", minus: "−", neutral: "•" };
+const REASON_WORDS = { plus: "Helps", minus: "Hurts", neutral: "Neutral" };
+
+function whyHeading(side, analysis) {
+  if (analysis.verdict === "fair") return `${teamName(side)}: an even deal`;
+  const wins = analysis.verdict === `favors_${side}`;
+  return `Why ${teamName(side)} ${wins ? "wins" : "loses"}`;
+}
+
+function reasonList(reasons, className) {
+  const list = document.createElement("ul");
+  list.className = className;
+  for (const reason of reasons) {
+    const item = document.createElement("li");
+    item.className = `tr-reason is-${reason.effect}`;
+    const icon = document.createElement("span");
+    icon.className = "tr-reason-icon";
+    icon.textContent = REASON_ICONS[reason.effect] || "•";
+    icon.setAttribute("aria-label", REASON_WORDS[reason.effect] || "");
+    const text = document.createElement("span");
+    text.textContent = reason.text;
+    item.append(icon, text);
+    list.append(item);
+  }
+  return list;
+}
+
+function whyPanel(analysis) {
+  const wrap = document.createElement("section");
+  wrap.className = "tr-why";
+  wrap.setAttribute("aria-label", "Why each side wins or loses");
+  for (const side of SIDES) {
+    const data = analysis[`side_${side}`];
+    if (!data.reasons?.length) continue;
+    const column = document.createElement("div");
+    const outcome = analysis.verdict === "fair" ? "even" : analysis.verdict === `favors_${side}` ? "wins" : "loses";
+    column.className = `tr-why-side tr-why-${side} is-${outcome}`;
+    const heading = document.createElement("h3");
+    heading.textContent = whyHeading(side, analysis);
+    column.append(heading, reasonList(data.reasons, "tr-reasons"));
+    wrap.append(column);
+  }
+  return wrap.childElementCount ? wrap : null;
+}
+
+// One card per player in the trade: rank and tier, value, and what makes them worth more or less.
+function traitList(items, effect, label) {
+  if (!items?.length) return null;
+  const list = reasonList(items.map((text) => ({ text, effect })), `tr-traits tr-traits-${effect}`);
+  list.setAttribute("aria-label", label);
+  return list;
+}
+
+function playerCard(valuation, sideTotal) {
+  const v = valuation;
+  const card = document.createElement("article");
+  card.className = "tr-player";
+  const head = document.createElement("div");
+  head.className = "tr-player-head";
+  const title = document.createElement("div");
+  title.className = "tr-player-title";
+  const name = document.createElement("a");
+  name.className = "tr-player-name";
+  name.href = `/player/?id=${encodeURIComponent(v.player.id)}`;
+  name.textContent = v.player.name;
+  const meta = document.createElement("span");
+  meta.className = "tr-player-meta";
+  meta.textContent = `${v.player.position} · ${v.player.team}`;
+  title.append(name, meta);
+  head.append(avatar(v.player, "sm"), title);
+  if (v.tier) {
+    const tier = document.createElement("span");
+    tier.className = `tr-tier${v.starter ? " is-starter" : ""}`;
+    tier.textContent = v.tier;
+    tier.title = v.position_rank
+      ? `${ordinal(v.position_rank)} at ${v.player.position}${v.starter ? ", a starter" : ", below the starting line"} in this league`
+      : "";
+    head.append(tier);
+  }
+
+  const stats = document.createElement("dl");
+  stats.className = "tr-player-stats";
+  const share = sideTotal > 0 ? Math.round((v.value / sideTotal) * 100) : 0;
+  for (const [label, value] of [
+    ["Trade value", formatPoints(v.value)],
+    ["ROS proj.", formatPoints(v.projection)],
+    ["Rank", v.position_rank ? `${ordinal(v.position_rank)} ${v.player.position}` : "—"],
+    ["Share of side", `${share}%`],
+  ]) {
+    const cell = document.createElement("div");
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    cell.append(dt, dd);
+    stats.append(cell);
+  }
+  card.append(head, stats);
+  const strengths = traitList(v.strengths, "plus", `${v.player.name}: strengths`);
+  const concerns = traitList(v.concerns, "minus", `${v.player.name}: concerns`);
+  if (strengths) card.append(strengths);
+  if (concerns) card.append(concerns);
+  return card;
+}
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function playerBreakdown(analysis) {
+  const wrap = document.createElement("section");
+  wrap.className = "tr-breakdown";
+  const heading = document.createElement("h3");
+  heading.textContent = "Player breakdown";
+  wrap.append(heading);
+  for (const side of SIDES) {
+    const data = analysis[`side_${side}`];
+    const group = document.createElement("div");
+    group.className = `tr-breakdown-side tr-breakdown-${side}`;
+    const label = document.createElement("h4");
+    label.textContent = `${teamName(side)} sends`;
+    const grid = document.createElement("div");
+    grid.className = "tr-player-grid";
+    for (const v of [...data.gives].sort((x, y) => y.value - x.value)) {
+      grid.append(playerCard(v, data.total_value_given));
+    }
+    group.append(label, grid);
+    wrap.append(group);
+  }
+  return wrap;
+}
+
 // Players the winning side could add so the trade comes out even.
 function balancePanel(analysis) {
   const balance = analysis.balance;
@@ -663,8 +798,11 @@ function renderAnalysis(analysis) {
   result.querySelector(".field").setAttribute("aria-label", `${headline}. ${detail}`);
   result.querySelector(".summary").append(sideSummary("a", analysis), sideSummary("b", analysis));
   result.querySelector(".summary").after(valueBars(analysis));
+  const why = whyPanel(analysis);
+  if (why) result.querySelector(".summary").after(why);
   const balance = balancePanel(analysis);
   if (balance) result.querySelector(".value-bars").after(balance);
+  (balance || result.querySelector(".value-bars")).after(playerBreakdown(analysis));
 
   if (analysis.warnings.length) {
     const list = document.createElement("ul");
