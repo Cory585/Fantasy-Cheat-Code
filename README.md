@@ -7,7 +7,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Trade analyzer | `/` | Values each side of a trade over replacement, adjusted for schedule, recent form, and injuries; explains why each side wins or loses and breaks down every player's strengths and concerns |
 | Player finder | `/finder/` | Finds players by tag: slot or outside receiver, deep threat, high target share, red-zone target, workhorse or goal-line back, hot streak, rookie, and more |
 | Start/sit | `/start-sit/` | Picks who to start in a week with a confidence level and reasons, or sets the best lineup for any of your leagues |
-| Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each |
+| Draft masterclass | `/draft/` | Lays out your snake-draft picks and who's likely available at each, and follows an ESPN draft live as picks are made |
 | Defense breakdown | `/defense/` | Ranks each defense's line, linebackers, corners, and safeties against the league, with unit results, fantasy points allowed by position, and upcoming DST projections |
 | My team | `/team/` | Saves your roster and lineup spots for each league |
 | Profile | `/profile/` | Holds your leagues (up to 10): add, rename, remove, and move them to another device |
@@ -137,6 +137,7 @@ explains how to collect the data it needs.
 | `GET /start-sit?player=7564&player=6794&week=11` | Who to start, with confidence and reasons |
 | `POST /start-sit/lineup` | Best lineup from a roster for a week |
 | `GET /draft/plan?teams=12&slot=5&rounds=15` | Your picks and likely targets at each |
+| `POST /draft/live`, `GET /draft/live/{session}/events` | Follow an ESPN league's draft live (Server-Sent Events) |
 | `GET /defenses?season=2026` | Every defense with position-group ranks, points allowed, and DST points per game |
 | `GET /defenses/{team}` | One defense by position group and unit, with league ranks, fantasy points allowed, and next games' DST projections |
 

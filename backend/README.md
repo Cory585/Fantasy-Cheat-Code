@@ -185,6 +185,42 @@ The response also includes what the page's diagrams use:
 
 This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
 
+For a draft in progress, pass the players already taken as repeated `drafted` ids, and
+`picks_made` (picks in so far, which can be more than the drafted ids found, since a league can
+draft someone outside the player pool). Drafted players come off the board, your past picks are
+left out of `picks`, and `board` covers only the picks still to come (index 0 is pick
+`picks_made + 1`).
+
+### Live ESPN drafts
+
+The draft page can follow an ESPN league's draft as it happens (`app/api/live_draft.py`):
+
+| Endpoint | What it does |
+|---|---|
+| `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
+| `GET /draft/live/{session_id}` | The draft now: status (`pre_draft`, `in_progress`, `complete`), teams in draft order, rounds, and every pick so far matched to the player pool by ESPN id. |
+| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever a pick comes in, until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
+| `DELETE /draft/live/{session_id}` | Ends the session and forgets the cookies. |
+
+ESPN has no official API; this reads the league endpoint the ESPN draft room uses (views
+`mDraftDetail`, `mSettings`, `mTeams`), so it can break if ESPN changes it. How it's kept safe
+and light:
+
+- **Cookies.** `espn_s2` and `SWID` are checked against strict patterns (so they can't inject
+  headers), sent only to ESPN, held in memory only, and never logged or echoed back. They go
+  when the session is deleted or unused for `LIVE_DRAFT_SESSION_HOURS` (default 6). The page
+  clears them from its form once sent and keeps only the session id, in `sessionStorage`.
+- **The session id** (32 random URL-safe characters) is the only key to a session, so treat it
+  like a password for that draft.
+- **Polling.** ESPN is read at most once per `LIVE_DRAFT_POLL_SECONDS` (default 4) per session,
+  however many streams or tabs follow it. A stream runs for up to `LIVE_DRAFT_STREAM_HOURS`
+  (default 1) before the browser reconnects, and stops as soon as its session ends.
+- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 500) sessions at once, and connecting
+  has its own rate limit bucket (below).
+
+The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
+page says the plan may not match.
+
 ## Start/sit
 
 `GET /start-sit` (and the page at `/start-sit/`) compares 2 to 8 players competing for one
@@ -413,14 +449,15 @@ stable for clients to branch on:
 |---|---|
 | 400 | `bad_request` (including unparseable bodies) |
 | 401 | `profile_key_required` |
-| 404 | `not_found`, `player_not_found`, `league_not_found` |
+| 403 | `espn_private_league` (ESPN refused: add or refresh the league's cookies) |
+| 404 | `not_found`, `player_not_found`, `league_not_found`, `espn_league_not_found`, `live_draft_not_found` |
 | 405 | `method_not_allowed` |
 | 409 | `league_limit` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
-| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
+| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_drafted`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
 | 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
 | 500 | `internal_error` (details are logged on the server, never returned) |
-| 502 / 503 / 504 | `upstream_error`, `service_unavailable`, `leagues_unavailable`, `leagues_full`, `upstream_timeout` |
+| 502 / 503 / 504 | `upstream_error`, `espn_unavailable`, `service_unavailable`, `leagues_unavailable`, `leagues_full`, `live_draft_busy`, `upstream_timeout` |
 
 Validation errors don't echo the submitted input back. Browsers that hit a missing page get
 `frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
@@ -433,6 +470,7 @@ Validation errors don't echo the submitted input back. Browsers that hit a missi
 | `upstream` | endpoints that call outside providers (`/players/{id}/profile`) | 10 | 1 every 5 seconds |
 | `league-changes` | making or removing a league (`POST /leagues`, `DELETE /leagues/{id}`) | 12 | 4 a minute |
 | `league-edits` | saving a league (`PUT /leagues/{id}`) | 60 | 1 per second |
+| `live-draft-start` | connecting a live ESPN draft (`POST /draft/live`) | 6 | 3 a minute |
 
 A rule can be limited to certain methods, so reading leagues only counts against `all`. The
 league-change limits can be tuned with `LEAGUE_CHANGE_BURST` and `LEAGUE_CHANGES_PER_SECOND`.
