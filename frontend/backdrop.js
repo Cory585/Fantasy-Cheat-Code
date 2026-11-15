@@ -148,7 +148,7 @@
   if (!document.querySelector(".masthead")) return;
 
   const COLS = 180, ROWS = 131; // dither resolution (ESPN headshots are 350x254)
-  const FADE_MS = 1400, HOLD_MS = 5200, GAP_MS = 600, FADE_STEPS = 16;
+  const FADE_MS = 1600, HOLD_MS = 60000, GAP_MS = 800, FADE_STEPS = 16; // each star stays about a minute
   const STAR_COUNT = 16;
   const BAYER = [
     [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
@@ -361,34 +361,48 @@
     return top;
   }
 
+  // The next star whose headshot loads, starting at list[from] (skipping any that fail).
+  async function loadNext(list, from) {
+    for (let k = 0; k < list.length; k++) {
+      const index = (from + k) % list.length;
+      try {
+        return { index, img: await loadImage(list[index]) };
+      } catch (e) {
+        // Try the next one.
+      }
+    }
+    return null;
+  }
+
   async function run() {
     const list = await stars();
     if (!list.length) return;
     readInk();
-    let failures = 0;
-    for (let i = 0; failures < list.length; i = (i + 1) % list.length) {
-      let img;
-      try {
-        img = await loadImage(list[i]);
-      } catch (e) {
-        failures++;
-        continue;
-      }
-      failures = 0;
-      density = toDensity(img);
-      if (reduceMotion.matches) {
-        tintTo(list[i].team, 0);
-        level = 1;
-        render();
-        return;
-      }
+    let current = await loadNext(list, 0);
+    if (!current) return;
+    density = toDensity(current.img);
+    if (reduceMotion.matches) {
+      tintTo(list[current.index].team, 0);
+      level = 1;
+      render();
+      return;
+    }
+    await visible();
+    tintTo(list[current.index].team, FADE_MS);
+    await fade(0, 1);
+    while (list.length > 1) {
+      // Load the next headshot during the hold, so the switch starts right on time.
+      const [next] = await Promise.all([loadNext(list, current.index + 1), wait(HOLD_MS)]);
+      if (!next) return;
       await visible();
-      tintTo(list[i].team, FADE_MS);
-      await fade(0, 1);
-      await wait(HOLD_MS);
-      await visible();
+      // The background hue glides to the next jersey across the whole switch: while this
+      // star dissolves out, through the gap, and as the next one dissolves in.
+      tintTo(list[next.index].team, FADE_MS * 2 + GAP_MS);
       await fade(1, 0);
       await wait(GAP_MS);
+      density = toDensity(next.img);
+      await fade(0, 1);
+      current = next;
     }
   }
 
