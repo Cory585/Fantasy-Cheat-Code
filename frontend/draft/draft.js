@@ -2,6 +2,8 @@
 
 // Draft guide: set league size, your draft slot, and rounds, then see when you pick
 // (timeline), a mock draft by ADP (board), and who to target at each pick (cards).
+// Connect an ESPN league to follow its draft live: picks arrive over Server-Sent Events,
+// fill the board, and the plan is redone around the players already taken.
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -18,6 +20,19 @@ const els = {
   planList: $("plan-list"),
   status: $("data-status"),
   tooltip: $("viz-tooltip"),
+  liveForm: $("live-form"),
+  liveLeague: $("live-league"),
+  liveS2: $("live-s2"),
+  liveSwid: $("live-swid"),
+  liveConnect: $("live-connect"),
+  liveConnected: $("live-connected"),
+  liveName: $("live-name"),
+  liveProgress: $("live-progress"),
+  liveDot: $("live-dot"),
+  liveTeam: $("live-team"),
+  liveDisconnect: $("live-disconnect"),
+  livePicks: $("live-picks"),
+  liveMessage: $("live-message"),
 };
 
 const TEAM_OPTIONS = [8, 10, 12, 14, 16];
@@ -28,7 +43,11 @@ const TARGETS_FETCHED = 15; // extra, so a position filter still has players to 
 
 // `plan` is for the current settings only (cleared when they change); `board` is the ADP
 // ranking, which doesn't depend on settings, so it's kept to avoid flicker while reloading.
-const state = { teams: 12, slot: 1, rounds: 15, position: "", plan: null, board: [], error: null };
+// `boardOffset` is how many picks the board starts after (picks already made in a live draft).
+// `live` is the followed ESPN draft: { sessionId, draft, teamId, source }, or null.
+const state = {
+  teams: 12, slot: 1, rounds: 15, position: "", plan: null, board: [], boardOffset: 0, error: null, live: null,
+};
 let requestId = 0; // ignore responses to settings that have since changed
 
 // ---------- Helpers ----------
@@ -127,16 +146,25 @@ function writeSettings() {
 // ---------- Controls ----------
 
 function renderControls() {
+  // A live draft sets the league size, rounds, and (once you pick your team) your slot.
+  const live = Boolean(state.live);
+  const slotFromLive = live && liveTeamSlot() != null;
   for (const button of els.teams.querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(Number(button.dataset.teams) === state.teams));
     button.setAttribute("aria-label", `${button.dataset.teams} teams`);
+    button.disabled = live;
   }
+  if (![...els.rounds.options].some((option) => Number(option.value) === state.rounds)) {
+    els.rounds.append(new Option(`${state.rounds} rounds`, state.rounds));
+  }
+  els.rounds.disabled = live;
   els.slot.replaceChildren(
     ...Array.from({ length: state.teams }, (_, i) => new Option(`${ordinal(i + 1)} pick`, i + 1)),
   );
   els.slot.value = String(state.slot);
-  els.slotPrev.disabled = state.slot <= 1;
-  els.slotNext.disabled = state.slot >= state.teams;
+  els.slot.disabled = slotFromLive;
+  els.slotPrev.disabled = slotFromLive || state.slot <= 1;
+  els.slotNext.disabled = slotFromLive || state.slot >= state.teams;
   els.rounds.value = String(state.rounds);
   for (const button of els.filter.querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(button.dataset.position === state.position));
@@ -222,8 +250,9 @@ function renderTimeline() {
     const wait = next ? next.overall - pick.overall - 1 : null;
     const label = `${pick.label}: round ${pick.round}, ${ordinal(pick.overall)} overall. ` +
       (wait == null ? "Your last pick." : wait === 0 ? "You pick again right after." : `${plural(wait, "pick")} until your next.`);
+    const past = pick.overall <= livePicksMade();
     chart.append(svg("circle", {
-      cx: x(pick.overall), cy: baseline, r: 6, class: "my-pick-dot",
+      cx: x(pick.overall), cy: baseline, r: 6, class: past ? "my-pick-dot is-past" : "my-pick-dot",
       tabindex: 0, role: "img", "aria-label": label, "data-tip": label,
     }));
   });
@@ -247,6 +276,7 @@ function renderTimeline() {
 function renderBoard() {
   const { teams, slot, rounds } = state;
   const board = state.board;
+  const taken = new Map((state.live?.draft.picks || []).map((p) => [p.overall, p]));
   const grid = el("div", "draft-grid");
   grid.style.setProperty("--teams", teams);
   grid.setAttribute("role", "table");
@@ -285,11 +315,26 @@ function renderBoard() {
     for (let team = 1; team <= teams; team++) {
       const pickInRound = round % 2 ? team : teams + 1 - team;
       const overall = (round - 1) * teams + pickInRound;
-      const player = board[overall - 1];
       const cell = el("div", "pick" + (team === slot ? " is-mine" : ""));
       cell.setAttribute("role", "cell");
       cell.append(el("span", "pick-num", pickLabel(round, pickInRound)));
-      if (player) {
+      const made = taken.get(overall);
+      const player = made ? null : board[overall - state.boardOffset - 1];
+      if (made) {
+        cell.classList.add("is-taken");
+        if (made.position) cell.classList.add(`pos-${made.position}`);
+        const line = el("span", "pick-player");
+        const label = made.name ? shortName(made.name) : `ESPN player ${made.espn_player_id}`;
+        const name = made.player_id ? el("a", "pick-name profile-link", label) : el("span", "pick-name", label);
+        if (made.player_id) name.href = profileUrl(made.player_id);
+        if (made.position) line.append(el("span", "pos-tag", made.position));
+        line.append(name);
+        cell.append(line);
+        cell.dataset.tip = `${pickLabel(round, pickInRound)}: drafted ${made.name || label}` +
+          (made.position ? ` (${made.position}, ${made.team})` : "") + (made.keeper ? ", keeper" : "");
+      } else if (overall <= state.boardOffset) {
+        cell.classList.add("is-taken");
+      } else if (player) {
         cell.classList.add(`pos-${player.position}`);
         const line = el("span", "pick-player");
         const name = el("a", "pick-name profile-link", shortName(player.name));
@@ -393,6 +438,10 @@ function renderPlan() {
     if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks..."));
     return;
   }
+  if (!plan.picks.length && state.live) {
+    els.planList.replaceChildren(el("li", "player-meta", "You've made all your picks."));
+    return;
+  }
   els.planList.replaceChildren(
     ...plan.picks.map(({ pick, targets, position_mix, picks_until_next }) => {
       const card = el("li", "plan-pick");
@@ -417,8 +466,10 @@ function renderPlan() {
   );
   // A one-line summary for screen readers (this element is the live region, not the cards).
   const first = plan.picks[0]?.pick.label;
+  const left = state.live ? " left" : "";
   els.status.textContent =
-    `Plan for the ${ordinal(plan.slot)} pick: ${plural(plan.picks.length, "pick")}` + (first ? `, first at ${first}. ` : ". ") +
+    `Plan for the ${ordinal(plan.slot)} pick: ${plural(plan.picks.length, "pick")}${left}` +
+    (first ? `, ${state.live ? "next" : "first"} at ${first}. ` : ". ") +
     (plan.adp_source === "espn"
       ? "Ranked by ESPN average draft position."
       : "No ADP data yet, so players are ranked by projection. Run python -m app.data.collect to add ADP.");
@@ -435,6 +486,11 @@ async function loadPlan() {
   const params = new URLSearchParams({
     teams: state.teams, slot: state.slot, rounds: state.rounds, targets: TARGETS_FETCHED,
   });
+  const picks = state.live?.draft.picks || [];
+  if (picks.length) {
+    params.set("picks_made", livePicksMade());
+    for (const pick of picks) if (pick.player_id) params.append("drafted", pick.player_id);
+  }
   let response;
   try {
     response = await fetch(`/draft/plan?${params}`);
@@ -457,6 +513,7 @@ async function loadPlan() {
   if (id !== requestId) return;
   state.plan = plan;
   state.board = plan.board || [];
+  state.boardOffset = plan.picks_made || 0;
   const focusedSlot = document.activeElement?.dataset?.slot;
   renderBoard();
   restoreBoardFocus(focusedSlot);
@@ -468,9 +525,266 @@ function restoreBoardFocus(slot) {
   if (slot) els.board.querySelector(`button[data-slot="${slot}"]`)?.focus();
 }
 
+// ---------- Live ESPN draft ----------
+
+const LIVE_KEY = "fcc-live-draft"; // { sessionId, teamId } in sessionStorage; cookies are never stored
+const STOP_CODES = new Set(["espn_private_league", "espn_league_not_found", "live_draft_not_found"]);
+
+function livePicksMade() {
+  const picks = state.live?.draft?.picks || [];
+  return picks.length ? picks[picks.length - 1].overall : 0;
+}
+
+function liveTeamSlot() {
+  const team = state.live?.draft?.teams.find((t) => t.id === state.live.teamId);
+  return team?.slot ?? null;
+}
+
+function saveLive() {
+  try {
+    if (state.live) {
+      sessionStorage.setItem(LIVE_KEY, JSON.stringify({ sessionId: state.live.sessionId, teamId: state.live.teamId }));
+    } else {
+      sessionStorage.removeItem(LIVE_KEY);
+    }
+  } catch { /* storage unavailable: the session just won't survive a reload */ }
+}
+
+function loadSavedLive() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LIVE_KEY) || "null");
+    return saved && /^[A-Za-z0-9_-]{32}$/.test(saved.sessionId) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function liveMessage(text, isError = false) {
+  els.liveMessage.textContent = text || "";
+  els.liveMessage.classList.toggle("is-error", Boolean(isError));
+}
+
+async function errorText(response) {
+  if (response.status === 422) {
+    return "Check the league ID and cookies. The league ID is digits only, espn_s2 is a long code, " +
+      "and SWID looks like {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}.";
+  }
+  if (response.status === 429) return "Too many connection attempts. Wait a minute, then try again.";
+  let body = null;
+  try { body = await response.json(); } catch { /* not JSON */ }
+  return typeof body?.detail === "string" ? body.detail : `Couldn't connect (the server returned HTTP ${response.status}).`;
+}
+
+function liveProgressText(draft) {
+  const total = draft.team_count * draft.rounds;
+  const updated = new Date(draft.updated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const progress = {
+    pre_draft: `Draft hasn't started. ${draft.team_count} teams, ${draft.rounds} rounds.`,
+    in_progress: `${livePicksMade()} of ${total} picks in.`,
+    complete: "Draft complete.",
+  }[draft.status];
+  return `${progress} Updated ${updated}.`;
+}
+
+function renderLive() {
+  const live = state.live;
+  els.liveForm.hidden = Boolean(live);
+  els.liveConnected.hidden = !live;
+  if (!live) return;
+  const { draft } = live;
+  els.liveName.textContent = draft.name;
+  els.liveProgress.textContent = liveProgressText(draft);
+  els.liveDot.className = `live-dot is-${draft.status}`;
+
+  els.liveTeam.replaceChildren(...draft.teams.map((team) =>
+    new Option(team.slot ? `${team.name} (${ordinal(team.slot)} pick)` : team.name, team.id)));
+  els.liveTeam.value = String(live.teamId);
+
+  const teamName = new Map(draft.teams.map((t) => [t.id, t.name]));
+  const latest = draft.picks.slice(-6).reverse();
+  if (!latest.length) {
+    els.livePicks.replaceChildren(el("li", "player-meta", "No picks yet."));
+    return;
+  }
+  els.livePicks.replaceChildren(...latest.map((pick) => {
+    const item = el("li", "live-pick" + (pick.position ? ` pos-${pick.position}` : ""));
+    item.append(el("span", "pick-num", pickLabel(pick.round, pick.round_pick)));
+    if (pick.position) item.append(el("span", "pos-tag", pick.position));
+    item.append(el("span", "live-pick-name", pick.name || `ESPN player ${pick.espn_player_id}`),
+      el("span", "player-meta", teamName.get(pick.team_id) || `Team ${pick.team_id}`));
+    return item;
+  }));
+}
+
+function applyDraft(draft) {
+  const live = state.live;
+  const first = !live.draft;
+  const before = livePicksMade();
+  live.draft = draft;
+  if (!draft.teams.some((t) => t.id === live.teamId)) {
+    live.teamId = (draft.teams.find((t) => t.slot === state.slot) || draft.teams[0])?.id ?? null;
+  }
+  saveLive();
+  if (draft.team_count >= 4 && draft.team_count <= 20) state.teams = draft.team_count;
+  state.rounds = Math.min(Math.max(draft.rounds, 1), 25);
+  state.slot = liveTeamSlot() ?? Math.min(state.slot, state.teams);
+  renderLive();
+  if (draft.draft_type !== "SNAKE") {
+    liveMessage(`ESPN lists this as a ${draft.draft_type.toLowerCase()} draft. Picks still show up here, ` +
+      "but the plan assumes a snake draft.");
+  }
+  if (draft.status === "complete") closeStream();
+  if (first) update();
+  else if (livePicksMade() !== before) update({ keepPlan: true });
+}
+
+function closeStream() {
+  state.live?.source?.close();
+  if (state.live) state.live.source = null;
+}
+
+function openStream() {
+  const live = state.live;
+  closeStream();
+  const source = new EventSource(`/draft/live/${encodeURIComponent(live.sessionId)}/events`);
+  live.source = source;
+  source.addEventListener("draft", (event) => {
+    let draft;
+    try { draft = JSON.parse(event.data); } catch { return; }
+    if (state.live !== live) return;
+    if (els.liveMessage.classList.contains("is-error")) liveMessage("");
+    applyDraft(draft);
+  });
+  source.addEventListener("problem", (event) => {
+    let problem;
+    try { problem = JSON.parse(event.data); } catch { return; }
+    if (state.live !== live) return;
+    if (STOP_CODES.has(problem.code)) endLive(problem.detail, true);
+    else liveMessage(`${problem.detail} Still trying.`, true);
+  });
+  source.addEventListener("error", () => {
+    if (state.live !== live || live.source !== source) return;
+    if (source.readyState === EventSource.CLOSED) checkSession(live);
+    else liveMessage("Lost the live connection. Reconnecting...", true);
+  });
+}
+
+// The stream was refused outright, e.g. the session expired or the server restarted.
+async function checkSession(live) {
+  let response = null;
+  try {
+    response = await fetch(`/draft/live/${encodeURIComponent(live.sessionId)}`);
+  } catch { /* offline: retry below */ }
+  if (state.live !== live) return;
+  if (response?.status === 404) {
+    endLive("That live session ended. Connect your league again.", true);
+    return;
+  }
+  liveMessage("Lost the live connection. Reconnecting...", true);
+  setTimeout(() => {
+    if (state.live === live && live.draft?.status !== "complete") openStream();
+  }, 5000);
+}
+
+function startLive(sessionId, draft, teamId = null) {
+  closeStream();
+  state.live = { sessionId, draft: null, teamId, source: null };
+  applyDraft(draft);
+  if (draft.status !== "complete") openStream();
+}
+
+function endLive(message, isError = false) {
+  closeStream();
+  state.live = null;
+  saveLive();
+  state.boardOffset = 0;
+  renderLive();
+  liveMessage(message, isError);
+  update();
+}
+
+async function connectLive(event) {
+  event.preventDefault();
+  const leagueId = els.liveLeague.value.trim();
+  const s2 = els.liveS2.value.trim();
+  const swid = els.liveSwid.value.trim();
+  if (!/^\d{1,12}$/.test(leagueId)) {
+    liveMessage("Enter your league ID: the number after leagueId= in your ESPN league's address.", true);
+    els.liveLeague.focus();
+    return;
+  }
+  if (Boolean(s2) !== Boolean(swid)) {
+    liveMessage("For a private league, paste both espn_s2 and SWID.", true);
+    return;
+  }
+  const body = { league_id: leagueId };
+  if (s2) Object.assign(body, { espn_s2: s2, swid });
+  els.liveConnect.disabled = true;
+  liveMessage("Connecting to ESPN...");
+  let response;
+  try {
+    response = await fetch("/draft/live", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch {
+    liveMessage("Couldn't reach the server. Check that it's running, then try again.", true);
+    return;
+  } finally {
+    els.liveConnect.disabled = false;
+  }
+  if (!response.ok) {
+    liveMessage(await errorText(response), true);
+    return;
+  }
+  let session;
+  try {
+    session = await response.json();
+  } catch {
+    liveMessage("The server sent a response this page couldn't read. Try again.", true);
+    return;
+  }
+  // The server holds the cookies now; don't leave them in the page.
+  els.liveS2.value = "";
+  els.liveSwid.value = "";
+  liveMessage("");
+  startLive(session.session_id, session.draft);
+  els.liveTeam.focus();
+}
+
+async function disconnectLive() {
+  const sessionId = state.live?.sessionId;
+  endLive("Disconnected. The server no longer has your league's cookies.");
+  els.liveLeague.focus();
+  if (sessionId) {
+    try {
+      await fetch(`/draft/live/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    } catch { /* it expires on its own */ }
+  }
+}
+
+// Pick a live draft back up after a reload (the session id is kept for this tab only).
+async function resumeLive() {
+  const saved = loadSavedLive();
+  if (!saved) return;
+  let response;
+  try {
+    response = await fetch(`/draft/live/${encodeURIComponent(saved.sessionId)}`);
+  } catch {
+    return;
+  }
+  if (!response.ok) {
+    try { sessionStorage.removeItem(LIVE_KEY); } catch { /* ignore */ }
+    if (response.status === 404) liveMessage("Your live draft session ended. Connect your league again.");
+    return;
+  }
+  let draft;
+  try { draft = await response.json(); } catch { return; }
+  startLive(saved.sessionId, draft, saved.teamId);
+}
+
 // ---------- Wiring ----------
 
-function update({ refetch = true } = {}) {
+function update({ refetch = true, keepPlan = false } = {}) {
   const focusedSlot = document.activeElement?.dataset?.slot;
   const focusedStep = document.activeElement === els.slotPrev || document.activeElement === els.slotNext
     ? document.activeElement : null;
@@ -478,7 +792,11 @@ function update({ refetch = true } = {}) {
   writeSettings();
   // A disabled button can't hold focus; move it to the select instead of losing it.
   if (focusedStep?.disabled) els.slot.focus();
-  if (refetch) {
+  if (refetch && keepPlan) {
+    // A new pick in a live draft: keep showing the current plan until the new one arrives.
+    renderTimeline();
+    loadPlan();
+  } else if (refetch) {
     state.plan = null; // never show cards for the previous settings
     state.error = null;
     renderTimeline();
@@ -525,6 +843,16 @@ function init() {
     update({ refetch: false });
   });
   document.getElementById("draft-setup").addEventListener("submit", (event) => event.preventDefault());
+  els.liveForm.addEventListener("submit", connectLive);
+  els.liveDisconnect.addEventListener("click", disconnectLive);
+  els.liveTeam.addEventListener("change", () => {
+    if (!state.live) return;
+    state.live.teamId = Number(els.liveTeam.value);
+    saveLive();
+    const slot = liveTeamSlot();
+    if (slot != null) setSlot(slot);
+    else update();
+  });
 
   let resizeTimer;
   window.addEventListener("resize", () => {
@@ -533,6 +861,7 @@ function init() {
   });
 
   update();
+  resumeLive();
 }
 
 init();
