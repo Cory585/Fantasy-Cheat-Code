@@ -147,7 +147,7 @@
   // Only the main tool pages (the ones with a masthead) get the portrait.
   if (!document.querySelector(".masthead")) return;
 
-  const COLS = 160, ROWS = 116; // dither resolution (ESPN headshots are 350x254)
+  const COLS = 180, ROWS = 131; // dither resolution (ESPN headshots are 350x254)
   const FADE_MS = 1400, HOLD_MS = 5200, GAP_MS = 600, FADE_STEPS = 16;
   const STAR_COUNT = 16;
   const BAYER = [
@@ -164,6 +164,49 @@
   backdrop.insertBefore(canvas, near);
   const ctx = canvas.getContext("2d");
   const frame = ctx.createImageData(COLS, ROWS);
+
+  // Each team's home jersey color as [hue, saturation %]. While a star is showing, the
+  // landscape (and the page tint that follows it) shifts to their jersey's hue.
+  const JERSEYS = {
+    ARI: [345, 30], ATL: [352, 28], BAL: [250, 30], BUF: [218, 32], CAR: [200, 30], CHI: [222, 26],
+    CIN: [16, 34], CLE: [26, 28], DAL: [216, 26], DEN: [18, 34], DET: [201, 32], GB: [158, 26],
+    HOU: [204, 26], IND: [212, 30], JAX: [189, 30], KC: [352, 32], LAC: [201, 32], LAR: [222, 30],
+    LV: [220, 4], MIA: [184, 32], MIN: [266, 28], NE: [212, 26], NO: [40, 26], NYG: [224, 30],
+    NYJ: [158, 28], PHI: [186, 28], PIT: [42, 30], SEA: [206, 26], SF: [2, 30], TB: [0, 30],
+    TEN: [211, 30], WAS: [356, 26],
+  };
+  const root = document.documentElement;
+  let hue = parseFloat(getComputedStyle(root).getPropertyValue("--land-hue")) || 148;
+  let sat = parseFloat(getComputedStyle(root).getPropertyValue("--land-sat")) || 22;
+
+  function setTint(h, s) {
+    hue = h;
+    sat = s;
+    root.style.setProperty("--land-hue", h.toFixed(1));
+    root.style.setProperty("--land-sat", `${s.toFixed(1)}%`);
+  }
+
+  // Glide to a team's jersey hue the short way round the color wheel, recoloring the
+  // portrait's ink as it goes. Instant when the user prefers reduced motion.
+  function tintTo(team, ms) {
+    const jersey = JERSEYS[team];
+    if (!jersey) return;
+    const toHue = hue + ((((jersey[0] - hue) % 360) + 540) % 360) - 180;
+    if (reduceMotion.matches || !ms) {
+      setTint(toHue, jersey[1]);
+      readInk();
+      return;
+    }
+    const fromHue = hue, fromSat = sat, start = performance.now();
+    const tick = (now) => {
+      const t = clamp01((now - start) / ms);
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
+      setTint(fromHue + (toHue - fromHue) * e, fromSat + (jersey[1] - fromSat) * e);
+      readInk();
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 
   let ink = [0, 0, 0];
   function readInk() {
@@ -190,8 +233,45 @@
     ctx.putImageData(frame, 0, 0);
   }
 
-  // Turn a headshot into ink density: the silhouette always gets some ink, and darker
-  // areas get more, after stretching the contrast so every photo reads about the same.
+  // Separable box blur, used for local contrast.
+  function boxBlur(src, radius) {
+    const tmp = new Float32Array(src.length), out = new Float32Array(src.length);
+    const span = radius * 2 + 1;
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        let sum = 0;
+        for (let k = -radius; k <= radius; k++) sum += src[y * COLS + Math.min(COLS - 1, Math.max(0, x + k))];
+        tmp[y * COLS + x] = sum / span;
+      }
+    }
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        let sum = 0;
+        for (let k = -radius; k <= radius; k++) sum += tmp[Math.min(ROWS - 1, Math.max(0, y + k)) * COLS + x];
+        out[y * COLS + x] = sum / span;
+      }
+    }
+    return out;
+  }
+
+  // Sobel edge strength at every pixel.
+  function edges(src) {
+    const out = new Float32Array(src.length);
+    const at = (x, y) => src[Math.min(ROWS - 1, Math.max(0, y)) * COLS + Math.min(COLS - 1, Math.max(0, x))];
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const gx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
+        const gy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
+        out[y * COLS + x] = Math.hypot(gx, gy);
+      }
+    }
+    return out;
+  }
+
+  // Turn a headshot into ink density, tuned so faces stay recognizable at dot size:
+  // stretch the contrast (ignoring the extreme 2% at each end), boost local contrast so
+  // eyes, brows, and mouth stand out, draw facial features as lines from their edges,
+  // and outline the whole silhouette so the head and shoulders read at a glance.
   function toDensity(img) {
     const scratch = document.createElement("canvas");
     scratch.width = COLS;
@@ -199,20 +279,31 @@
     const sctx = scratch.getContext("2d", { willReadFrequently: true });
     sctx.drawImage(img, 0, 0, COLS, ROWS);
     const { data } = sctx.getImageData(0, 0, COLS, ROWS);
-    const lum = new Float32Array(COLS * ROWS);
-    let lo = 1, hi = 0;
-    for (let i = 0; i < lum.length; i++) {
+    const n = COLS * ROWS;
+    const lum = new Float32Array(n), alpha = new Float32Array(n);
+    const opaque = [];
+    for (let i = 0; i < n; i++) {
       lum[i] = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255;
-      if (data[i * 4 + 3] > 128) {
-        lo = Math.min(lo, lum[i]);
-        hi = Math.max(hi, lum[i]);
-      }
+      alpha[i] = data[i * 4 + 3] / 255;
+      if (alpha[i] > 0.5) opaque.push(lum[i]);
     }
+    if (!opaque.length) return new Float32Array(n);
+    opaque.sort((a, b) => a - b);
+    const lo = opaque[Math.floor(opaque.length * 0.02)];
+    const hi = opaque[Math.floor(opaque.length * 0.98)];
     const span = Math.max(hi - lo, 0.01);
-    const out = new Float32Array(COLS * ROWS);
-    for (let i = 0; i < out.length; i++) {
-      const dark = 1 - clamp01((lum[i] - lo) / span);
-      out[i] = (data[i * 4 + 3] / 255) * (0.07 + 0.93 * Math.pow(dark, 1.35));
+    for (let i = 0; i < n; i++) lum[i] = clamp01((lum[i] - lo) / span);
+
+    const blurred = boxBlur(lum, 5);
+    const sharp = lum.map((v, i) => clamp01(v + 1.4 * (v - blurred[i])));
+    const featureEdges = edges(sharp);
+    const outline = edges(alpha);
+
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const tone = 0.03 + 0.82 * Math.pow(1 - sharp[i], 1.6);
+      const feature = clamp01(featureEdges[i] * 0.9 - 0.25);
+      out[i] = clamp01(alpha[i] * (tone + feature) + clamp01(outline[i] * 0.8));
     }
     return out;
   }
@@ -286,11 +377,13 @@
       failures = 0;
       density = toDensity(img);
       if (reduceMotion.matches) {
+        tintTo(list[i].team, 0);
         level = 1;
         render();
         return;
       }
       await visible();
+      tintTo(list[i].team, FADE_MS);
       await fade(0, 1);
       await wait(HOLD_MS);
       await visible();
