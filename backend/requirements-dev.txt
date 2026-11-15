@@ -4,4 +4,4 @@ hypothesis>=6.100
 pytest-cov>=5.0
 playwright>=1.65.1  # browser tests drive an installed Edge or Chrome; no browser download needed
 ruff>=0.15  # lint and security checks (ruff.toml); run by CI and the pre-push hook
-pip-audit>=2.7  # known-vulnerable dependency check, run by CI
+pip-audit>=2.10.1  # known-vulnerable dependency check, run by CI
