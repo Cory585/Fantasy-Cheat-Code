@@ -81,25 +81,36 @@ class DraftPlanner:
     def adp_source(self) -> str:
         return "espn" if any(adp is not None for _, adp in self._board) else "projection"
 
-    def _target(self, index: int) -> DraftTarget:
-        p, adp = self._board[index]
+    def _target(self, board: list[tuple[Player, float | None]], index: int) -> DraftTarget:
+        p, adp = board[index]
         return DraftTarget(player_id=p.id, name=p.name, position=p.position, team=p.team,
                            adp=adp, projection=p.ros_projection, rank=index + 1)
 
-    def plan(self, teams: int, slot: int, rounds: int, targets_per_pick: int = 5) -> DraftPlan:
+    def plan(self, teams: int, slot: int, rounds: int, targets_per_pick: int = 5,
+             drafted: frozenset[str] = frozenset(), picks_made: int = 0) -> DraftPlan:
+        """Your remaining picks and who's likely there at each.
+
+        For a draft in progress, `drafted` holds the ids of players already taken and
+        `picks_made` how many picks are in (it can exceed `len(drafted)` when a drafted player
+        isn't in the player pool). Those players come off the board, your past picks are left
+        out, and the rest of the board fills the picks still to come."""
+        board = [entry for entry in self._board if entry[0].id not in drafted] if drafted else self._board
+        made = max(picks_made, len(self._board) - len(board))
         mine = snake_picks(teams, slot, rounds)
         picks = []
         for i, pick in enumerate(mine):
-            start = pick.overall - 1  # players ranked ahead of this pick are assumed gone
-            end = min(start + targets_per_pick, len(self._board))
-            targets = [self._target(j) for j in range(start, end)]
+            if pick.overall <= made:
+                continue
+            start = pick.overall - 1 - made  # players ranked ahead of this pick are assumed gone
+            end = min(start + targets_per_pick, len(board))
+            targets = [self._target(board, j) for j in range(start, end)]
 
             # Players other teams take between this pick and your next one, assuming you
             # take the top-ranked player here.
             next_overall = mine[i + 1].overall if i + 1 < len(mine) else None
             mix: dict = {}
             if next_overall:
-                for p, _ in self._board[start + 1:next_overall - 1]:
+                for p, _ in board[start + 1:next_overall - 1 - made]:
                     mix[p.position] = mix.get(p.position, 0) + 1
 
             picks.append(PlannedPick(
@@ -108,6 +119,7 @@ class DraftPlanner:
                 picks_until_next=next_overall - pick.overall - 1 if next_overall else None,
                 position_mix=mix,
             ))
-        board = [self._target(j) for j in range(min(teams * rounds, len(self._board)))]
+        remaining = max(teams * rounds - made, 0)
+        mock = [self._target(board, j) for j in range(min(remaining, len(board)))]
         return DraftPlan(teams=teams, slot=slot, rounds=rounds, adp_source=self.adp_source,
-                         picks=picks, board=board)
+                         picks_made=made, picks=picks, board=mock)

@@ -41,8 +41,10 @@ class DraftPlan(BaseModel):
     slot: int = Field(description="Your draft slot (1 = first pick of round 1)")
     rounds: int
     adp_source: str = Field(description="'espn' when ADP was available, else 'projection'")
-    picks: list[PlannedPick]
+    picks_made: int = Field(default=0, description="Picks already made in a live draft (0 before it starts)")
+    picks: list[PlannedPick] = Field(description="Your picks still to come")
     board: list[DraftTarget] = Field(
         default_factory=list,
-        description="Mock draft: the board order for every pick (index 0 = pick 1), assuming each team takes the top-ranked player",
+        description="Mock draft of the picks still to come (index 0 = pick picks_made + 1), assuming each team "
+                    "takes the top-ranked player left",
     )
