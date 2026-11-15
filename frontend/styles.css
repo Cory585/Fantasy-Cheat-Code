@@ -1,9 +1,21 @@
 :root {
-  --bg: #edf1ec;
+  /* Landscape backdrop (see backdrop.js): one hue per page, set by data-land on <html>. */
+  --land-hue: 148;
+  --land-sat: 22%;
+  --sky-top: hsl(var(--land-hue) var(--land-sat) 96%);
+  --sky-low: hsl(var(--land-hue) var(--land-sat) 90%);
+  --ridge-0: hsl(var(--land-hue) var(--land-sat) 88.5%);
+  --ridge-1: hsl(var(--land-hue) var(--land-sat) 86%);
+  --ridge-2: hsl(var(--land-hue) var(--land-sat) 83.5%);
+  --ridge-3: hsl(var(--land-hue) var(--land-sat) 81%);
+  --ridge-4: hsl(var(--land-hue) var(--land-sat) 78.5%);
+  --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 68%);
+
+  --bg: hsl(var(--land-hue) 16% 93%);
   --surface: #ffffff;
   --ink: #18211d;
   --muted: #56655d;
-  --line: #cbd5ce;
+  --line: hsl(var(--land-hue) 12% 82%);
   --turf: #2e6a4c;
   --turf-dark: #275a41;
   --chalk: rgba(255, 255, 255, 0.7);
@@ -21,11 +33,19 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1a15;
-    --surface: #17241e;
+    --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
+    --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
+    --ridge-0: hsl(var(--land-hue) var(--land-sat) 10.5%);
+    --ridge-1: hsl(var(--land-hue) var(--land-sat) 9%);
+    --ridge-2: hsl(var(--land-hue) var(--land-sat) 7.5%);
+    --ridge-3: hsl(var(--land-hue) var(--land-sat) 6%);
+    --ridge-4: hsl(var(--land-hue) var(--land-sat) 4.5%);
+    --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 24%);
+    --bg: hsl(var(--land-hue) 27% 8%);
+    --surface: hsl(var(--land-hue) 22% 12%);
     --ink: #e4ece7;
     --muted: #9aaba2;
-    --line: #2d3d35;
+    --line: hsl(var(--land-hue) 15% 21%);
     --turf: #1f4d37;
     --turf-dark: #1a422f;
     --chalk: rgba(228, 236, 231, 0.55);
@@ -41,11 +61,19 @@
 
 /* Explicit choice from the theme switch (same values as the media query above). */
 :root[data-theme="dark"] {
-  --bg: #0f1a15;
-  --surface: #17241e;
+  --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
+  --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
+  --ridge-0: hsl(var(--land-hue) var(--land-sat) 10.5%);
+  --ridge-1: hsl(var(--land-hue) var(--land-sat) 9%);
+  --ridge-2: hsl(var(--land-hue) var(--land-sat) 7.5%);
+  --ridge-3: hsl(var(--land-hue) var(--land-sat) 6%);
+  --ridge-4: hsl(var(--land-hue) var(--land-sat) 4.5%);
+  --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 24%);
+  --bg: hsl(var(--land-hue) 27% 8%);
+  --surface: hsl(var(--land-hue) 22% 12%);
   --ink: #e4ece7;
   --muted: #9aaba2;
-  --line: #2d3d35;
+  --line: hsl(var(--land-hue) 15% 21%);
   --turf: #1f4d37;
   --turf-dark: #1a422f;
   --chalk: rgba(228, 236, 231, 0.55);
@@ -57,6 +85,13 @@
   --focus: #86a7ef;
   color-scheme: dark;
 }
+
+/* Each page's landscape hue (data-land is set by theme-boot.js). */
+:root[data-land="tiers"] { --land-hue: 212; }
+:root[data-land="start-sit"] { --land-hue: 36; --land-sat: 30%; }
+:root[data-land="draft"] { --land-hue: 14; --land-sat: 26%; }
+:root[data-land="defense"] { --land-hue: 262; --land-sat: 18%; }
+:root[data-land="team"] { --land-hue: 182; }
 
 * { box-sizing: border-box; }
 
