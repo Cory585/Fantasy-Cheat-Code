@@ -364,11 +364,39 @@ async function load(id) {
     return;
   }
   renderHeader(profile);
+  loadTags(id, profile.player.position);
   renderEspnStatus(profile.espn);
   renderCombine(profile.combine, profile.player.position);
   renderStats(els.nflSection, els.nflStats, profile.nfl_stats, profile.player.position);
   renderStats(els.collegeSection, els.collegeStats, profile.college_stats, profile.player.position);
   els.main.setAttribute("aria-busy", "false");
+}
+
+// Tags (slot receiver, high target share...), each linking to the player finder. Optional:
+// a failure just leaves them out.
+async function loadTags(id, position) {
+  const list = $("profile-tags");
+  let index;
+  try {
+    const response = await fetch(`/tags?player=${encodeURIComponent(id)}`, { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    index = await response.json();
+  } catch {
+    return;
+  }
+  const defs = new Map(index.tags.map((t) => [t.key, t]));
+  const tags = (index.players[id] || []).filter((t) => defs.has(t.key));
+  list.hidden = tags.length === 0;
+  list.replaceChildren(...tags.map((tag) => {
+    const def = defs.get(tag.key);
+    const item = el("li");
+    const link = el("a", `tag-pill tag-${def.category}`, def.label);
+    link.href = `/finder/?tag=${encodeURIComponent(tag.key)}&pos=${encodeURIComponent(position)}`;
+    link.title = tag.detail ? `${tag.detail}. Find others like this.` : `${def.description} Find others like this.`;
+    if (tag.detail) link.setAttribute("aria-label", `${def.label}: ${tag.detail}. Find other players with this tag.`);
+    item.append(link);
+    return item;
+  }));
 }
 
 function init() {
