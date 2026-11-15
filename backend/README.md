@@ -126,6 +126,33 @@ All sources here are public APIs or published data files. No scraping is needed.
 Each valuation in the `/trades/analyze` response includes the projection used and an `outlook`
 with remaining opponents, schedule rank (1 = easiest at the position), and recent points per game.
 
+### Why a side wins or loses, and each player's strengths
+
+Every player in the response also gets a breakdown (`app/services/valuation.py`):
+`position_rank` by projection, a `tier` for the league size (RB1 = top 12 RBs in a 12-team
+league), whether they'd `starter` given the lineup slots, and plain-language `strengths` and
+`concerns`: top-3 or starting status, points over replacement, remaining schedule, recent form
+(adjusted for the schedule) against projections, the injury discount, whether Sleeper and ESPN
+agree (within 5%) or disagree (15% or more), and that kickers and defenses are streamable.
+
+Each side gets `reasons` (`app/services/trade_reasons.py`), most important first and marked
+`plus`, `minus`, or `neutral`:
+
+| Reason | Example |
+|---|---|
+| `value` | Receives 132 points of value for 108 sent (+24) |
+| `best_player` | Gets the best player in the deal: Jahmyr Gibbs (RB1, 108 value) (3+ players in the trade) |
+| `roster_spots` | Consolidates 2 players into 1, opening 1 roster spot for a waiver pickup |
+| `starters` | Gets 1 starter back for 2 sent, in a league with these lineup slots |
+| `positions` | Stronger at RB: +22 points of value / Thinner at WR: −46 points of value |
+| `schedule` | Players coming in have easier remaining schedules (6% more points allowed by their opponents) |
+| `form` | Gets a player whose recent form points above projections |
+| `injury` | Takes on injury risk / Moves injury risk |
+| `uncertainty` | Sleeper and ESPN disagree on a player coming in |
+
+The trade page shows these as a "Why Team A wins / Team B loses" panel under the verdict and a
+card per player below the value bars.
+
 ## Draft guide
 
 `GET /draft/plan` (and the page at `/draft/`) lays out a snake draft for your league size,
@@ -225,14 +252,18 @@ orders teams, higher is better), as of week 9 of 2026:
 
 | Test season | DST model | DST, Vegas only | Kicker model | Kicker, before (PPG × matchup) | Kicker, Vegas only |
 |---|---|---|---|---|---|
-| 2022 | 3.87 / 0.22 | 3.88 / 0.20 | | | |
-| 2023 | 4.27 / 0.29 | 4.28 / 0.27 | | | |
-| 2024 | 3.98 / 0.36 | 4.06 / 0.33 | 3.77 / 0.23 | 4.08 / 0.11 | 3.82 / 0.20 |
-| 2025 | 4.10 / 0.33 | 4.17 / 0.34 | 3.73 / 0.22 | 3.91 / 0.17 | 3.80 / 0.11 |
-| 2026 (weeks 1-9) | 3.79 / 0.32 | 3.87 / 0.30 | 3.79 / 0.07 | 4.04 / 0.11 | 3.79 / 0.04 |
+| 2020 | 4.08 / 0.32 | 4.03 / 0.32 | | | |
+| 2021 | 4.36 / 0.26 | 4.36 / 0.27 | | | |
+| 2022 | 3.87 / 0.21 | 3.88 / 0.20 | | | |
+| 2023 | 4.27 / 0.28 | 4.28 / 0.27 | | | |
+| 2024 | 3.99 / 0.35 | 4.07 / 0.33 | 3.77 / 0.23 | 4.08 / 0.11 | 3.82 / 0.20 |
+| 2025 | 4.10 / 0.33 | 4.18 / 0.34 | 3.73 / 0.22 | 3.91 / 0.17 | 3.80 / 0.11 |
+| 2026 (weeks 1-9) | 3.81 / 0.32 | 3.88 / 0.30 | 3.79 / 0.07 | 4.04 / 0.11 | 3.79 / 0.04 |
 
 DST numbers are from 2018-2026 collected (`--seasons 2018-2026`), so the model trains on up to
-seven seasons; the kicker columns are from 2022-2026.
+seven seasons; the kicker columns are from 2022-2026. With only 2019 to learn from, the 2020
+model (the no-fans season) was slightly worse than Vegas alone and ran about 0.6 points high;
+from 2021 it matches or beats Vegas. `tests/realdata/test_real_model.py` holds it to that.
 
 Both are mostly noise week to week (R² around 0.1 for DST and under 0.05 for kickers), so the
 gains are modest. The newer DST features (QB-specific rates, pass rush, coverage, spread,
@@ -271,6 +302,12 @@ points on the team's scoring and the opponent's points allowed, made from the lo
 that have lines. With lines removed from the backtest seasons, the stand-in line's error
 falls from 2.4 to 1.8 points and the model's weekly rank correlation rises from 0.235 to
 0.246. Reasons built on an estimate say "projected" instead of "Vegas".
+
+Two data fixes came out of checking against real history. DST points count every sack from
+play-by-play: nflverse's team stat lines only add up sacks credited to players, so they miss
+team sacks (the 2022 Eagles' line had 69 of their official 70). And relocated franchises use
+their current code in every table: schedules and injury reports had the 2018-2019 Raiders as
+OAK while the stats said LV, which dropped them from those seasons.
 
 `MODEL_WEIGHT` isn't tuned: provider projections for past weeks aren't stored, so the blend
 with them can't be backtested yet.
@@ -398,9 +435,10 @@ and length-capped, and headshots are only accepted from `a.espncdn.com`.
 
 ```
 pip install -r requirements-dev.txt
-pytest                      # everything, about 30 seconds
+pytest                      # everything, about a minute
 pytest -m "not e2e"         # skip the browser tests
 pytest -m e2e               # only the browser tests
+pytest -m realdata          # only the checks against real NFL data
 pytest --cov=app            # with coverage
 ```
 
@@ -410,9 +448,12 @@ pytest --cov=app            # with coverage
 | Property-based | `tests/test_properties.py` | Invariants for any input (Hypothesis): every draft pick has exactly one owner, plans stay consistent, the rate limiter never exceeds its budget, ESPN parsing survives arbitrary JSON |
 | Concurrency stress | `tests/test_stress.py` | 40 threads × 25 profile requests: the concurrency cap holds, each player is fetched once, nothing hangs; concurrent cache writers; rate-limiter accuracy under contention |
 | Fuzzing | `tests/test_api_fuzz.py` | Random query strings, paths, bodies, methods, and Accept headers: never a 500, errors always `{detail, code}`, security headers always present |
+| Real NFL data | `tests/realdata/` | The collected data, defense breakdown, and DST model against what actually happened, 2018-2025. History: the fewest points allowed each season, sack leaders with official totals (team sacks included), takeaway leaders, standout seasons (T.J. Watt's 22.5 sacks in 2021, Trevon Diggs' 11 interceptions, Sauce Gardner's 20 passes defended), the Dolphins' 70-20 win over Denver, 32 teams with the right game counts every season. Model: season-by-season backtests against baselines and Vegas, calibration, the weekly top five outscoring the bottom five, the easiest matchup projecting above the hardest in every real week, estimated lines against real ones, and no peeking at the game being predicted |
 | End-to-end | `tests/e2e/` | The real pages in a headless browser (Playwright, using an installed Edge or Chrome): controls, keyboard focus, stale and failed loads, countdowns, text-only rendering of player data, no CSP violations or console errors |
 
 The browser tests are hermetic: a local server with fake player and ESPN data, and every
 request to another host is answered locally. They're skipped if Playwright or a browser isn't
-installed. No test contacts ESPN, Sleeper, or nflverse. If a test hangs for more than two
+installed. The real-data tests read `backend/data/fantasy.db` read-only and are skipped unless
+2018-2026 history is collected (`python -m app.data.collect --seasons 2018-2026`). No test
+contacts ESPN, Sleeper, or nflverse. If a test hangs for more than two
 minutes, pytest prints every thread's stack (`faulthandler_timeout` in `pytest.ini`).

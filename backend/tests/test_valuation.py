@@ -94,3 +94,54 @@ def test_rank_phrase_for_first_place():
     p = make(Position.WR, 100)[0]
     o = PlayerOutlook(provider_projection=100, adjusted_projection=100, games_remaining=8, sos_rank=32, sos_teams=32)
     assert outlook_notes(p, o) == ["Hardest remaining schedule for WRs"]
+
+
+# ---------- player breakdown: rank, tier, strengths, concerns ----------
+
+def test_rank_tier_and_starter_status():
+    league = LeagueSettings(num_teams=2, roster_slots={"RB": 2})
+    rbs = make(Position.RB, 200, 180, 160, 140, 120, 100)
+    svc = service(rbs)
+    top, fourth, fifth = (svc.value(rbs[i], league) for i in (0, 3, 4))
+    assert (top.position_rank, top.tier, top.starter) == (1, "RB1", True)
+    assert (fourth.position_rank, fourth.tier, fourth.starter) == (4, "RB2", True)
+    assert (fifth.position_rank, fifth.tier, fifth.starter) == (5, "RB3", False)
+    assert top.strengths[0] == "Top-3 RB: 1st at RB by rest-of-season projection"
+    assert fourth.strengths[0] == "RB2 who starts in a 2-team league (4th at RB by rest-of-season projection)"
+    assert any("better than a replacement-level RB" in s for s in top.strengths)
+    assert fifth.concerns[0].startswith("Below the starting line in a 2-team league (5th at RB")
+    assert any("No value over replacement" in c for c in fifth.concerns)
+
+
+def test_schedule_form_injury_and_provider_traits():
+    from app.models.player import PlayerOutlook
+
+    league = LeagueSettings(num_teams=1, roster_slots={"WR": 1})
+    hot = Player(id="hot", name="Hot", position=Position.WR, team="KC", ros_projection=150,
+                 projection_sources={"sleeper": 148, "espn": 152})
+    hurt = Player(id="hurt", name="Hurt", position=Position.WR, team="KC", ros_projection=120,
+                  injury_status="Q", projection_sources={"sleeper": 100, "espn": 140})
+    spare = Player(id="spare", name="Spare", position=Position.WR, team="KC", ros_projection=60)
+    outlooks = {
+        "hot": PlayerOutlook(provider_projection=150, adjusted_projection=160, games_remaining=8, sos_rank=1,
+                             sos_teams=32, recent_ppg=22.0, recent_games=4, form_projection=180),
+        "hurt": PlayerOutlook(provider_projection=120, adjusted_projection=110, games_remaining=8, sos_rank=30,
+                              sos_teams=32, recent_ppg=9.0, recent_games=4, form_projection=90),
+    }
+    svc = ValuationService(InMemoryPlayerRepository([hot, hurt, spare]), outlooks)
+    h, i = svc.value(hot, league), svc.value(hurt, league)
+    assert "Easiest remaining schedule for WRs" in h.strengths
+    assert any("points above projections" in s for s in h.strengths)
+    assert "Projections agree (ESPN 152 vs Sleeper 148)" in h.strengths
+    assert "3rd hardest remaining schedule for WRs" in i.concerns
+    assert any("points below projections" in c for c in i.concerns)
+    assert "Listed Q: trade value cut to 90%" in i.concerns
+    assert "Projections disagree (ESPN 140 vs Sleeper 100), so the outlook is less certain" in i.concerns
+
+
+def test_kickers_and_defenses_are_flagged_as_streamable():
+    league = LeagueSettings(num_teams=1, roster_slots={"K": 1, "DST": 1})
+    players = make(Position.K, 90, 80) + make(Position.DST, 100, 70)
+    svc = service(players)
+    assert "Kickers swing week to week and are easy to stream" in svc.value(players[0], league).concerns
+    assert "Defenses swing week to week and are easy to stream" in svc.value(players[2], league).concerns

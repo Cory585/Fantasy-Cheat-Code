@@ -64,6 +64,21 @@ class Verdict(str, Enum):
     FAIR = "fair"
 
 
+class Effect(str, Enum):
+    PLUS = "plus"
+    MINUS = "minus"
+    NEUTRAL = "neutral"
+
+
+class Reason(BaseModel):
+    """One reason a side comes out ahead or behind."""
+
+    kind: str = Field(description="value, best_player, roster_spots, starters, positions, schedule, form, "
+                                  "injury, or uncertainty")
+    text: str
+    effect: Effect
+
+
 class PlayerValuation(BaseModel):
     player: Player
     value: float
@@ -72,6 +87,11 @@ class PlayerValuation(BaseModel):
     projection: float
     outlook: PlayerOutlook | None = None
     notes: list[str] = Field(default_factory=list)
+    position_rank: int | None = Field(default=None, description="Rank at the position by projection (1 = best)")
+    tier: str | None = Field(default=None, description="e.g. 'RB1': the top N at the position in an N-team league")
+    starter: bool | None = Field(default=None, description="Projects to start in a league with these lineup slots")
+    strengths: list[str] = Field(default_factory=list, description="What makes the player worth having")
+    concerns: list[str] = Field(default_factory=list, description="What could make the player worth less")
 
 
 class SideAnalysis(BaseModel):
@@ -82,6 +102,8 @@ class SideAnalysis(BaseModel):
     net_value: float
     # Change in projected weekly starting-lineup points (requires roster_ids).
     lineup_impact: float | None = None
+    reasons: list[Reason] = Field(default_factory=list,
+                                  description="Why this side comes out ahead or behind, most important first")
 
 
 class BalanceSuggestion(BaseModel):
