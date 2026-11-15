@@ -14,6 +14,7 @@ from app.models.trade import (
     TradeSide,
     Verdict,
 )
+from app.services.trade_reasons import side_reasons
 from app.services.valuation import ValuationService
 
 
@@ -37,8 +38,8 @@ class TradeAnalyzer:
         a_total = sum(v.value for v in a_gives)
         b_total = sum(v.value for v in b_gives)
 
-        side_a = self._side_analysis(request.side_a, a_gives, given=a_total, received=b_total, league=league)
-        side_b = self._side_analysis(request.side_b, b_gives, given=b_total, received=a_total, league=league)
+        side_a = self._side_analysis(request.side_a, a_gives, b_gives, given=a_total, received=b_total, league=league)
+        side_b = self._side_analysis(request.side_b, b_gives, a_gives, given=b_total, received=a_total, league=league)
 
         # Round before judging so the verdict matches the reported percentage and
         # float noise (e.g. 10.000000000000002) can't push an exact 10% gap past the threshold.
@@ -101,6 +102,7 @@ class TradeAnalyzer:
         self,
         side: TradeSide,
         gives: list[PlayerValuation],
+        receives: list[PlayerValuation],
         given: float,
         received: float,
         league: LeagueSettings,
@@ -112,6 +114,7 @@ class TradeAnalyzer:
             total_value_received=round(received, 2),
             net_value=round(received - given, 2),
             lineup_impact=self._lineup_impact(side, league),
+            reasons=side_reasons(gives, receives),
         )
 
     def _lineup_impact(self, side: TradeSide, league: LeagueSettings) -> float | None:
