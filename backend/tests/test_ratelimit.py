@@ -88,3 +88,31 @@ def test_api_returns_429_with_retry_after():
         assert int(resp.headers["Retry-After"]) >= 1
     finally:
         limiter.rules = original
+
+
+def test_rules_can_be_limited_to_methods():
+    clock = FakeClock()
+    rl = RateLimiter([Rule("writes", 1, 0.1, lambda p: True, methods=frozenset({"POST", "DELETE"}))], clock=clock)
+    assert rl.check("a", "/x", "POST") is None
+    assert rl.check("a", "/x", "delete") is not None  # same bucket, case-insensitive
+    for _ in range(5):
+        assert rl.check("a", "/x", "GET") is None  # reads aren't limited by this rule
+
+
+def test_profile_rule_only_covers_player_profiles():
+    upstream = next(rule for rule in limiter.rules if rule.name == "upstream")
+    assert upstream.applies("/players/123/profile", "GET")
+    assert not upstream.applies("/profile", "GET")
+    assert not upstream.applies("/profile/", "GET")
+
+
+def test_league_rules_split_changes_from_edits():
+    rules = {rule.name: rule for rule in limiter.rules}
+    changes, edits = rules["league-changes"], rules["league-edits"]
+    assert changes.applies("/leagues", "POST")
+    assert changes.applies("/leagues/abc123def", "DELETE")
+    assert not changes.applies("/leagues", "GET")
+    assert not changes.applies("/leagues/abc123def", "PUT")
+    assert not changes.applies("/leaguesx", "POST")
+    assert edits.applies("/leagues/abc123def", "PUT")
+    assert changes.burst < edits.burst

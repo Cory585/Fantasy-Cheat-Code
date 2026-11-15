@@ -20,12 +20,22 @@ errors.install(app)
 MAX_BODY_BYTES = 256 * 1024
 
 
+def _is_leagues(path: str) -> bool:
+    return path == "/leagues" or path.startswith("/leagues/")
+
+
 # Page loads fetch a handful of assets, so the general limit is generous. Endpoints that
-# trigger requests to outside providers get their own, much smaller, bucket.
+# trigger requests to outside providers get their own, much smaller, bucket. Making and
+# removing leagues writes to the server's storage, so it gets the strictest bucket; saving
+# a league's roster happens on every edit, so it gets a roomier one.
 limiter = RateLimiter(
     [
         Rule("all", burst=300, per_second=5, matches=lambda path: True),
-        Rule("upstream", burst=10, per_second=0.2, matches=lambda path: path.endswith("/profile")),
+        Rule("upstream", burst=10, per_second=0.2,
+             matches=lambda path: path.startswith("/players/") and path.endswith("/profile")),
+        Rule("league-changes", burst=settings.league_change_burst, per_second=settings.league_change_per_second,
+             matches=_is_leagues, methods=frozenset({"POST", "DELETE"})),
+        Rule("league-edits", burst=60, per_second=1, matches=_is_leagues, methods=frozenset({"PUT"})),
     ],
     trust_proxy=settings.trust_proxy,
     proxy_hops=settings.trusted_proxy_hops,
@@ -35,7 +45,7 @@ limiter.enabled = settings.rate_limit_enabled
 
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
-    wait = limiter.check(limiter.client_key(request), request.url.path)
+    wait = limiter.check(limiter.client_key(request), request.url.path, request.method)
     if wait is not None:
         return error_response(
             429, "Too many requests. Slow down and try again shortly.",

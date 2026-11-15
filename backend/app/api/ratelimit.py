@@ -1,8 +1,9 @@
 """Per-client rate limiting for incoming requests (token buckets, in memory).
 
 Each rule is a bucket per client: it holds up to `burst` requests and refills at
-`per_second`. A request draws one token from every rule whose path matches, and is
-rejected with 429 (and a `Retry-After` header) when any of them is empty.
+`per_second`. A request draws one token from every rule whose path (and, if the rule
+names any, method) matches, and is rejected with 429 (and a `Retry-After` header) when
+any of them is empty.
 
 Clients are keyed by IP address. Behind a reverse proxy every request comes from the
 proxy, so set TRUST_PROXY=1 to key on `X-Forwarded-For` instead. Proxies append the
@@ -30,6 +31,11 @@ class Rule:
     burst: int
     per_second: float
     matches: Callable[[str], bool]
+    # Methods the rule applies to (e.g. {"POST", "DELETE"}); empty means every method.
+    methods: frozenset[str] = frozenset()
+
+    def applies(self, path: str, method: str) -> bool:
+        return (not self.methods or method.upper() in self.methods) and self.matches(path)
 
 
 class _Bucket:
@@ -65,13 +71,13 @@ class RateLimiter:
                 return entries[-self.proxy_hops][:64]
         return request.client.host if request.client else "unknown"
 
-    def check(self, client: str, path: str) -> float | None:
+    def check(self, client: str, path: str, method: str = "GET") -> float | None:
         """Take a token from each matching bucket. Returns None if allowed, else seconds to wait."""
         if not self.enabled:
             return None
         now = self._clock()
         with self._lock:
-            matching = [rule for rule in self.rules if rule.matches(path)]
+            matching = [rule for rule in self.rules if rule.applies(path, method)]
             buckets = [(rule, self._bucket(client, rule, now)) for rule in matching]
             waits = [(1 - b.tokens) / rule.per_second for rule, b in buckets if b.tokens < 1]
             if waits:
