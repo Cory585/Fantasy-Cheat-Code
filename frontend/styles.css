@@ -2790,7 +2790,8 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   align-items: end;
 }
 
-.league-create .team-field { flex: 1 1 14rem; }
+.league-create .team-field { flex: 1 1 14rem; min-width: 0; }
+.profile-page .team-name-input { min-width: 0; width: 100%; }
 .league-create .btn { min-height: 2.75rem; }
 
 .league-list {
@@ -2863,7 +2864,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   gap: 0.5rem 0.75rem;
 }
 
-.league-picker-label { color: var(--muted); font-size: 0.875rem; font-weight: 600; }
+.league-picker-label { flex-basis: 100%; margin-bottom: -0.125rem; color: var(--muted); font-size: 0.875rem; font-weight: 600; }
 .league-select { min-width: 12rem; max-width: 100%; }
 .league-select:disabled { cursor: default; opacity: 1; }
 .league-manage { color: var(--muted); font-size: 0.875rem; }
@@ -2879,3 +2880,6 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 @media (max-width: 760px) {
   .profile-page { grid-template-columns: minmax(0, 1fr); }
 }
+
+.ss-league[hidden] { display: none; }
+.ss-league .league-picker { align-self: end; }

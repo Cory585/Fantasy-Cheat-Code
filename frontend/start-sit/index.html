@@ -35,7 +35,7 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>Start/Sit Guide</h1>
-      <p class="lede">Set your whole lineup from your saved team, or compare the players fighting for one spot. See who to start, how sure the call is, and why.</p>
+      <p class="lede">Set your whole lineup for any of your leagues, or compare the players fighting for one spot. See who to start, how sure the call is, and why.</p>
       <p class="data-status" id="data-status" role="status" aria-live="polite"></p>
     </div>
   </header>
@@ -47,6 +47,7 @@
     </div>
 
     <form class="draft-setup" id="ss-setup" aria-label="Start/sit settings">
+      <div class="setup-group ss-league" id="ss-league" hidden></div>
       <fieldset class="setup-group">
         <legend>Week</legend>
         <div class="stepper">
@@ -116,7 +117,7 @@
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
   <script src="/player-search.js"></script>
-  <script src="/team-store.js"></script>
+  <script src="/league-store.js"></script>
   <script src="/start-sit/start-sit.js"></script>
 </body>
 </html>

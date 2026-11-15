@@ -1,8 +1,9 @@
 "use strict";
 
 // Start/sit, in two modes:
-//   My lineup:       the best lineup from the team saved on /team/ (in this browser), with
-//                    each spot's closest alternative and how sure the call is.
+//   My lineup:       the best lineup for one of the profile's leagues (picked at the top;
+//                    rosters are set on /team/), with each spot's closest alternative and
+//                    how sure the call is.
 //   Compare players: choose a week and the players competing for one spot, then see who to
 //                    start, how confident the call is, each player's range, and the reasons.
 
@@ -27,8 +28,11 @@
     fromTeam: $("ss-from-team"),
     quick: $("ss-quick"),
     lineup: $("ss-lineup"),
+    league: $("ss-league"),
+    fromTeamLabel: $("from-team-label"),
   };
-  const Store = window.TeamStore;
+  const Store = window.LeagueStore;
+  const noTeam = () => ({ id: null, name: "", slots: { ...Store.DEFAULT_SLOTS }, roster: [] });
 
   const MIN_PLAYERS = 2;
   const MAX_PLAYERS = 8;
@@ -57,7 +61,11 @@
     error: null,
     loading: false,
     mode: "compare",
-    team: Store.load(),
+    leagues: [],
+    leaguesLoaded: false,
+    leaguesError: null,
+    autoMode: false, // no mode in the link: pick one once the leagues load
+    team: noTeam(),
     lineup: null,
     lineupError: null,
     lineupLoading: false,
@@ -93,9 +101,10 @@
     const ids = (params.get("p") || "").split(",").filter(Boolean);
     state.chosen = [...new Set(ids)].slice(0, MAX_PLAYERS);
     const mode = params.get("mode");
-    // Without an explicit mode, open the saved lineup unless the link is a comparison.
-    state.mode = mode === "lineup" || mode === "compare" ? mode
-      : !state.chosen.length && Store.hasTeam(state.team) ? "lineup" : "compare";
+    // Without an explicit mode, open the saved lineup unless the link is a comparison
+    // (settled in useLeagues once it's known whether there's a team).
+    state.autoMode = mode !== "lineup" && mode !== "compare" && !state.chosen.length;
+    state.mode = mode === "lineup" || mode === "compare" ? mode : state.chosen.length ? "compare" : "lineup";
   }
 
   function writeUrl() {
@@ -105,6 +114,7 @@
     if (state.week) params.set("week", state.week);
     if (state.slot) params.set("slot", state.slot);
     if (state.starts > 1) params.set("starts", state.starts);
+    if (state.team.id) params.set("league", state.team.id);
     const query = params.toString();
     history.replaceState(null, "", query ? `${location.pathname}?${query}` : location.pathname);
   }
@@ -365,7 +375,7 @@
 
   async function analyzeLineup() {
     const id = ++lineupRequestId;
-    if (!Store.hasTeam(state.team) || !Object.keys(teamSlots()).length) {
+    if (!state.leaguesLoaded || !Store.hasTeam(state.team) || !Object.keys(teamSlots()).length) {
       state.lineup = null;
       state.lineupError = null;
       renderLineup();
@@ -395,11 +405,21 @@
   }
 
   function renderLineup() {
+    if (!state.leaguesLoaded) {
+      els.lineup.replaceChildren(el("p", "result-empty", "Loading your leagues…"));
+      return;
+    }
+    if (state.leaguesError) {
+      els.lineup.replaceChildren(el("p", "result-error", `Couldn't load your leagues: ${state.leaguesError}`));
+      return;
+    }
     if (!Store.hasTeam(state.team)) {
       const box = el("div", "result-empty ss-no-team");
       const link = el("a", "btn btn-cta", "Set up my team");
-      link.href = "/team/";
-      box.append(el("p", null, "Save your roster and lineup spots once, and this page sets your best lineup every week."), link);
+      link.href = state.team.id ? `/team/?league=${encodeURIComponent(state.team.id)}` : "/team/";
+      box.append(el("p", null, state.team.id
+        ? `${state.team.name} has no players yet. Add your roster, and this page sets your best lineup every week.`
+        : "Save your roster and lineup spots once, and this page sets your best lineup every week."), link);
       els.lineup.replaceChildren(box);
       return;
     }
@@ -424,7 +444,7 @@
     title.append(el("h2", "section-heading", `${name}: week ${a.week} lineup`),
       el("p", "section-note", `Projected ${fmt(a.projected_total)} points from ${a.lineup.filter((s) => s.starter).length} starters.`));
     const edit = el("a", "btn btn-quiet", "Edit team");
-    edit.href = "/team/";
+    edit.href = `/team/?league=${encodeURIComponent(state.team.id)}`;
     head.append(title, edit);
     return head;
   }
@@ -541,6 +561,7 @@
       .filter((p) => !state.chosen.includes(p.id) && allowedPositions().includes(p.position))
       .sort((x, y) => y.ros_projection - x.ros_projection);
     els.fromTeam.hidden = !roster.length || isFull();
+    els.fromTeamLabel.textContent = state.leagues.length > 1 ? `From ${state.team.name}` : "From your team";
     els.quick.replaceChildren(...roster.map((player) => {
       const item = el("li");
       const button = el("button", `ss-quick-btn pos-${player.position}`, player.name);
@@ -588,12 +609,8 @@
       state.mode = button.dataset.mode;
       changed();
     });
-    // The team was edited in another tab: use the new version.
-    window.addEventListener("storage", (event) => {
-      if (event.key !== Store.KEY) return;
-      state.team = Store.load();
-      changed({ reanalyze: state.mode === "lineup" });
-    });
+    // The leagues were edited in another tab: use the new versions.
+    Store.onChange(loadLeagues);
     els.week.addEventListener("change", () => setWeek(Number(els.week.value)));
     els.weekPrev.addEventListener("click", () => setWeek((state.week ?? state.weeks[0]) - 1));
     els.weekNext.addEventListener("click", () => setWeek((state.week ?? state.weeks[0]) + 1));
@@ -629,6 +646,54 @@
     $("ss-setup").addEventListener("submit", (event) => event.preventDefault());
   }
 
+  // ---------- Leagues ----------
+
+  function useLeagues(leagues) {
+    state.leagues = leagues;
+    const current = leagues.find((x) => x.id === state.team.id) || Store.activeLeague(leagues);
+    state.team = current ? { id: current.id, ...Store.clean(current) } : noTeam();
+    if (state.autoMode) {
+      state.autoMode = false;
+      if (!Store.hasTeam(state.team)) state.mode = "compare";
+    }
+    renderLeague();
+  }
+
+  function renderLeague() {
+    els.league.hidden = state.leagues.length === 0;
+    if (!state.leagues.length) {
+      els.league.replaceChildren();
+      return;
+    }
+    els.league.replaceChildren(Store.picker({
+      id: "league-select",
+      leagues: state.leagues,
+      active: state.leagues.find((x) => x.id === state.team.id),
+      onSelect: (id) => {
+        const league = state.leagues.find((x) => x.id === id);
+        if (!league) return;
+        state.team = { id: league.id, ...Store.clean(league) };
+        state.lineup = null;
+        changed({ reanalyze: state.mode === "lineup" });
+      },
+    }));
+  }
+
+  async function loadLeagues() {
+    try {
+      useLeagues((await Store.list()).leagues);
+      state.leaguesError = null;
+    } catch (error) {
+      state.leaguesError = error.message;
+      if (state.autoMode) {
+        state.autoMode = false;
+        state.mode = "compare";
+      }
+    }
+    state.leaguesLoaded = true;
+    if (state.players.size) changed({ reanalyze: state.mode === "lineup" });
+  }
+
   function renderStatus() {
     const meta = state.meta;
     if (!meta) return;
@@ -656,8 +721,9 @@
     renderChosen();
     renderResult();
     renderLineup();
+    const leagues = loadLeagues();
     try {
-      const [players, meta] = await Promise.all([loadPlayers(), loadMeta()]);
+      const [players, meta] = await Promise.all([loadPlayers(), loadMeta(), leagues]);
       state.players = players;
       state.meta = meta;
     } catch (error) {
