@@ -95,7 +95,10 @@ class EspnDraftSource:
             if status == 404:
                 raise LeagueNotFound(league_id) from None
             raise
-        return parse_draft(data, league_id, season)
+        try:
+            return parse_draft(data, league_id, season)
+        except (KeyError, TypeError) as error:
+            raise ValueError(f"Unexpected ESPN league response: {type(error).__name__}") from None
 
 
 def _team_name(team: dict) -> str:

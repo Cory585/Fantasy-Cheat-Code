@@ -67,5 +67,19 @@ class Settings:
     # Number of proxies in front of the app that each append to X-Forwarded-For.
     trusted_proxy_hops: int = field(default_factory=lambda: int(os.getenv("TRUSTED_PROXY_HOPS", "1")))
 
+    # Live ESPN drafts (app/api/live_draft.py): seconds between reads of a league's draft,
+    # hours an unused session (and its cookies) is kept, most sessions at once, and the
+    # longest one event stream runs before the page reconnects.
+    live_draft_poll_seconds: float = field(
+        default_factory=lambda: float(os.getenv("LIVE_DRAFT_POLL_SECONDS", "4"))
+    )
+    live_draft_session_hours: float = field(
+        default_factory=lambda: float(os.getenv("LIVE_DRAFT_SESSION_HOURS", "6"))
+    )
+    live_draft_max_sessions: int = field(default_factory=lambda: int(os.getenv("LIVE_DRAFT_MAX_SESSIONS", "500")))
+    live_draft_stream_hours: float = field(
+        default_factory=lambda: float(os.getenv("LIVE_DRAFT_STREAM_HOURS", "1"))
+    )
+
 
 settings = Settings()
