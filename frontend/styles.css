@@ -93,6 +93,7 @@
 :root[data-land="defense"] { --land-hue: 262; --land-sat: 18%; }
 :root[data-land="team"] { --land-hue: 182; }
 :root[data-land="profile"] { --land-hue: 322; --land-sat: 16%; }
+:root[data-land="finder"] { --land-hue: 206; --land-sat: 20%; }
 
 * { box-sizing: border-box; }
 
@@ -2883,3 +2884,117 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 
 .ss-league[hidden] { display: none; }
 .ss-league .league-picker { align-self: end; }
+
+/* ---------- Player finder and tags ---------- */
+
+.finder-page { display: grid; gap: 1.25rem; }
+.finder-setup { align-items: flex-end; }
+.finder-name { display: grid; gap: 0.375rem; flex: 1 1 14rem; min-width: 0; }
+.finder-label { color: var(--muted); font-size: 0.875rem; font-weight: 600; }
+
+.finder-tags, .finder-results {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.tag-groups { display: grid; gap: 1rem; }
+.tag-group-head { font-size: 1.125rem; margin-bottom: 0.375rem; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.375rem 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.tag-chip:hover:not(:disabled) { border-color: var(--tag); }
+.tag-chip:disabled { opacity: 0.4; cursor: default; }
+.tag-chip[aria-pressed="true"] { background: var(--tag); border-color: var(--tag); color: #fff; }
+.tag-chip-count {
+  min-width: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.tag-chip[aria-pressed="true"] .tag-chip-count { background: rgba(255, 255, 255, 0.25); color: #fff; }
+
+/* Each chip and pill carries its category class, which sets its color. */
+.tag-role { --tag: #2952a3; }
+.tag-usage { --tag: #2e6a4c; }
+.tag-trend { --tag: #97600f; }
+.tag-status { --tag: #6b5a7a; }
+
+.finder-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+
+.finder-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--pos, var(--line));
+  border-radius: 8px;
+}
+
+.finder-text { display: grid; min-width: 0; }
+.finder-proj { color: var(--muted); font-size: 0.8125rem; white-space: nowrap; }
+.finder-proj strong { color: var(--ink); font-size: 1.125rem; font-family: var(--font-display); }
+.finder-tags-list {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-pill {
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--tag) 45%, transparent);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.tag-pill.is-on { background: var(--tag); border-color: var(--tag); color: #fff; }
+a.tag-pill { text-decoration: none; cursor: pointer; }
+a.tag-pill:hover { border-color: var(--tag); }
+.finder-more { justify-self: start; margin-top: 0.75rem; }
+
+.profile-tags { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 1rem 0 1.25rem; padding: 0; list-style: none; }
+.profile-tags .tag-pill { font-size: 0.8125rem; padding: 0.125rem 0.625rem; }
+
+:root[data-theme="dark"] .tag-role { --tag: #6f97e8; }
+:root[data-theme="dark"] .tag-usage { --tag: #4fae7f; }
+:root[data-theme="dark"] .tag-trend { --tag: #d39a3c; }
+:root[data-theme="dark"] .tag-status { --tag: #a790bd; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tag-role { --tag: #6f97e8; }
+  :root:not([data-theme="light"]) .tag-usage { --tag: #4fae7f; }
+  :root:not([data-theme="light"]) .tag-trend { --tag: #d39a3c; }
+  :root:not([data-theme="light"]) .tag-status { --tag: #a790bd; }
+}
+
+@media (max-width: 760px) {
+  .finder-tags, .finder-results { padding: 1rem; }
+  .finder-tags-list { grid-column: 1 / -1; }
+}
+.profile-tags[hidden] { display: none; }

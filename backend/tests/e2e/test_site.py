@@ -5,7 +5,7 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.e2e
 
-PAGES = ["/", "/draft/", "/tiers/", "/start-sit/", "/team/", "/profile/", "/player/?id=9221"]
+PAGES = ["/", "/finder/", "/draft/", "/tiers/", "/start-sit/", "/team/", "/profile/", "/player/?id=9221"]
 
 
 @pytest.mark.parametrize("path", PAGES)
