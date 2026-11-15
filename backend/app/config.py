@@ -52,6 +52,12 @@ class Settings:
     rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
     # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
     trust_proxy: bool = field(default_factory=lambda: os.getenv("TRUST_PROXY", "0") == "1")
+    # The leagues on each profile, written while the API runs.
+    league_db_path: Path = field(
+        default_factory=lambda: Path(os.getenv("LEAGUE_DB_PATH", str(DATA_DIR / "leagues.db")))
+    )
+    # Most leagues the server keeps across every profile, so storage stays bounded.
+    max_stored_leagues: int = field(default_factory=lambda: int(os.getenv("MAX_STORED_LEAGUES", "100000")))
     # Making or removing a league (per client IP): a burst of this many, then one every
     # 1 / LEAGUE_CHANGES_PER_SECOND seconds. Default: 12, then 4 a minute.
     league_change_burst: int = field(default_factory=lambda: int(os.getenv("LEAGUE_CHANGE_BURST", "12")))
