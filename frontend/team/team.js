@@ -330,7 +330,7 @@
   async function init() {
     bind();
     useLeague(null);
-    createSearch({
+    const search = createSearch({
       input: els.search,
       list: els.results,
       players: () => players,
@@ -356,8 +356,13 @@
       firstWeek = meta?.current_week ?? 1;
     } catch (error) {
       els.roster.replaceChildren(el("p", "result-error", error.message));
+      els.search.placeholder = "Players couldn't be loaded";
       return;
     }
+    // The search stays disabled until there are players to find, so nothing typed is lost.
+    els.search.disabled = false;
+    els.search.placeholder = "Search players or teams to add";
+    search.render();
     renderRoster();
   }
 
