@@ -92,7 +92,9 @@ class EspnDraftSource:
             status = error.response.status_code
             if status in (401, 403):
                 raise LeaguePrivate(league_id) from None
-            if status == 404:
+            # ESPN answers 400 ("Invalid parameter for 'leagueId'") for an id too big to be a
+            # league, so that's a league that doesn't exist too, not ESPN being down.
+            if status in (400, 404):
                 raise LeagueNotFound(league_id) from None
             raise
         try:
