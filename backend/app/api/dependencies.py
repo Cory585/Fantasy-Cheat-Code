@@ -257,6 +257,11 @@ def get_player_repository() -> PlayerRepository:
     return _data.current()[0]
 
 
+def get_data_source() -> str:
+    """"synced" when serving the sync cache, "sample" when serving the sample players."""
+    return _data.source()
+
+
 def get_outlooks() -> dict[str, PlayerOutlook]:
     """Schedule and form outlooks by player id (empty without a collected database)."""
     return _data.current()[1]

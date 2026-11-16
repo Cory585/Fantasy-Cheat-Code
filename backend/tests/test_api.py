@@ -138,6 +138,33 @@ def test_meta_reports_data_source():
     assert data["source"] in {"sample", "synced"}
     assert data["current_week"] == data["weeks"][0] == 1  # sample data: no schedule, weeks 1-18
     assert data["matchups"] is False
+    assert data["source"] == "sample" and data["stale"] is False
+
+
+def test_meta_reports_synced_data_and_whether_it_is_stale(monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import get_data_source, get_matchups
+    from app.services.matchups import MatchupData
+
+    cache = {"season": 2026, "weeks": [10, 18], "scoring": "ppr", "synced_at": "2026-11-11T09:00:00+00:00"}
+    app.dependency_overrides[get_data_source] = lambda: "synced"
+    app.dependency_overrides[get_matchups] = lambda: (MatchupData(), cache)
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 12))
+    data = client.get("/meta").json()
+    assert (data["source"], data["season"], data["scoring"]) == ("synced", 2026, "ppr")
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (10, 10, False)
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 18))
+    data = client.get("/meta").json()
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (11, 10, True)
+
+
+def test_unreadable_cache_reports_sample_source(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+
+    cache = tmp_path / "players.json"
+    cache.write_text('{"season": 2026, "players": [{"id": "x1", "name": "No position"}]}', encoding="utf-8")
+    assert ReloadingPlayerData(cache).source() == "sample"  # the file exists, but sample data is served
 
 
 @pytest.mark.parametrize(
