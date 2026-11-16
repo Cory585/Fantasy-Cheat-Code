@@ -434,7 +434,7 @@
       return;
     }
     els.lineup.classList.toggle("is-stale", state.lineupLoading);
-    els.lineup.replaceChildren(lineupHead(a), ...closeCalls(a), lineupTable(a), benchList(a), ...warnings(a), lineupNote());
+    els.lineup.replaceChildren(lineupHead(a), ...missingNote(a), ...closeCalls(a), lineupTable(a), benchList(a), ...warnings(a), lineupNote());
   }
 
   function lineupHead(a) {
@@ -447,6 +447,15 @@
     edit.href = `/team/?league=${encodeURIComponent(state.team.id)}`;
     head.append(title, edit);
     return head;
+  }
+
+  // Saved players the pool no longer has (e.g. released) are left out; same wording as My team.
+  function missingNote(a) {
+    const n = a.missing_ids?.length || 0;
+    if (!n) return [];
+    return [el("p", "ss-missing player-meta",
+      `${n} player${n === 1 ? " on this roster is" : "s on this roster are"} no longer in the player pool, so `
+      + `${n === 1 ? "it's" : "they're"} left out of the lineup.`)];
   }
 
   function closeCalls(a) {

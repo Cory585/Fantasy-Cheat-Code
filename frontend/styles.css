@@ -2187,6 +2187,7 @@ body[data-mode="compare"] .lineup-only { display: none; }
 
 .ss-lineup-head .section-note { margin-bottom: 0; }
 
+.ss-missing { margin: -0.5rem 0 1.25rem; }
 .ss-close-calls { margin-bottom: 1.25rem; }
 .ss-close-calls h3, .ss-bench h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
 
