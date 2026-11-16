@@ -99,7 +99,7 @@ async function loadMeta() {
   const el = document.getElementById("data-status");
   const meta = state.meta;
   if (meta.source !== "synced") {
-    el.textContent = "Using sample players. Run the data sync to load real projections.";
+    el.textContent = "Showing sample players, not real projections.";
     return;
   }
   const synced = new Date(meta.synced_at);

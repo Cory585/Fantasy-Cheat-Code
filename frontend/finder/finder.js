@@ -254,7 +254,7 @@
     state.selected = state.selected.filter((k) => state.byKey.has(k));
     els.status.textContent = index.season
       ? `Role, usage, and trend tags come from the ${index.season} season so far.`
-      : "Only status tags are available until the data collector has run.";
+      : "Role, usage, and trend tags aren't available yet, so only status tags are shown.";
     writeUrl();
     render();
   }

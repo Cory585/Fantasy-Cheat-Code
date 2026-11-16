@@ -58,3 +58,15 @@ def test_nav_groups_tabs_and_marks_the_current_one(page, path):
     assert current.get_attribute("href") == path
     # Each group is a list named by its label, for screen readers.
     expect(page.get_by_role("list", name="Draft").get_by_role("link")).to_have_text(["Draft masterclass"])
+
+
+DEVELOPER_TEXT = re.compile(r"python -m|Still to build|data collector|backend is running|data sync", re.IGNORECASE)
+
+
+# Not /defense/: with no defense data, its error is the API's own message.
+@pytest.mark.parametrize("path", PAGES)
+def test_pages_show_no_developer_instructions(page, path):
+    page.goto(path)
+    page.wait_for_load_state("networkidle")
+    text = page.locator("body").inner_text()
+    assert not DEVELOPER_TEXT.search(text), DEVELOPER_TEXT.search(text).group(0)

@@ -512,7 +512,7 @@ function renderPlan() {
     (first ? `, ${state.live ? "next" : "first"} at ${first}. ` : ". ") +
     (plan.adp_source === "espn"
       ? "Ranked by ESPN average draft position."
-      : "No ADP data yet, so players are ranked by projection. Run python -m app.data.collect to add ADP.");
+      : "No average draft position data yet, so players are ranked by projection.");
 }
 
 function renderError(message) {

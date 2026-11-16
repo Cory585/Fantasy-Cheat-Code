@@ -176,7 +176,7 @@
   function renderUpcoming(games) {
     const withModel = games.filter((g) => g.projection != null);
     els.upcomingNote.textContent = games.length && !withModel.length
-      ? "The DST model isn't trained yet (python -m app.defense.train), so there are no projections."
+      ? "Defense projections aren't available yet."
       : "Projected fantasy points from the DST matchup model, ranked against every defense playing that week.";
     if (!games.length) {
       els.upcoming.replaceChildren(el("li", "df-empty", "No upcoming games in this season's schedule."));

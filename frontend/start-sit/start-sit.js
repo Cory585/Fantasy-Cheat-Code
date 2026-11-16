@@ -698,11 +698,11 @@
     const meta = state.meta;
     if (!meta) return;
     if (meta.source !== "synced") {
-      els.status.textContent = "Using sample players. Run the data sync to load real weekly projections.";
+      els.status.textContent = "Showing sample players, not real projections.";
       return;
     }
     const parts = [`Week ${meta.current_week} is the current week`];
-    if (!meta.matchups) parts.push("matchups and recent form need the data collector");
+    if (!meta.matchups) parts.push("matchups and recent form aren't available yet");
     els.status.textContent = `${parts.join("; ")}.`;
   }
 
