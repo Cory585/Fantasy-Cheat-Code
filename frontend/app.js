@@ -949,17 +949,29 @@ async function init() {
   loadData();
 }
 
+// The player searches stay disabled until there are players to find, so nothing typed is lost.
+function setSearchesReady(ready, placeholder) {
+  for (const input of document.querySelectorAll(".player-search")) {
+    input.disabled = !ready;
+    input.placeholder = placeholder;
+  }
+}
+
 // Players first (nothing works without them), then the trade in the URL.
 async function loadData() {
+  setSearchesReady(false, "Loading players…");
+  const loading = document.createElement("p");
+  loading.className = "result-empty";
+  loading.textContent = "Loading players…";
+  document.getElementById("result").replaceChildren(loading);
   try {
     await loadPlayers();
   } catch (error) {
-    renderError(error, () => {
-      renderEmptyResult();
-      loadData();
-    });
+    setSearchesReady(false, "Players couldn't be loaded");
+    renderError(error, loadData);
     return;
   }
+  setSearchesReady(true, "Search players or teams");
   readUrl();
   renderLineupSettings();
   render();

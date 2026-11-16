@@ -33,3 +33,28 @@ def test_trade_explains_both_sides_and_breaks_down_each_player(page):
 def test_even_trade_says_so(page):
     page.goto("/#a=qb1&b=qb2")
     expect(page.locator(".tr-why-side h3").first).to_have_text("Team A: an even deal")
+
+
+def test_searches_wait_for_the_player_list(page):
+    # Hold the player list back, as a slow connection would: both searches stay disabled
+    # until it arrives, so nothing typed is lost.
+    release = []
+    page.route("**/players", lambda route: release.append(route))
+    page.goto("/")
+    searches = page.locator(".player-search")
+    for i in range(2):
+        expect(searches.nth(i)).to_be_disabled()
+        expect(searches.nth(i)).to_have_attribute("placeholder", "Loading players…")
+    expect(page.locator("#result")).to_have_text("Loading players…")
+    expect(page.locator("#data-status")).to_have_attribute("role", "status")
+    while not release:
+        page.wait_for_timeout(50)
+    # The page's backdrop asks for /players too; let every held request through.
+    for route in release:
+        route.continue_()
+    page.unroute("**/players")
+    search = page.locator('.side[data-side="a"] .player-search')
+    expect(search).to_be_enabled()
+    search.fill("Sample RB One")
+    search.press("Enter")
+    expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(1)

@@ -57,7 +57,7 @@
     <div class="masthead-title">
       <h1>Trade Analyzer</h1>
       <p class="lede">Build both sides of a trade and see who comes out ahead on rest-of-season value.</p>
-      <p class="data-status" id="data-status"></p>
+      <p class="data-status" id="data-status" role="status" aria-live="polite"></p>
     </div>
     <div class="masthead-controls">
       <label class="inline-field">
@@ -97,7 +97,7 @@
             <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
           </div>
           <div class="search">
-            <input type="search" class="player-search" placeholder="Search players or teams"
+            <input type="search" class="player-search" placeholder="Loading players…" disabled
               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-a"
               aria-label="Search players to add to Team A" autocomplete="off" spellcheck="false">
             <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
@@ -127,7 +127,7 @@
             <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
           </div>
           <div class="search">
-            <input type="search" class="player-search" placeholder="Search players or teams"
+            <input type="search" class="player-search" placeholder="Loading players…" disabled
               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-b"
               aria-label="Search players to add to Team B" autocomplete="off" spellcheck="false">
             <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
