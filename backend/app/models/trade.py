@@ -26,7 +26,9 @@ PlayerId = Annotated[str, Field(min_length=1, max_length=64)]
 
 
 class LeagueSettings(BaseModel):
-    scoring: ScoringFormat = ScoringFormat.PPR
+    # Projections are synced for one scoring format and can't be rescored per request, so a
+    # scoring that doesn't match the synced data is rejected. None: the synced data's scoring.
+    scoring: ScoringFormat | None = None
     num_teams: int = Field(default=12, ge=1, le=MAX_TEAMS)
     # Starting lineup slots, e.g. {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
     roster_slots: dict[str, Annotated[int, Field(ge=0, le=MAX_SLOT_STARTERS)]] = Field(

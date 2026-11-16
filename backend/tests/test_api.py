@@ -184,6 +184,18 @@ def test_analyze_rejects_out_of_range_input(body):
     assert client.post("/trades/analyze", json=body).status_code == 422
 
 
+def test_analyze_rejects_scoring_the_synced_data_was_not_built_for():
+    from app.api.dependencies import get_matchups
+    from app.services.matchups import MatchupData
+
+    app.dependency_overrides[get_matchups] = lambda: (MatchupData(), {"season": 2026, "scoring": "ppr"})
+    body = {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}}
+    assert client.post("/trades/analyze", json=body).status_code == 200
+    assert client.post("/trades/analyze", json={**body, "league": {"scoring": "ppr"}}).status_code == 200
+    resp = client.post("/trades/analyze", json={**body, "league": {"scoring": "standard"}})
+    assert resp.status_code == 422 and resp.json()["code"] == "scoring_unavailable"
+
+
 def test_duplicate_check_is_fast_at_the_limit():
     import time
 

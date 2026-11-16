@@ -4,7 +4,7 @@ from app.api.errors import ApiError
 
 from app.api.dependencies import get_trade_analyzer
 from app.models.trade import TradeAnalysis, TradeRequest
-from app.services.trade_analyzer import TradeAnalyzer, UnknownPlayerError
+from app.services.trade_analyzer import ScoringMismatchError, TradeAnalyzer, UnknownPlayerError
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -18,5 +18,7 @@ def analyze_trade(
         return analyzer.analyze(request)
     except UnknownPlayerError as e:
         raise ApiError(404, "player_not_found", str(e)) from e
+    except ScoringMismatchError as e:
+        raise ApiError(422, "scoring_unavailable", str(e)) from e
     except ValueError as e:
         raise ApiError(422, "invalid_trade", str(e)) from e

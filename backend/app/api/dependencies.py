@@ -337,8 +337,17 @@ def get_local_player_data() -> LocalPlayerData:
 def get_trade_analyzer(
     repo: PlayerRepository = Depends(get_player_repository),
     outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
+    data: tuple[MatchupData, dict] = Depends(get_matchups),
 ) -> TradeAnalyzer:
-    return TradeAnalyzer(repo, ValuationService(repo, outlooks))
+    return TradeAnalyzer(repo, ValuationService(repo, outlooks), scoring=_scoring(data[1]))
+
+
+def _scoring(meta: dict) -> ScoringFormat | None:
+    """The scoring format the synced players were built for (None for sample data)."""
+    try:
+        return ScoringFormat(meta["scoring"])
+    except (KeyError, ValueError):
+        return None
 
 
 def get_tier_service(
