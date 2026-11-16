@@ -8,7 +8,7 @@
 //                    start, how confident the call is, each player's range, and the reasons.
 
 (() => {
-  const { el, request, errorMessage, loadPlayers, loadMeta, noteSampleData, avatar, profileUrl, createSearch } = window.PlayerUI;
+  const { el, request, errorMessage, loadPlayers, loadMeta, noteSampleData, copyText, avatar, profileUrl, createSearch } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -644,12 +644,7 @@
       els.search.focus();
     });
     els.share.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(location.href);
-        els.shareStatus.textContent = "Link copied";
-      } catch {
-        els.shareStatus.textContent = "Copy the address bar to share";
-      }
+      els.shareStatus.textContent = (await copyText(location.href)) ? "Link copied" : "Copy the address bar to share";
       setTimeout(() => { els.shareStatus.textContent = ""; }, 2500);
     });
     $("ss-setup").addEventListener("submit", (event) => event.preventDefault());

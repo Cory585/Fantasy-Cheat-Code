@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -71,3 +73,15 @@ def test_position_filter_is_a_segmented_control(page):
     expect(metas.first).to_be_visible()
     for text in metas.all_inner_texts():
         assert text.startswith("RB")
+
+
+def test_share_link_copies_without_a_prompt(page):
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    page.goto("/#a=rb1&b=wr2")
+    expect(page.locator(".tr-why-side")).to_have_count(2)
+    # Block the Clipboard API, as an insecure context would: the copy falls back instead of prompting.
+    page.evaluate("() => { navigator.clipboard.writeText = () => Promise.reject(new Error(\"blocked\")); }")
+    page.click("#share")
+    expect(page.locator("#share-status")).to_have_text(re.compile(r"Link copied|Copy the address bar to share"))
+    assert dialogs == []

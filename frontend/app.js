@@ -429,14 +429,7 @@ function readUrl() {
 async function copyShareLink(button) {
   writeUrl();
   const status = document.getElementById("share-status");
-  try {
-    await navigator.clipboard.writeText(location.href);
-    status.textContent = "Link copied";
-  } catch {
-    // Clipboard can be blocked (e.g. insecure context); fall back to selecting the URL.
-    window.prompt("Copy this link:", location.href);
-    status.textContent = "";
-  }
+  status.textContent = (await PlayerUI.copyText(location.href)) ? "Link copied" : "Copy the address bar to share";
   clearTimeout(button._statusTimer);
   button._statusTimer = setTimeout(() => { status.textContent = ""; }, 2500);
 }

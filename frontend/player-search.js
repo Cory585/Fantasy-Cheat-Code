@@ -203,6 +203,34 @@ window.PlayerUI = (() => {
     return wrap;
   }
 
+  // Copy text to the clipboard and say whether it worked. The Clipboard API needs a secure
+  // context and permission, so fall back to the older copy command before giving up.
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // try the fallback below
+    }
+    const focused = document.activeElement;
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    area.remove();
+    focused?.focus?.();
+    return copied;
+  }
+
   const profileUrl = (id) => `/player/?id=${encodeURIComponent(id)}`;
 
   function normalize(text) {
@@ -323,6 +351,6 @@ window.PlayerUI = (() => {
 
   return {
     POSITIONS, el, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
-    loadPlayers, loadMeta, noteSampleData, avatar, profileUrl, createSearch,
+    loadPlayers, loadMeta, noteSampleData, copyText, avatar, profileUrl, createSearch,
   };
 })();

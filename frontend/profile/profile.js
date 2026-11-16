@@ -237,10 +237,10 @@
       els.keyShow.setAttribute("aria-pressed", String(!showing));
     });
     els.keyCopy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(Store.profileKey());
+      if (await window.PlayerUI.copyText(Store.profileKey())) {
         say("Profile key copied. Paste it on this page on your other device.");
-      } catch {
+      } else {
+        // Show and select the key so it can be copied by hand.
         els.key.type = "text";
         els.key.select();
         say("Copy the selected key.");
