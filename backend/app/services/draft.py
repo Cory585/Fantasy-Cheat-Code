@@ -1,11 +1,14 @@
 """Draft guide: snake-draft pick order and players likely available at each of your picks.
 
-This is a skeleton. Targets are simply the players ranked around each pick on the board
-(ADP first, projection as a fallback). Roster needs, tiers, and positional runs come later.
+Targets are the players ranked around each pick on the board (ADP first, projection as a
+fallback). Each player carries their tier at their position (by projection, from the full
+pool, so tiers don't shift as players are drafted), and each pick flags positions whose best
+remaining tier is likely gone, or down to one player, by your next pick. Roster needs come later.
 """
 
-from app.models.draft import DraftPick, DraftPlan, DraftTarget, PlannedPick
-from app.models.player import Player
+from app.models.draft import DraftPick, DraftPlan, DraftTarget, PlannedPick, TierAlert
+from app.models.player import Player, Position
+from app.services.tiers import depth, group_into_tiers
 
 
 FLOOR_WINDOW = 1.0  # picks below ESPN's maximum ADP that count as "undrafted"
@@ -31,11 +34,28 @@ def snake_picks(teams: int, slot: int, rounds: int) -> list[DraftPick]:
     return picks
 
 
+# A tier is "running dry" when this many of its players or fewer will be left at your next pick.
+RUNNING_DRY = 1
+
+
 class DraftPlanner:
     def __init__(self, players: list[Player], adp: dict[int, float] | None = None):
         """`adp` maps ESPN player id to average draft position."""
         self._adp = adp or {}
         self._board = self._rank(players)
+        self._tiers: dict[int, dict[str, int]] = {}
+
+    def tiers(self, teams: int) -> dict[str, int]:
+        """Player id -> tier at their position, by projection, for a league of `teams`."""
+        if teams not in self._tiers:
+            tiers: dict[str, int] = {}
+            for position in Position:
+                pool = sorted((p for p, _ in self._board if p.position == position and p.ros_projection > 0),
+                              key=lambda p: (-p.ros_projection, p.name, p.id))[:depth(position, teams)]
+                for number, group in enumerate(group_into_tiers(pool, lambda p: p.ros_projection), start=1):
+                    tiers.update((p.id, number) for p in group)
+            self._tiers[teams] = tiers
+        return self._tiers[teams]
 
     def _player_adp(self, player: Player, floor: float | None) -> float | None:
         adp = self._adp.get(player.espn_id) if player.espn_id is not None else None
@@ -81,10 +101,35 @@ class DraftPlanner:
     def adp_source(self) -> str:
         return "espn" if any(adp is not None for _, adp in self._board) else "projection"
 
-    def _target(self, board: list[tuple[Player, float | None]], index: int) -> DraftTarget:
+    def _target(self, board: list[tuple[Player, float | None]], index: int,
+                tiers: dict[str, int] | None = None) -> DraftTarget:
         p, adp = board[index]
         return DraftTarget(player_id=p.id, name=p.name, position=p.position, team=p.team,
-                           adp=adp, projection=p.ros_projection, rank=index + 1)
+                           adp=adp, projection=p.ros_projection, rank=index + 1,
+                           tier=(tiers or {}).get(p.id))
+
+    @staticmethod
+    def _tier_alerts(board: list[tuple[Player, float | None]], start: int, next_start: int,
+                     tiers: dict[str, int]) -> list[TierAlert]:
+        """Positions whose best tier left at this pick (board[start:]) is likely gone, or down
+        to RUNNING_DRY players, by your next pick (board[next_start:]), assuming you take
+        board[start] and other teams take the players in between."""
+        best: dict[Position, int] = {}
+        for p, _ in board[start:]:
+            tier = tiers.get(p.id)
+            if tier is not None and tier < best.get(p.position, tier + 1):
+                best[p.position] = tier
+        alerts = []
+        for position, tier in best.items():
+            in_tier = [i for i in range(start, len(board))
+                       if board[i][0].position == position and tiers.get(board[i][0].id) == tier]
+            left = len(in_tier)
+            left_at_next = sum(1 for i in in_tier if i >= next_start)
+            if left_at_next <= RUNNING_DRY and left_at_next < left:
+                alerts.append(TierAlert(position=position, tier=tier, left=left, left_at_next=left_at_next))
+        order = list(Position)
+        alerts.sort(key=lambda a: (a.left_at_next, a.tier, order.index(a.position)))
+        return alerts
 
     def plan(self, teams: int, slot: int, rounds: int, targets_per_pick: int = 5,
              drafted: frozenset[str] = frozenset(), picks_made: int = 0) -> DraftPlan:
@@ -96,6 +141,7 @@ class DraftPlanner:
         out, and the rest of the board fills the picks still to come."""
         board = [entry for entry in self._board if entry[0].id not in drafted] if drafted else self._board
         made = max(picks_made, len(self._board) - len(board))
+        tiers = self.tiers(teams)
         mine = snake_picks(teams, slot, rounds)
         picks = []
         for i, pick in enumerate(mine):
@@ -103,7 +149,7 @@ class DraftPlanner:
                 continue
             start = pick.overall - 1 - made  # players ranked ahead of this pick are assumed gone
             end = min(start + targets_per_pick, len(board))
-            targets = [self._target(board, j) for j in range(start, end)]
+            targets = [self._target(board, j, tiers) for j in range(start, end)]
 
             # Players other teams take between this pick and your next one, assuming you
             # take the top-ranked player here.
@@ -118,8 +164,9 @@ class DraftPlanner:
                 targets=targets,
                 picks_until_next=next_overall - pick.overall - 1 if next_overall else None,
                 position_mix=mix,
+                tier_alerts=self._tier_alerts(board, start, next_overall - 1 - made, tiers) if next_overall else [],
             ))
         remaining = max(teams * rounds - made, 0)
-        mock = [self._target(board, j) for j in range(min(remaining, len(board)))]
+        mock = [self._target(board, j, tiers) for j in range(min(remaining, len(board)))]
         return DraftPlan(teams=teams, slot=slot, rounds=rounds, adp_source=self.adp_source,
                          picks_made=made, picks=picks, board=mock)

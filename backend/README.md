@@ -182,8 +182,16 @@ The response also includes what the page's diagrams use:
   `null` after your last pick). The page draws these as arcs on the pick timeline.
 - `picks[].position_mix`: the positions of the players other teams likely take before your next
   pick, assuming you take the top-ranked player. The page shows it as a stacked bar on each pick.
+- `tier` on every target and board entry: the player's tier at their position, from the same
+  tiering as `/tiers` (by projection, for a league of `teams`). Tiers come from the full pool,
+  so they don't shift as players are drafted. `null` past the tiered depth.
+- `picks[].tier_alerts`: positions whose best tier left at this pick is likely gone, or down to
+  one player, by your next pick. Each has the `tier`, how many of its players are `left` at
+  this pick, and how many are likely still there at your next (`left_at_next`), from the same
+  ADP board as `position_mix`. Sorted most urgent first; none after your last pick. The page
+  shows up to three per pick ("Last chance: all 3 Tier 1 RBs left are likely gone before 2.08").
 
-This is a skeleton. It doesn't yet account for your roster so far, tiers, or positional runs.
+It doesn't yet account for your roster so far.
 
 For a draft in progress, pass the players already taken as repeated `drafted` ids, and
 `picks_made` (picks in so far, which can be more than the drafted ids found, since a league can

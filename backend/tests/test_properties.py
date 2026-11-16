@@ -93,6 +93,21 @@ def test_plan_invariants(pool, teams, rounds, data):
             assert sum(planned.position_mix.values()) <= planned.picks_until_next
             assert all(n > 0 for n in planned.position_mix.values())
 
+        # Tier alerts: one per position at most, each a tier actually running dry.
+        assert len({a.position for a in planned.tier_alerts}) == len(planned.tier_alerts)
+        for alert in planned.tier_alerts:
+            assert alert.tier >= 1
+            assert 0 <= alert.left_at_next <= 1 and alert.left_at_next < alert.left
+        if is_last:
+            assert planned.tier_alerts == []
+
+    # Tiers at each position never put a lower projection in a better tier.
+    tiers = DraftPlanner(players, adp).tiers(teams)
+    for position in {p.position for p in players}:
+        tiered = sorted((p for p in players if p.position == position and p.id in tiers),
+                        key=lambda p: -p.ros_projection)
+        assert [tiers[p.id] for p in tiered] == sorted(tiers[p.id] for p in tiered)
+
 
 @given(pool=player_pools)
 def test_adp_order_is_respected_among_players_with_usable_adp(pool):

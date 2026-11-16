@@ -196,3 +196,59 @@ def test_draft_plan_endpoint_takes_drafted_players():
 ])
 def test_draft_plan_rejects_bad_drafted_lists(params):
     assert client.get("/draft/plan", params=params).status_code == 422
+
+
+# ---------- Tiers and tier alerts ----------
+
+def _tier_pool():
+    # ADP order: a to g. RBs a/b are one tier and d/f/g the next; WRs c/e share a tier.
+    rows = [("a", Position.RB, 300), ("b", Position.RB, 298), ("c", Position.WR, 250),
+            ("d", Position.RB, 200), ("e", Position.WR, 249), ("f", Position.RB, 198), ("g", Position.RB, 196)]
+    players = [Player(id=pid, name=pid.upper(), position=pos, team="X", ros_projection=pts, espn_id=i + 1)
+               for i, (pid, pos, pts) in enumerate(rows)]
+    return players, {i + 1: float(i + 1) for i in range(len(rows))}
+
+
+def test_targets_and_board_carry_tiers():
+    players, adp = _tier_pool()
+    plan = DraftPlanner(players, adp).plan(teams=2, slot=1, rounds=2, targets_per_pick=5)
+    tiers = {t.player_id: t.tier for t in plan.board}
+    assert tiers == {"a": 1, "b": 1, "c": 1, "d": 2}
+    assert plan.picks[0].targets[4].tier == 1  # e, past the board's 4 picks but still tiered
+
+
+def test_alerts_flag_tiers_gone_by_your_next_pick():
+    players, adp = _tier_pool()
+    # 2 teams, slot 1: picks 1, 4, 5.
+    first, second, last = DraftPlanner(players, adp).plan(teams=2, slot=1, rounds=3).picks
+    # At pick 1 both tier-1 RBs are there, and both are gone by pick 4 (you take a, the
+    # other team b). One of the two WRs (e) should still be there.
+    assert [(a.position, a.tier, a.left, a.left_at_next) for a in first.tier_alerts] == [
+        (Position.RB, 1, 2, 0), (Position.WR, 1, 2, 1)]
+    # At pick 4 three tier-2 RBs are left and two last to pick 5; WR e is still there too.
+    assert second.tier_alerts == []
+    assert last.tier_alerts == []  # no next pick to warn about
+
+
+def test_back_to_back_picks_only_lose_the_player_you_take():
+    players, adp = _tier_pool()
+    # 2 teams, slot 2: picks 2 and 3 back to back.
+    first = DraftPlanner(players, adp).plan(teams=2, slot=2, rounds=2).picks[0]
+    # At pick 2 (a is gone): you take b, the last tier-1 RB, then pick again right away.
+    assert [(a.position, a.tier, a.left, a.left_at_next) for a in first.tier_alerts] == [(Position.RB, 1, 1, 0)]
+
+
+def test_tiers_stay_fixed_as_players_are_drafted():
+    players, adp = _tier_pool()
+    plan = DraftPlanner(players, adp).plan(teams=2, slot=1, rounds=3, drafted=frozenset({"a", "b"}), picks_made=2)
+    # The tier-1 RBs are gone, so the best RB left is tier 2 (it isn't renumbered as 1).
+    assert plan.picks[0].targets[0].player_id == "d"
+    assert plan.picks[0].targets[0].tier == 2
+
+
+def test_planner_tiers_depend_on_league_size():
+    players, adp = _tier_pool()
+    planner = DraftPlanner(players, adp)
+    assert planner.tiers(2) is planner.tiers(2)  # cached
+    assert set(planner.tiers(2)) == {"a", "b", "c", "d", "e", "f", "g"}
+    assert set(planner.tiers(1)) <= set(planner.tiers(2))  # a smaller league tiers fewer players

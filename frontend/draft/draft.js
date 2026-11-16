@@ -342,7 +342,8 @@ function renderBoard() {
         line.append(el("span", "pos-tag", player.position), name);
         cell.append(line);
         cell.dataset.tip = `${pickLabel(round, pickInRound)}: ${player.name} (${player.position}, ${player.team}), ` +
-          (player.adp != null ? `ADP ${player.adp.toFixed(1)}` : "no ADP");
+          (player.adp != null ? `ADP ${player.adp.toFixed(1)}` : "no ADP") +
+          (player.tier != null ? `, ${player.position} tier ${player.tier}` : "");
       }
       roundRow.append(cell);
     }
@@ -420,12 +421,47 @@ function dotPlot(targets, overall) {
   return chart;
 }
 
-function targetItem(target, overall) {
+// ---------- Tiers ----------
+
+const POSITION_PLURALS = { QB: "QBs", RB: "RBs", WR: "WRs", TE: "TEs", K: "kickers", DST: "defenses" };
+const ALERTS_SHOWN = 3;
+
+function tierAlertText(alert, nextLabel) {
+  const group = `Tier ${alert.tier} ${POSITION_PLURALS[alert.position] || alert.position}`;
+  if (alert.left_at_next === 0) {
+    return alert.left === 1
+      ? `Last chance: the last ${group.replace(/s$/, "")} left is likely gone before ${nextLabel}.`
+      : `Last chance: all ${alert.left} ${group} left are likely gone before ${nextLabel}.`;
+  }
+  return `${group} are running dry: ${alert.left} left now, about ${alert.left_at_next} at ${nextLabel}.`;
+}
+
+function tierAlerts(alerts, nextLabel) {
+  if (!alerts?.length || !nextLabel) return null;
+  const list = el("ul", "tier-alerts");
+  list.setAttribute("aria-label", "Tiers running dry");
+  list.append(...alerts.slice(0, ALERTS_SHOWN).map((alert) => {
+    const item = el("li", `tier-alert pos-${alert.position}` + (alert.left_at_next === 0 ? " is-last" : ""));
+    item.append(el("span", "pos-tag", alert.position), el("span", null, tierAlertText(alert, nextLabel)));
+    return item;
+  }));
+  return list;
+}
+
+function targetItem(target, overall, dry = new Set()) {
   const item = el("li", `target pos-${target.position}`);
   const name = el("span", "target-name");
   const link = el("a", "profile-link", target.name);
   link.href = profileUrl(target.player_id);
   name.append(el("span", "pos-tag", target.position), link);
+  if (target.tier != null) {
+    const runningDry = dry.has(`${target.position}${target.tier}`);
+    const chip = el("span", "tier-chip" + (runningDry ? " is-dry" : ""), `T${target.tier}`);
+    chip.dataset.tip = `${target.position} tier ${target.tier}` +
+      (runningDry ? ": this tier is likely gone, or nearly, by your next pick" : "");
+    chip.setAttribute("aria-label", chip.dataset.tip);
+    name.append(chip);
+  }
   const meta = el("span", "player-meta",
     `${target.team}, ${adpPhrase(target, overall)}, ${Math.round(target.projection)} proj. pts`);
   item.append(name, meta);
@@ -443,18 +479,22 @@ function renderPlan() {
     return;
   }
   els.planList.replaceChildren(
-    ...plan.picks.map(({ pick, targets, position_mix, picks_until_next }) => {
+    ...plan.picks.map(({ pick, targets, position_mix, picks_until_next, tier_alerts }, i) => {
       const card = el("li", "plan-pick");
       const head = el("div", "plan-pick-head");
       head.append(el("strong", null, pick.label), el("span", null, `Round ${pick.round}, ${ordinal(pick.overall)} overall`));
       card.append(head, mixBar(position_mix, picks_until_next));
+      const alerts = (tier_alerts || []).filter((a) => !state.position || a.position === state.position);
+      const alertList = tierAlerts(alerts, plan.picks[i + 1]?.pick.label);
+      if (alertList) card.append(alertList);
+      const dry = new Set(alerts.map((a) => `${a.position}${a.tier}`));
 
       const shown = targets.filter((t) => !state.position || t.position === state.position).slice(0, TARGETS_SHOWN);
       if (shown.length) {
         const plot = dotPlot(shown, pick.overall);
         if (plot) card.append(plot);
         const list = el("ol", "target-list");
-        list.append(...shown.map((t) => targetItem(t, pick.overall)));
+        list.append(...shown.map((t) => targetItem(t, pick.overall, dry)));
         card.append(list);
       } else {
         card.append(el("p", "player-meta", targets.length
