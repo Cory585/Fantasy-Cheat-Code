@@ -38,6 +38,27 @@ def test_flex_does_not_affect_qb_or_kicker():
     assert svc.replacement_level(Position.RB, league) == 80
 
 
+def test_superflex_goes_to_the_best_remaining_qb_rb_wr_or_te():
+    # 2 teams, 1 QB + 1 RB + 1 SUPERFLEX each. After the dedicated slots, QBs 280 and 260
+    # beat the next RB (80), so both superflex spots go to QBs and the QB baseline drops.
+    league = LeagueSettings(num_teams=2, roster_slots={"QB": 1, "RB": 1, "SUPERFLEX": 1})
+    svc = service(make(Position.QB, 300, 290, 280, 260, 200) + make(Position.RB, 100, 90, 80, 70))
+    assert svc.replacement_level(Position.QB, league) == 200
+    assert svc.replacement_level(Position.RB, league) == 80
+    one_qb = LeagueSettings(num_teams=2, roster_slots={"QB": 1, "RB": 1})
+    assert svc.replacement_level(Position.QB, one_qb) == 280
+    qb = svc.value(svc._repo.get("QB2"), league)
+    assert qb.value == 80 and qb.starter  # 280 - 200: a starter only in superflex
+
+
+def test_superflex_fills_after_flex():
+    # FLEX takes the best RB/WR/TE first; SUPERFLEX then takes the next best of anyone.
+    league = LeagueSettings(num_teams=1, roster_slots={"QB": 1, "RB": 1, "FLEX": 1, "SUPERFLEX": 1})
+    svc = service(make(Position.QB, 300, 100, 50) + make(Position.RB, 200, 150, 120, 10))
+    assert svc.replacement_level(Position.RB, league) == 10  # RB 150 at flex, RB 120 at superflex
+    assert svc.replacement_level(Position.QB, league) == 100
+
+
 def test_small_pool_gets_zero_baseline():
     league = LeagueSettings(num_teams=12)
     svc = service(make(Position.RB, 100, 90))

@@ -20,7 +20,7 @@ MAX_SLOT_STARTERS = 10
 MAX_PLAYERS_PER_SIDE = 40
 MAX_ROSTER_SIZE = 100
 MAX_TEAM_NAME = 50
-ROSTER_SLOT_NAMES = ("QB", "RB", "WR", "TE", "FLEX", "K", "DST")
+ROSTER_SLOT_NAMES = ("QB", "RB", "WR", "TE", "FLEX", "SUPERFLEX", "K", "DST")
 
 PlayerId = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -30,7 +30,8 @@ class LeagueSettings(BaseModel):
     # scoring that doesn't match the synced data is rejected. None: the synced data's scoring.
     scoring: ScoringFormat | None = None
     num_teams: int = Field(default=12, ge=1, le=MAX_TEAMS)
-    # Starting lineup slots, e.g. {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
+    # Starting lineup slots, e.g. {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}. FLEX takes an
+    # RB, WR, or TE; SUPERFLEX also takes a QB.
     roster_slots: dict[str, Annotated[int, Field(ge=0, le=MAX_SLOT_STARTERS)]] = Field(
         default_factory=lambda: {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "K": 1, "DST": 1}
     )
@@ -38,7 +39,7 @@ class LeagueSettings(BaseModel):
     @field_validator("roster_slots")
     @classmethod
     def known_slots(cls, slots: dict[str, int]) -> dict[str, int]:
-        # Unsupported slots (e.g. SUPERFLEX) would otherwise be silently ignored.
+        # Unsupported slots (e.g. BENCH) would otherwise be silently ignored.
         unknown = sorted(set(slots) - set(ROSTER_SLOT_NAMES))
         if unknown:
             raise ValueError(f"unsupported roster slot(s): {', '.join(unknown)}; use {', '.join(ROSTER_SLOT_NAMES)}")

@@ -177,11 +177,20 @@ def test_unreadable_cache_reports_sample_source(tmp_path):
         {"side_a": {"player_ids": [""]}, "side_b": {"player_ids": ["wr1"]}},
         {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"num_teams": 33}},
         {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"FLEX": 11}}},
-        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"SUPERFLEX": 1}}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"BENCH": 1}}},
     ],
 )
 def test_analyze_rejects_out_of_range_input(body):
     assert client.post("/trades/analyze", json=body).status_code == 422
+
+
+def test_analyze_values_qbs_higher_in_superflex():
+    body = {"side_a": {"player_ids": ["qb2"]}, "side_b": {"player_ids": ["rb2"]},
+            "league": {"num_teams": 1, "roster_slots": {"QB": 1, "RB": 1}}}
+    one_qb = client.post("/trades/analyze", json=body).json()
+    body["league"]["roster_slots"]["SUPERFLEX"] = 1
+    superflex = client.post("/trades/analyze", json=body).json()
+    assert superflex["side_a"]["total_value_given"] > one_qb["side_a"]["total_value_given"]
 
 
 def test_analyze_rejects_scoring_the_synced_data_was_not_built_for():
