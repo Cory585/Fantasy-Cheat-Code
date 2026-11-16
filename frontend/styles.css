@@ -1630,7 +1630,7 @@ main {
 .timeline-svg .my-pick-dot:focus-visible { outline: none; stroke: var(--focus); stroke-width: 3; }
 
 .pick-num {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -1652,7 +1652,7 @@ main {
 
 .pos-tag {
   flex: none;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--muted);
 }
