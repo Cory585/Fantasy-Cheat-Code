@@ -1,5 +1,8 @@
 "use strict";
 
+// Shared helpers from /player-search.js.
+const { avatar, createSearch, ordinal, profileUrl } = window.PlayerUI;
+
 const SIDES = ["a", "b"];
 
 const state = {
@@ -7,7 +10,7 @@ const state = {
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
   values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
-  search: { a: { position: "", active: -1, results: [], open: false }, b: { position: "", active: -1, results: [], open: false } },
+  position: { a: "", b: "" }, // each side's search filter ("" = all positions)
 };
 
 const MAX_RESULTS = 8;
@@ -72,28 +75,14 @@ const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
 // ---------- Data ----------
 
-// fetch() that turns network failures into a plain-language error.
-async function request(url, options) {
-  try {
-    return await fetch(url, options);
-  } catch {
-    throw new Error("Couldn't reach the server.");
-  }
-}
-
 async function loadPlayers() {
   state.players = await PlayerUI.loadPlayers();
 }
 
 // Where the data comes from and how fresh it is. Not essential, so failures are quiet.
 async function loadMeta() {
-  try {
-    const response = await request("/meta");
-    if (!response.ok) return;
-    state.meta = await response.json();
-  } catch {
-    return;
-  }
+  state.meta = await PlayerUI.loadMeta();
+  if (!state.meta) return;
   const el = document.getElementById("data-status");
   const meta = state.meta;
   if (meta.source !== "synced") {
@@ -130,168 +119,30 @@ function formatPoints(value) {
   return value.toFixed(1);
 }
 
-// ESPN's image CDN, resized server-side so thumbnails stay small.
-const ESPN_LOGO_CODES = { WAS: "wsh" };
-
-function teamLogoUrl(team) {
-  const code = (ESPN_LOGO_CODES[team] || team).toLowerCase();
-  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${code}.png&w=80&h=80`;
-}
-
-function headshotUrl(player) {
-  if (player.position === "DST") return teamLogoUrl(player.team);
-  if (!player.espn_id) return null;
-  return `https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.espn_id}.png&w=96&h=70`;
-}
-
-// Headshot (or team logo for defenses), falling back to initials if the image is missing.
-function avatar(player, size = "md") {
-  const wrap = document.createElement("span");
-  wrap.className = `avatar avatar-${size}`;
-  wrap.setAttribute("aria-hidden", "true");
-  const initials = player.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
-  const url = headshotUrl(player);
-  if (!url) {
-    wrap.textContent = initials;
-    return wrap;
-  }
-  const img = document.createElement("img");
-  img.src = url;
-  img.alt = "";
-  img.loading = "lazy";
-  img.addEventListener("error", () => {
-    img.remove();
-    wrap.textContent = initials;
-  });
-  wrap.append(img);
-  return wrap;
-}
-
 // ---------- Player search ----------
 
-function normalize(text) {
-  return text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
-}
+const searches = {}; // side -> PlayerUI search combobox
 
-function searchPlayers(query, position) {
-  const q = normalize(query.trim());
-  return [...state.players.values()]
-    .filter((p) => !inTrade(p.id))
-    .filter((p) => !position || p.position === position)
-    .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
-    .sort((x, y) => y.ros_projection - x.ros_projection)
-    .slice(0, MAX_RESULTS);
-}
-
-function searchOption(side, player, index) {
-  const option = document.createElement("li");
-  option.id = `result-${side}-${index}`;
-  option.className = "search-option";
-  option.setAttribute("role", "option");
-  option.setAttribute("aria-selected", String(index === state.search[side].active));
-
-  const text = document.createElement("span");
-  text.className = "search-option-text";
-  const name = document.createElement("span");
-  name.className = "search-option-name";
-  name.textContent = player.name;
-  const meta = document.createElement("span");
-  meta.className = "search-option-meta";
-  meta.textContent = [player.position, player.team, player.injury_status].filter(Boolean).join(", ");
-  text.append(name, meta);
-
-  const proj = document.createElement("span");
-  proj.className = "search-option-proj";
-  proj.textContent = formatPoints(player.ros_projection);
-
-  option.append(avatar(player, "sm"), text, proj);
-  // mousedown (not click) so the input doesn't blur and close the list first.
-  option.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-    addPlayer(side, player.id);
+function setupSearch(side) {
+  const box = sideEl(side);
+  searches[side] = createSearch({
+    input: box.querySelector(".player-search"),
+    list: box.querySelector(".search-results"),
+    players: () => state.players,
+    allowed: (p) => !inTrade(p.id) && (!state.position[side] || p.position === state.position[side]),
+    onPick: (p) => addPlayer(side, p.id),
+    full: () => (sideIsFull(side) ? `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.` : null),
+    limit: MAX_RESULTS,
   });
-  return option;
-}
-
-// Open or close a side's results list, then redraw it.
-function setSearchOpen(side, open) {
-  state.search[side].open = open;
-  if (!open) state.search[side].active = -1;
-  renderSearch(side);
-}
-
-function renderSearch(side) {
-  const el = sideEl(side);
-  const input = el.querySelector(".player-search");
-  const list = el.querySelector(".search-results");
-  const search = state.search[side];
-  search.results = searchPlayers(input.value, search.position);
-  if (search.active >= search.results.length) search.active = search.results.length - 1;
-
-  const show = search.open && document.activeElement === input;
-  list.hidden = !show;
-  input.setAttribute("aria-expanded", String(show));
-  input.removeAttribute("aria-activedescendant");
-  if (!show) return;
-
-  if (sideIsFull(side)) {
-    const full = document.createElement("li");
-    full.className = "search-empty";
-    full.textContent = `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.`;
-    list.replaceChildren(full);
-    return;
-  }
-
-  if (search.results.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "search-empty";
-    const query = input.value.trim();
-    empty.textContent = query ? `No players match "${query}".` : "No players left to add.";
-    list.replaceChildren(empty);
-    return;
-  }
-
-  list.replaceChildren(...search.results.map((p, i) => searchOption(side, p, i)));
-  if (search.active >= 0) {
-    input.setAttribute("aria-activedescendant", `result-${side}-${search.active}`);
-    list.children[search.active]?.scrollIntoView({ block: "nearest" });
-  }
-}
-
-function onSearchKey(side, event) {
-  const search = state.search[side];
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
-    if (!search.open) {
-      search.open = true;
-      renderSearch(side); // refresh results before moving through them
-    }
-    const total = search.results.length;
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    search.active = total ? (search.active + step + total) % total : -1;
-    if (event.key === "ArrowUp" && search.active === -1) search.active = total - 1;
-    renderSearch(side);
-  } else if (event.key === "Enter") {
-    event.preventDefault();
-    const pick = search.results[search.active >= 0 ? search.active : 0];
-    if (pick) addPlayer(side, pick.id);
-  } else if (event.key === "Escape") {
-    // First Escape closes the list; a second one (list already closed) clears the text.
-    if (search.open) {
-      event.preventDefault();
-      setSearchOpen(side, false);
-    }
-  }
 }
 
 function setPositionFilter(side, position) {
-  state.search[side].position = position;
-  state.search[side].active = -1;
-  for (const chipEl of sideEl(side).querySelectorAll(".pos-filter button")) {
-    chipEl.setAttribute("aria-pressed", String(chipEl.dataset.pos === position));
+  state.position[side] = position;
+  for (const button of sideEl(side).querySelectorAll(".pos-filter button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.pos === position));
   }
   sideEl(side).querySelector(".player-search").focus();
-  setSearchOpen(side, true);
+  searches[side].setOpen(true);
 }
 
 function renderRoster(side) {
@@ -325,7 +176,7 @@ function rosterItem(side, player) {
   name.className = "player-name";
   const link = document.createElement("a");
   link.className = "profile-link";
-  link.href = `/player/?id=${encodeURIComponent(player.id)}`;
+  link.href = profileUrl(player.id);
   link.textContent = player.name;
   name.append(link);
   if (player.injury_status) {
@@ -367,7 +218,7 @@ function rosterItem(side, player) {
 
 function render() {
   for (const side of SIDES) {
-    renderSearch(side);
+    searches[side].render();
     renderRoster(side);
   }
   refreshValues();
@@ -636,7 +487,7 @@ function playerCard(valuation, sideTotal) {
   title.className = "tr-player-title";
   const name = document.createElement("a");
   name.className = "tr-player-name";
-  name.href = `/player/?id=${encodeURIComponent(v.player.id)}`;
+  name.href = profileUrl(v.player.id);
   name.textContent = v.player.name;
   const meta = document.createElement("span");
   meta.className = "tr-player-meta";
@@ -676,12 +527,6 @@ function playerCard(valuation, sideTotal) {
   if (strengths) card.append(strengths);
   if (concerns) card.append(concerns);
   return card;
-}
-
-function ordinal(n) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function playerBreakdown(analysis) {
@@ -866,8 +711,7 @@ function addPlayer(side, id) {
   if (!id || inTrade(id) || !state.players.has(id) || sideIsFull(side)) return;
   state.sides[side].push(id);
   sideEl(side).querySelector(".player-search").value = "";
-  state.search[side].open = false;
-  state.search[side].active = -1;
+  searches[side].setOpen(false);
   render();
 }
 
@@ -895,15 +739,7 @@ function clearTrade() {
 function bindEvents() {
   for (const side of SIDES) {
     const el = sideEl(side);
-    const input = el.querySelector(".player-search");
-    input.addEventListener("input", () => {
-      state.search[side].open = true;
-      state.search[side].active = input.value.trim() ? 0 : -1;
-      renderSearch(side);
-    });
-    input.addEventListener("click", () => setSearchOpen(side, true));
-    input.addEventListener("blur", () => setSearchOpen(side, false));
-    input.addEventListener("keydown", (event) => onSearchKey(side, event));
+    setupSearch(side);
     for (const chipEl of el.querySelectorAll(".pos-filter button")) {
       chipEl.addEventListener("click", () => setPositionFilter(side, chipEl.dataset.pos));
     }

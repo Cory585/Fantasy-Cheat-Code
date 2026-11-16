@@ -85,3 +85,18 @@ def test_share_link_copies_without_a_prompt(page):
     page.click("#share")
     expect(page.locator("#share-status")).to_have_text(re.compile(r"Link copied|Copy the address bar to share"))
     assert dialogs == []
+
+
+def test_search_adds_players_with_the_keyboard(page):
+    page.goto("/")
+    search = page.locator('.side[data-side="b"] .player-search')
+    expect(search).to_be_enabled()
+    search.fill("Sample WR")
+    expect(page.locator("#results-b .search-option").first).to_be_visible()
+    search.press("ArrowDown")
+    search.press("ArrowDown")
+    expect(search).to_have_attribute("aria-activedescendant", "results-b-opt-1")
+    search.press("Enter")
+    expect(page.locator('.side[data-side="b"] .roster-item')).to_have_count(1)
+    expect(page.locator("#results-b")).to_be_hidden()
+    assert "b=" in page.url

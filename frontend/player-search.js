@@ -231,6 +231,13 @@ window.PlayerUI = (() => {
     return copied;
   }
 
+  // 1st, 2nd, 3rd, 4th... 11th, 12th, 13th, 21st.
+  function ordinal(n) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
   const profileUrl = (id) => `/player/?id=${encodeURIComponent(id)}`;
 
   function normalize(text) {
@@ -244,8 +251,9 @@ window.PlayerUI = (() => {
    *   allowed(p):   whether a player can be picked (e.g. eligible and not already chosen)
    *   onPick(p):    called with the chosen player
    *   full():       optional; a message to show instead of results when nothing more can be added
+   *   limit:        optional; how many results to show at most
    */
-  function createSearch({ input, list, players, allowed = () => true, onPick, full = () => null }) {
+  function createSearch({ input, list, players, allowed = () => true, onPick, full = () => null, limit = MAX_RESULTS }) {
     const state = { active: -1, results: [], open: false };
     const idPrefix = `${list.id || "results"}-opt`;
 
@@ -255,7 +263,7 @@ window.PlayerUI = (() => {
         .filter(allowed)
         .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
         .sort((x, y) => y.ros_projection - x.ros_projection)
-        .slice(0, MAX_RESULTS);
+        .slice(0, limit);
     }
 
     function option(player, index) {
@@ -350,7 +358,7 @@ window.PlayerUI = (() => {
   }
 
   return {
-    POSITIONS, el, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
+    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
     loadPlayers, loadMeta, noteSampleData, copyText, avatar, profileUrl, createSearch,
   };
 })();
