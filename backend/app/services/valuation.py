@@ -32,6 +32,31 @@ STREAMABLE = (Position.K, Position.DST)
 PROVIDER_NAMES = {"sleeper": "Sleeper", "espn": "ESPN"}
 
 
+def fill_lineups(pools: dict[Position, list[float]], league: LeagueSettings) -> tuple[dict[Position, float], dict[Position, int]]:
+    """Fill every team's lineup with the best available players, then take the best leftover
+    at each position as its replacement level. `pools` holds each position's projections,
+    best first. Returns the replacement levels and how many players start at each position.
+
+    Dedicated slots fill first (e.g. 2 RB x 12 teams = the top 24 RBs). FLEX slots then go
+    to the best remaining RB/WR/TE, so a WR3 who starts at flex has value instead of sitting
+    below the replacement line with the waiver wire.
+    """
+    pools = {pos: pools.get(pos, []) for pos in Position}
+    taken = {pos: min(league.roster_slots.get(pos.value, 0) * league.num_teams, len(pools[pos])) for pos in Position}
+
+    flex_slots = league.roster_slots.get("FLEX", 0) * league.num_teams
+    for _ in range(flex_slots):
+        candidates = [pos for pos in FLEX_POSITIONS if taken[pos] < len(pools[pos])]
+        if not candidates:
+            break
+        best = max(candidates, key=lambda pos: pools[pos][taken[pos]])
+        taken[best] += 1
+
+    # A pool too small to have anyone left over (e.g. the sample data) gets a 0 baseline.
+    levels = {pos: pools[pos][taken[pos]] if taken[pos] < len(pools[pos]) else 0.0 for pos in Position}
+    return levels, taken
+
+
 @dataclass
 class _LeagueTable:
     levels: dict[Position, float]  # replacement-level projection
@@ -61,31 +86,10 @@ class ValuationService:
         return self._levels[key]
 
     def _replacement_levels(self, league: LeagueSettings) -> _LeagueTable:
-        """Fill every team's lineup with the best available players, then take the best
-        leftover at each position as its replacement level.
-
-        Dedicated slots fill first (e.g. 2 RB x 12 teams = the top 24 RBs). FLEX slots then
-        go to the best remaining RB/WR/TE, so a WR3 who starts at flex has value instead of
-        sitting below the replacement line with the waiver wire.
-        """
         pools = {
             pos: sorted(self._repo.list(pos), key=self.projection, reverse=True) for pos in Position
         }
-        taken = {pos: min(league.roster_slots.get(pos.value, 0) * league.num_teams, len(pools[pos])) for pos in Position}
-
-        flex_slots = league.roster_slots.get("FLEX", 0) * league.num_teams
-        for _ in range(flex_slots):
-            candidates = [pos for pos in FLEX_POSITIONS if taken[pos] < len(pools[pos])]
-            if not candidates:
-                break
-            best = max(candidates, key=lambda pos: self.projection(pools[pos][taken[pos]]))
-            taken[best] += 1
-
-        # A pool too small to have anyone left over (e.g. the sample data) gets a 0 baseline.
-        levels = {
-            pos: self.projection(pools[pos][taken[pos]]) if taken[pos] < len(pools[pos]) else 0.0
-            for pos in Position
-        }
+        levels, taken = fill_lineups({pos: [self.projection(p) for p in pool] for pos, pool in pools.items()}, league)
         ranks = {p.id: i + 1 for pos in Position for i, p in enumerate(pools[pos])}
         return _LeagueTable(levels, taken, ranks)
 

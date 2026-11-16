@@ -221,6 +221,36 @@ and light:
 The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
 page says the plan may not match.
 
+## Tier lists
+
+`GET /tiers` (and the page at `/tiers/`) groups the players at a position into tiers: players
+in the same tier are roughly interchangeable, and a new tier starts where projected points drop
+sharply.
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `position` | required | `QB`, `RB`, `WR`, `TE`, `K`, `DST`, or `FLEX` (RB, WR, and TE ranked together) |
+| `horizon` | `ros` | `ros` (rest of season) or `week` |
+| `week` | current week | Only with `horizon=week`; must be within the synced weeks |
+| `teams` | 12 | 4 to 20. Sets how deep the list goes, and flex replacement levels |
+| `depth` | scaled to `teams` | 1 to 300 players. Default per team: QB 2.5, RB 5, WR 6, TE 2.5, K 1.5, DST 1.5, FLEX 10 |
+
+Single positions are tiered by projected points (the schedule- and form-adjusted projection
+for the rest of the season, or the week's consensus projection). FLEX is tiered by points over
+replacement, so RBs, WRs, and TEs compare fairly; replacement levels come from filling every
+lineup in a league of `teams` (the same as trade values). Players with no projection are left
+out, so the week view is empty if the sync has no weekly projections for that week.
+
+How breaks are placed (`app/services/tiers.py`): players are sorted by value and split into
+contiguous tiers by optimal 1-D clustering, a dynamic program that minimizes the spread within
+tiers (sum of squared distances to each tier's mean) plus a fixed cost per tier. That cost is
+scaled to the average gap between neighboring players, so it works the same for season totals
+and single weeks: a smooth run grows to a tier of about a sixth of the list (4 to 8 players)
+before it splits, and one drop several times the average gap starts a tier on its own.
+
+Each tier in the response has its `players` (with `rank`, `points`, and the tiered `value`),
+its `high` and `low` values, and `drop_to_next`, the gap to the next tier's best player.
+
 ## Start/sit
 
 `GET /start-sit` (and the page at `/start-sit/`) compares 2 to 8 players competing for one

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from app.api import defenses, draft, errors, leagues, live_draft, meta, players, start_sit, tags, trades
+from app.api import defenses, draft, errors, leagues, live_draft, meta, players, start_sit, tags, tiers, trades
 from app.api.errors import error_response
 from app.api.static import SiteFiles
 from app.api.security import add_security_headers
@@ -84,6 +84,7 @@ app.include_router(draft.router)
 app.include_router(live_draft.router)
 app.include_router(start_sit.router)
 app.include_router(defenses.router)
+app.include_router(tiers.router)
 app.include_router(leagues.router)
 app.include_router(tags.router)
 

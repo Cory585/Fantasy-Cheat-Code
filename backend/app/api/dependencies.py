@@ -31,6 +31,7 @@ from app.services.profiles import ProfileService
 from app.services.matchups import MatchupData, load_matchups
 from app.services.outlook import OutlookBuilder
 from app.services.start_sit import StartSitAdvisor
+from app.services.tiers import TierService
 from app.models.tags import PlayerTag
 from app.services.tags import TagBuilder
 from app.services.trade_analyzer import TradeAnalyzer
@@ -290,6 +291,13 @@ def get_trade_analyzer(
     outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
 ) -> TradeAnalyzer:
     return TradeAnalyzer(repo, ValuationService(repo, outlooks))
+
+
+def get_tier_service(
+    repo: PlayerRepository = Depends(get_player_repository),
+    outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
+) -> TierService:
+    return TierService(repo.list(), ValuationService(repo, outlooks))
 
 
 _league_store = LeagueStore(settings.league_db_path, max_total=settings.max_stored_leagues)

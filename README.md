@@ -136,6 +136,7 @@ explains how to collect the data it needs.
 | `POST /trades/analyze` | Trade values for both sides |
 | `GET /start-sit?player=7564&player=6794&week=11` | Who to start, with confidence and reasons |
 | `POST /start-sit/lineup` | Best lineup from a roster for a week |
+| `GET /tiers?position=RB&horizon=week` | Players at a position (or FLEX) grouped into tiers |
 | `GET /draft/plan?teams=12&slot=5&rounds=15` | Your picks and likely targets at each |
 | `POST /draft/live`, `GET /draft/live/{session}/events` | Follow an ESPN league's draft live (Server-Sent Events) |
 | `GET /defenses?season=2026` | Every defense with position-group ranks, points allowed, and DST points per game |
