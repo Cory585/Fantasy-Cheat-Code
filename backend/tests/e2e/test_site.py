@@ -114,7 +114,7 @@ def test_404_page_links_every_section_in_nav_order(page):
     assert links == nav
 
 
-@pytest.mark.parametrize("width", [320, 375, 600, 800])
+@pytest.mark.parametrize("width", [260, 320, 375, 600, 800])
 def test_every_nav_tab_is_visible_without_scrolling(page, width):
     page.set_viewport_size({"width": width, "height": 800})
     page.goto("/finder/")
