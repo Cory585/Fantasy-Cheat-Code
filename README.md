@@ -130,10 +130,11 @@ explains how to collect the data it needs.
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Liveness check |
-| `GET /meta` | Season, synced weeks, scoring, current week |
+| `GET /meta` | Data source (`synced` or `sample`), season, synced weeks, scoring, current week, and whether the sync is from an earlier week (`synced_week`, `stale`) |
 | `GET /players?position=RB`, `GET /players/{id}` | Player pool |
 | `GET /players/{id}/profile` | Bio, career and college stats, combine |
-| `POST /trades/analyze` | Trade values for both sides |
+| `GET /tags`, `GET /tags?player={id}` | Player tags (slot receiver, workhorse back, hot streak, ...) with what earns each and who has them |
+| `POST /trades/analyze` | Trade values for both sides (FLEX and SUPERFLEX spots count) |
 | `GET /start-sit?player=7564&player=6794&week=11` | Who to start, with confidence and reasons |
 | `POST /start-sit/lineup` | Best lineup from a roster for a week |
 | `GET /tiers?position=RB&horizon=week` | Players at a position (or FLEX) grouped into tiers |
@@ -141,6 +142,8 @@ explains how to collect the data it needs.
 | `POST /draft/live`, `GET /draft/live/{session}/events` | Follow an ESPN league's draft live (Server-Sent Events) |
 | `GET /defenses?season=2026` | Every defense with position-group ranks, points allowed, and DST points per game |
 | `GET /defenses/{team}` | One defense by position group and unit, with league ranks, fantasy points allowed, and next games' DST projections |
+| `GET /leagues`, `POST /leagues` | The leagues on a profile (`X-Profile-Key` header), and adding one |
+| `GET /leagues/{id}`, `PUT /leagues/{id}`, `DELETE /leagues/{id}` | One league: read, save (send `If-Match` with its `version` to refuse overwriting a newer save: `409 league_conflict`), remove |
 
 Example trade:
 
@@ -148,9 +151,12 @@ Example trade:
 {
   "side_a": {"player_ids": ["te2"]},
   "side_b": {"player_ids": ["rb1"]},
-  "league": {"scoring": "ppr", "num_teams": 12}
+  "league": {"num_teams": 12, "roster_slots": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "SUPERFLEX": 1}}
 }
 ```
+
+`league.scoring` is optional: projections are synced for one scoring format, so a different
+one is refused (`422 scoring_unavailable`) rather than silently valued in the synced format.
 
 Errors are always `{"detail": "...", "code": "..."}`.
 
