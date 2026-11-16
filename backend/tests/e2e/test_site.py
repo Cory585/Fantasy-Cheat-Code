@@ -33,7 +33,8 @@ def test_missing_page_shows_the_404_page(page):
     assert response.status == 404
     expect(page.locator("h1")).to_have_text("Page not found")
     page.click("text=Draft masterclass >> nth=-1")
-    expect(page).to_have_url(re.compile(r"/draft/$"))
+    # The draft page puts its settings in the URL as soon as it loads, so allow a query.
+    expect(page).to_have_url(re.compile(r"/draft/(\?.*)?$"))
     expect(page.locator("h1")).to_have_text("Draft Masterclass")
 
 
