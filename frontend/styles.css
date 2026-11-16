@@ -1199,7 +1199,8 @@ main {
 .ss-chip .player-meta { font-size: 0.8125rem; }
 .ss-chip .btn-remove { width: 1.875rem; height: 1.875rem; font-size: 1rem; }
 
-.result.is-stale { opacity: 0.6; transition: opacity 0.15s; }
+/* Content from the previous request, dimmed while the next one loads. */
+.is-stale { opacity: 0.6; transition: opacity 0.15s; }
 
 .ss-verdict {
   --tone: var(--good);

@@ -205,18 +205,28 @@
     }));
   }
 
+  // While another team loads, dim the one on screen and mark it busy for screen readers.
+  function setBusy(busy) {
+    els.team.setAttribute("aria-busy", String(busy));
+    els.team.classList.toggle("is-stale", busy);
+  }
+
   async function showTeam(team, { push = true } = {}) {
     const id = ++loading;
     els.select.value = team;
     showError(null);
+    setBusy(true);
     let data;
     try {
       data = await getJson(`/defenses/${encodeURIComponent(team)}`, "Couldn't load that defense");
     } catch (error) {
-      if (id === loading) showError(error, () => showTeam(team, { push }));
+      if (id !== loading) return;
+      setBusy(false);
+      showError(error, () => showTeam(team, { push }));
       return;
     }
     if (id !== loading) return;
+    setBusy(false);
     renderHero(data);
     renderGroups(data.groups);
     renderUnits(data.units);

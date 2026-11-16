@@ -38,6 +38,23 @@ def test_team_breakdown_and_league_table(page, defenses):
     assert not page.problems.errors
 
 
+def test_switching_teams_dims_the_old_one_while_loading(page, defenses):
+    page.goto("/defense/?team=BUF")
+    expect(page.locator("#df-team-name")).to_have_text("Buffalo Bills")
+    held = []
+    page.route("**/defenses/NYJ", lambda route: held.append(route))
+    page.select_option("#team-select", "NYJ")
+    team = page.locator("#df-team")
+    expect(team).to_have_attribute("aria-busy", "true")
+    expect(team).to_have_class("is-stale")
+    while not held:
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    expect(page.locator("#df-team-name")).to_have_text("NYJ")
+    expect(team).to_have_attribute("aria-busy", "false")
+    expect(team).not_to_have_class("is-stale")
+
+
 def test_without_data_explains_how_to_collect(page):
     page.goto("/defense/")
     expect(page.locator("#df-error")).to_contain_text("python -m app.data.collect")
