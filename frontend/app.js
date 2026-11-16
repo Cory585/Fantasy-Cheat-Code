@@ -103,9 +103,11 @@ async function loadMeta() {
   refreshValues();
 }
 
+// A bye before the current week (or, without one, before the first week with projections)
+// has already happened, so it's left out.
 function byeLabel(player) {
-  const firstWeek = state.meta?.weeks?.[0];
-  if (!player.bye_week || (firstWeek && player.bye_week < firstWeek)) return null; // already past
+  const thisWeek = state.meta?.current_week ?? state.meta?.weeks?.[0];
+  if (!player.bye_week || (thisWeek && player.bye_week < thisWeek)) return null; // already past
   return `bye week ${player.bye_week}`;
 }
 
