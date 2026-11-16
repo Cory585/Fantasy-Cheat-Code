@@ -5,7 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
-  const { el, getJson, messageOf, errorBlock } = window.PlayerUI;
+  const { el, getJson, messageOf, errorBlock, noteSampleData } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -175,6 +175,7 @@
   async function defaultHorizon() {
     try {
       const meta = await getJson("/meta", "Couldn't load the current week");
+      noteSampleData(meta);
       state.currentWeek = meta.current_week ?? null;
       return state.currentWeek > 1 ? "week" : "ros";
     } catch {
@@ -205,7 +206,8 @@
     $("tier-controls").addEventListener("submit", (event) => event.preventDefault());
 
     renderControls();
-    if (!state.horizon) state.horizon = await defaultHorizon();
+    if (!state.horizon) state.horizon = await defaultHorizon(); // also notes sample data
+    else noteSampleData();
     load();
   }
 

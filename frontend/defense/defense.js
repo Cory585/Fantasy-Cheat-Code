@@ -5,7 +5,7 @@
 // Names come from outside providers, so they're always inserted as text.
 
 (() => {
-  const { el, getJson, errorBlock, avatar } = window.PlayerUI;
+  const { el, getJson, errorBlock, avatar, noteSampleData } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -337,4 +337,5 @@
   }
 
   start();
+  noteSampleData();
 })();

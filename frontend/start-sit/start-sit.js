@@ -8,7 +8,7 @@
 //                    start, how confident the call is, each player's range, and the reasons.
 
 (() => {
-  const { el, request, errorMessage, loadPlayers, loadMeta, avatar, profileUrl, createSearch } = window.PlayerUI;
+  const { el, request, errorMessage, loadPlayers, loadMeta, noteSampleData, avatar, profileUrl, createSearch } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -707,7 +707,7 @@
     const meta = state.meta;
     if (!meta) return;
     if (meta.source !== "synced") {
-      els.status.textContent = "Showing sample players, not real projections.";
+      noteSampleData(meta);
       return;
     }
     const parts = [`Week ${meta.current_week} is the current week`];

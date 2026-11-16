@@ -882,6 +882,7 @@ function init() {
 
   update();
   resumeLive();
+  PlayerUI.noteSampleData();
 }
 
 init();

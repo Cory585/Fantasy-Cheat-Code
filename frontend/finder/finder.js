@@ -5,7 +5,7 @@
 // URL (?tag=slot,high_target_share&pos=WR&match=all&q=), so a search can be shared.
 
 (() => {
-  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock } = window.PlayerUI;
+  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock, noteSampleData } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("finder-status"),
@@ -255,6 +255,7 @@
     bind();
     render();
     loadData();
+    noteSampleData();
   }
 
   init();

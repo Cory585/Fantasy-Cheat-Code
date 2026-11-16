@@ -97,7 +97,7 @@ async function loadMeta() {
   const el = document.getElementById("data-status");
   const meta = state.meta;
   if (meta.source !== "synced") {
-    el.textContent = "Showing sample players, not real projections.";
+    PlayerUI.noteSampleData(meta);
     return;
   }
   const synced = new Date(meta.synced_at);

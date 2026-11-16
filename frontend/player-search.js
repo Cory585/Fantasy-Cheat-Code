@@ -157,6 +157,19 @@ window.PlayerUI = (() => {
     }
   }
 
+  // A note under the page title while the API serves its built-in sample players instead of
+  // real projections. Pass /meta when the page already has it (null if it failed); otherwise
+  // it's fetched. Returns the meta.
+  async function noteSampleData(meta) {
+    if (meta === undefined) meta = await loadMeta();
+    const title = document.querySelector(".masthead-title");
+    if (meta && meta.source !== "synced" && title && !title.querySelector(".sample-notice")) {
+      const note = el("p", "data-status sample-notice", "Showing sample players, not real projections.");
+      (title.querySelector(".lede") || title.lastElementChild).after(note);
+    }
+    return meta;
+  }
+
   function teamLogoUrl(team) {
     const code = (ESPN_LOGO_CODES[team] || team).toLowerCase();
     return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${code}.png&w=80&h=80`;
@@ -310,6 +323,6 @@ window.PlayerUI = (() => {
 
   return {
     POSITIONS, el, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
-    loadPlayers, loadMeta, avatar, profileUrl, createSearch,
+    loadPlayers, loadMeta, noteSampleData, avatar, profileUrl, createSearch,
   };
 })();
