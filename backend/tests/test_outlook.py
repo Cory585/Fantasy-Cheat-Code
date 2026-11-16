@@ -63,6 +63,12 @@ def test_remaining_schedule_and_ranks(conn):
     assert a.sos_rank < b.sos_rank  # 1 = easiest
 
 
+def test_games_before_the_current_week_are_not_remaining(conn):
+    # Week 5 has no score collected, but the current week is 6: it's been played.
+    a = build(conn, [player("a", "AAA", 40, espn_id=1)], start_week=6)["a"]
+    assert a.games_remaining == 1 and a.remaining_opponents == ["SOFT"]
+
+
 def test_form_blends_with_provider_and_uses_schedule(conn):
     out = build(conn, [player("a", "AAA", 40, espn_id=1)], form_weight=0.5)
     a = out["a"]

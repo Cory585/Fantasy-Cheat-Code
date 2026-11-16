@@ -52,6 +52,8 @@ class OutlookBuilder:
     scoring: ScoringFormat
     end_week: int = REGULAR_SEASON_END_WEEK
     form_weight: float = 0.3
+    # Games before this week don't count as remaining, even without a score collected.
+    start_week: int = 1
 
     # ---------- public ----------
 
@@ -110,10 +112,10 @@ class OutlookBuilder:
         """Team -> [(week, opponent)] for regular-season games not yet played."""
         rows = self.conn.execute(
             """SELECT week, away_team, home_team FROM games
-               WHERE season = ? AND game_type = 'REG' AND week <= ?
+               WHERE season = ? AND game_type = 'REG' AND week BETWEEN ? AND ?
                  AND (away_score IS NULL OR home_score IS NULL)
                ORDER BY week""",
-            (self.season, self.end_week),
+            (self.season, self.start_week, self.end_week),
         ).fetchall()
         remaining: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for week, away, home in rows:

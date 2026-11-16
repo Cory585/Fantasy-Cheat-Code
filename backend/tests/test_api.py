@@ -99,6 +99,29 @@ def test_player_repository_reloads_when_cache_changes(tmp_path):
     assert data.current()[0].get("x1") is None
 
 
+def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path, monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    weekly = {10: {"sleeper": 10.0}, 11: {"sleeper": 20.0}, 12: {"sleeper": 30.0}}
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=60.0,
+                              projection_sources={"sleeper": 60.0}, weekly_projections=weekly)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    data = ReloadingPlayerData(path)
+    today = date(2026, 11, 11)  # week 10
+    monkeypatch.setattr("app.services.season.today", lambda: today)
+    assert data.current()[0].get("x1").ros_projection == 60.0
+    today = date(2026, 11, 18)  # week 11: week 10 no longer counts
+    player = data.current()[0].get("x1")
+    assert player.ros_projection == 50.0 and player.projection_sources == {"sleeper": 50.0}
+    assert player.weekly_projections == weekly
+
+
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     from app.api.dependencies import ReloadingPlayerData
 
