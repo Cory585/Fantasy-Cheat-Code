@@ -96,3 +96,10 @@ def test_synced_data_is_not_flagged(page, path):
     page.goto(path)
     page.wait_for_load_state("networkidle")
     expect(page.locator(".sample-notice")).to_have_count(0)
+
+
+def test_404_page_links_every_section_in_nav_order(page):
+    page.goto("/an/old/link")
+    nav = page.locator(".nav-links a").evaluate_all("links => links.map(a => a.getAttribute(\"href\"))")
+    links = page.locator(".not-found-links a").evaluate_all("links => links.map(a => a.getAttribute(\"href\"))")
+    assert links == nav
