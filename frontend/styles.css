@@ -415,7 +415,9 @@ main {
   font-size: 0.9375rem;
 }
 
-.picker .pos-filter { justify-self: start; }
+/* Seven positions in one row across the side's width. */
+.picker .pos-filter { display: flex; flex-wrap: nowrap; }
+.picker .pos-filter button { flex: 1 1 0; min-width: 0; padding: 0.375rem 0.25rem; font-size: 0.875rem; }
 
 .picker {
   display: grid;
