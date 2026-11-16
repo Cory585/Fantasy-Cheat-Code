@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import Depends
 
-from app.config import settings
+from app.config import REGULAR_SEASON_END_WEEK, settings
 from app.data.repository import (
     InMemoryPlayerRepository,
     PlayerRepository,
@@ -186,7 +186,7 @@ class ReloadingPlayerData:
                     conn,
                     season=int(meta["season"]),
                     scoring=ScoringFormat(meta.get("scoring", settings.default_scoring)),
-                    end_week=int(meta.get("weeks", [None, 17])[1]),
+                    end_week=int(meta.get("weeks", [None, REGULAR_SEASON_END_WEEK])[1]),
                     form_weight=settings.form_weight,
                 ).build(players)
             finally:
@@ -226,7 +226,7 @@ def get_matchups() -> tuple[MatchupData, dict]:
 
 
 # Weeks used when there's no synced cache to say which weeks it covers (sample data).
-DEFAULT_WEEKS = (1, 17)
+DEFAULT_WEEKS = (1, REGULAR_SEASON_END_WEEK)
 
 
 def get_start_sit_advisor(data: tuple[MatchupData, dict] = Depends(get_matchups)) -> StartSitAdvisor:

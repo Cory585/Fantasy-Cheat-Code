@@ -28,6 +28,7 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
 
+from app.config import REGULAR_SEASON_END_WEEK
 from app.models.player import Player, PlayerOutlook, Position
 from app.models.trade import ScoringFormat
 
@@ -49,7 +50,7 @@ class OutlookBuilder:
     conn: sqlite3.Connection
     season: int
     scoring: ScoringFormat
-    end_week: int = 17
+    end_week: int = REGULAR_SEASON_END_WEEK
     form_weight: float = 0.3
 
     # ---------- public ----------

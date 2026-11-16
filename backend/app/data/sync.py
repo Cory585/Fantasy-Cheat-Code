@@ -1,7 +1,7 @@
 """Pull players and projections from Sleeper and ESPN into a local JSON cache.
 
 Usage (from backend/):
-    python -m app.data.sync                     # current season, current week -> week 17, PPR
+    python -m app.data.sync                     # current season, current week -> week 18, PPR
     python -m app.data.sync --scoring half_ppr --start-week 10 --no-espn
 
 The API reads only from this cache, so user requests never hit external providers.
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from app.config import settings
+from app.config import REGULAR_SEASON_END_WEEK, settings
 from app.data.sources import espn, sleeper
 from app.data.sources.espn import EspnSource, ProTeam
 from app.data.sources.http import RateLimitedClient
@@ -203,7 +203,7 @@ def sync(
     scoring: ScoringFormat,
     season: int | None = None,
     start_week: int | None = None,
-    end_week: int = 17,
+    end_week: int = REGULAR_SEASON_END_WEEK,
     use_espn: bool = True,
 ) -> list[Player]:
     with RateLimitedClient(min_interval=settings.request_interval_seconds) as client:
@@ -265,7 +265,7 @@ def main() -> None:
     parser.add_argument("--scoring", type=ScoringFormat, default=ScoringFormat(settings.default_scoring))
     parser.add_argument("--season", type=int)
     parser.add_argument("--start-week", type=int, help="Default: Sleeper's current week")
-    parser.add_argument("--end-week", type=int, default=17)
+    parser.add_argument("--end-week", type=int, default=REGULAR_SEASON_END_WEEK)
     parser.add_argument("--no-espn", action="store_true", help="Use Sleeper projections only")
     parser.add_argument("--output", type=Path, default=settings.player_cache_path)
     args = parser.parse_args()
