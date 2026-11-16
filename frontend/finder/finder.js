@@ -5,7 +5,7 @@
 // URL (?tag=slot,high_target_share&pos=WR&match=all&q=), so a search can be shared.
 
 (() => {
-  const { el, loadPlayers, avatar, profileUrl, request, errorMessage } = window.PlayerUI;
+  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("finder-status"),
@@ -228,23 +228,13 @@
     $("finder-setup").addEventListener("submit", (event) => event.preventDefault());
   }
 
-  async function loadTags() {
-    const response = await request("/tags");
-    if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load tags"));
-    return response.json();
-  }
-
-  async function init() {
-    readUrl();
-    els.q.value = state.q;
-    bind();
-    render();
+  async function loadData() {
     els.list.replaceChildren(el("li", "result-empty", "Loading players…"));
     let index;
     try {
-      [state.players, index] = await Promise.all([loadPlayers(), loadTags()]);
+      [state.players, index] = await Promise.all([loadPlayers(), getJson("/tags", "Couldn't load tags")]);
     } catch (error) {
-      els.list.replaceChildren(el("li", "result-error", error.message));
+      els.list.replaceChildren(errorBlock(error, loadData, { tag: "li" }));
       return;
     }
     state.catalog = index.tags;
@@ -257,6 +247,14 @@
       : "Role, usage, and trend tags aren't available yet, so only status tags are shown.";
     writeUrl();
     render();
+  }
+
+  function init() {
+    readUrl();
+    els.q.value = state.q;
+    bind();
+    render();
+    loadData();
   }
 
   init();

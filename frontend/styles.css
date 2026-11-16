@@ -676,6 +676,21 @@ main {
   color: var(--bad);
 }
 
+/* A failed request: the message and a "Try again" button (PlayerUI.errorBlock). */
+.error-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--bad);
+  list-style: none;
+}
+.error-block-text { margin: 0; flex: 1 1 18rem; color: var(--bad); }
+.error-block[hidden] { display: none; }
+
 .verdict h2 {
   font-size: clamp(2rem, 5vw, 3rem);
 }

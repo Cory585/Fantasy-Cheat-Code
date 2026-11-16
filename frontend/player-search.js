@@ -1,6 +1,7 @@
 "use strict";
 
-// Shared player helpers and a search combobox, used by the start/sit and team pages.
+// Shared helpers used across the site: requests and error messages, player avatars, and a
+// player search combobox.
 // Exposes `window.PlayerUI`. Player names come from outside providers, so everything
 // here inserts them as text, never as markup.
 
@@ -16,29 +17,135 @@ window.PlayerUI = (() => {
     return node;
   }
 
+  // ---------- Requests and errors ----------
+  // Every page turns a failed request into the same kind of plain-language message, and
+  // shows it in the same error block with a "Try again" button (errorBlock below).
+
+  const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection, then try again.";
+  const MAX_RETRY_WAIT = 120; // seconds; a longer Retry-After is capped
+
+  // An error whose message can be shown to the person as is. `retryAfter` is the number of
+  // seconds to wait before trying again (from a 429's Retry-After), or 0.
+  class RequestError extends Error {
+    constructor(message, { status = 0, retryAfter = 0 } = {}) {
+      super(message);
+      this.status = status;
+      this.retryAfter = retryAfter;
+    }
+  }
+
   // fetch() that turns network failures into a plain-language error.
   async function request(url, options) {
     try {
       return await fetch(url, options);
     } catch {
-      throw new Error("Couldn't reach the server.");
+      throw new RequestError(OFFLINE_MESSAGE);
     }
   }
 
-  async function errorMessage(response, fallback) {
+  // Retry-After is either seconds or an HTTP date.
+  function retryAfterSeconds(response) {
+    const value = response.headers.get("Retry-After");
+    if (!value) return 0;
+    let seconds = Number(value);
+    if (!Number.isFinite(seconds)) {
+      const date = Date.parse(value);
+      seconds = Number.isNaN(date) ? 0 : (date - Date.now()) / 1000;
+    }
+    return Math.min(Math.max(Math.ceil(seconds), 0), MAX_RETRY_WAIT);
+  }
+
+  // FastAPI's `detail`: a sentence, or (for invalid input) a list of {msg}.
+  function detailText(body) {
+    if (typeof body?.detail === "string") return body.detail;
+    if (Array.isArray(body?.detail)) {
+      const messages = body.detail.map((d) => d?.msg).filter((m) => typeof m === "string");
+      if (messages.length) return messages.join("; ");
+    }
+    return null;
+  }
+
+  // A response that wasn't ok, as a RequestError. `what` says what failed ("Couldn't load
+  // tiers") for when the server gives no reason of its own.
+  async function responseError(response, what = "Something went wrong") {
+    if (response.status === 429) {
+      const wait = retryAfterSeconds(response);
+      const when = wait ? `in ${wait} second${wait === 1 ? "" : "s"}` : "in a moment";
+      return new RequestError(`Too many requests just now. Try again ${when}.`, { status: 429, retryAfter: wait });
+    }
+    let body = null;
     try {
-      const body = await response.json();
-      if (typeof body.detail === "string") return body.detail;
+      body = await response.json();
     } catch {
       // not JSON
     }
-    return `${fallback} (the server returned HTTP ${response.status}).`;
+    const reason = detailText(body);
+    if (reason) return new RequestError(reason, { status: response.status });
+    const tail = response.status >= 500 ? "Something went wrong on our end. Try again in a moment." : "Try again in a moment.";
+    return new RequestError(`${what}. ${tail}`, { status: response.status });
+  }
+
+  async function errorMessage(response, what) {
+    return (await responseError(response, what)).message;
+  }
+
+  // GET (or `options`) a URL and return its JSON, or throw a RequestError to show the person.
+  async function getJson(url, what, options) {
+    const response = await request(url, options);
+    if (!response.ok) throw await responseError(response, what);
+    try {
+      return await response.json();
+    } catch {
+      throw new RequestError("The server sent a response this page couldn't read. Try again in a moment.");
+    }
+  }
+
+  // Any thrown value as a message for the person: RequestErrors (and our own Errors) are
+  // already worded for them; anything else is a bug, so say something generic.
+  function messageOf(error) {
+    if (error instanceof RequestError) return error.message;
+    if (error instanceof TypeError || !error?.message) return "Something went wrong. Try again in a moment.";
+    return error.message;
+  }
+
+  /**
+   * The error block every page uses: the message, and a "Try again" button that calls
+   * `retry` (left out when there's nothing to retry). After a 429 the button counts down
+   * the Retry-After wait before it can be pressed. `tag` is "li" inside a list.
+   */
+  function errorBlock(error, retry, { tag = "div" } = {}) {
+    const block = el(tag, "error-block");
+    const text = el("p", "error-block-text", typeof error === "string" ? error : messageOf(error));
+    block.append(text);
+    if (tag === "div") block.setAttribute("role", "alert");
+    if (!retry) return block;
+    const button = el("button", "btn btn-quiet btn-small error-block-retry", "Try again");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      retry();
+    });
+    let wait = error?.retryAfter || 0;
+    if (wait) {
+      const tick = () => {
+        button.textContent = wait > 0 ? `Try again in ${wait}s` : "Try again";
+        button.disabled = wait > 0;
+        wait -= 1;
+      };
+      tick();
+      const timer = setInterval(() => {
+        // Stop once the wait is over, or if the block has been replaced.
+        if (wait < 0 || !button.isConnected) clearInterval(timer);
+        else tick();
+      }, 1000);
+    }
+    block.append(button);
+    return block;
   }
 
   async function loadPlayers() {
-    const response = await request("/players");
-    if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load players"));
-    return new Map((await response.json()).map((p) => [p.id, p]));
+    const players = await getJson("/players", "Couldn't load players");
+    return new Map(players.map((p) => [p.id, p]));
   }
 
   async function loadMeta() {
@@ -201,5 +308,8 @@ window.PlayerUI = (() => {
     return { render, setOpen };
   }
 
-  return { POSITIONS, el, request, errorMessage, loadPlayers, loadMeta, avatar, profileUrl, createSearch };
+  return {
+    POSITIONS, el, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
+    loadPlayers, loadMeta, avatar, profileUrl, createSearch,
+  };
 })();

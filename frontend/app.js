@@ -82,9 +82,7 @@ async function request(url, options) {
 }
 
 async function loadPlayers() {
-  const response = await request("/players");
-  if (!response.ok) throw new Error(`Couldn't load players (the server returned HTTP ${response.status}).`);
-  for (const player of await response.json()) state.players.set(player.id, player);
+  state.players = await PlayerUI.loadPlayers();
 }
 
 // Where the data comes from and how fresh it is. Not essential, so failures are quiet.
@@ -463,26 +461,17 @@ async function analyze() {
     league: { num_teams: state.numTeams, roster_slots: state.slots },
   };
   try {
-    const response = await request("/trades/analyze", {
+    const data = await PlayerUI.getJson("/trades/analyze", "Couldn't analyze this trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await response.json().catch(() => null); // error pages may not be JSON
     if (seq !== analysisSeq) return; // a newer request superseded this one
-    if (!response.ok) throw new Error(errorDetail(data) || `the server returned HTTP ${response.status}.`);
-    if (!data) throw new Error("the server sent a response the page couldn't read.");
     renderAnalysis(data);
   } catch (error) {
     if (seq !== analysisSeq) return;
-    renderError(`Couldn't analyze this trade: ${error.message}`);
+    renderError(error, analyze);
   }
-}
-
-function errorDetail(data) {
-  if (typeof data?.detail === "string") return data.detail;
-  if (Array.isArray(data?.detail)) return data.detail.map((d) => d.msg).join("; ");
-  return null;
 }
 
 function renderEmptyResult() {
@@ -494,12 +483,8 @@ function renderEmptyResult() {
   refreshValues();
 }
 
-function renderError(text) {
-  const result = document.getElementById("result");
-  const message = document.createElement("p");
-  message.className = "result-error";
-  message.textContent = text;
-  result.replaceChildren(message);
+function renderError(error, retry) {
+  document.getElementById("result").replaceChildren(PlayerUI.errorBlock(error, retry));
 }
 
 function verdictText(analysis) {
@@ -961,26 +946,30 @@ async function init() {
     onTradeChanged();
   });
   document.getElementById("share").addEventListener("click", (e) => copyShareLink(e.currentTarget));
+  loadData();
+}
+
+// Players first (nothing works without them), then the trade in the URL.
+async function loadData() {
   try {
     await loadPlayers();
+  } catch (error) {
+    renderError(error, () => {
+      renderEmptyResult();
+      loadData();
+    });
+    return;
+  }
+  readUrl();
+  renderLineupSettings();
+  render();
+  loadMeta();
+  // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
+  window.addEventListener("hashchange", () => {
     readUrl();
     renderLineupSettings();
     render();
-    loadMeta();
-    // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
-    window.addEventListener("hashchange", () => {
-      readUrl();
-      renderLineupSettings();
-      render();
-    });
-  } catch (error) {
-    const result = document.getElementById("result");
-    result.innerHTML = "";
-    const message = document.createElement("p");
-    message.className = "result-error";
-    message.textContent = `${error.message} Check that the backend is running, then reload the page.`;
-    result.append(message);
-  }
+  });
 }
 
 init();

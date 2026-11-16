@@ -336,9 +336,9 @@ async function load(id) {
   els.main.setAttribute("aria-busy", "true");
   let response;
   try {
-    response = await fetch(`/players/${encodeURIComponent(id)}/profile`, { headers: { accept: "application/json" } });
-  } catch {
-    showFatal("Couldn't load this player", "The server couldn't be reached. Check your connection, then try again.", { retry: true });
+    response = await PlayerUI.request(`/players/${encodeURIComponent(id)}/profile`, { headers: { accept: "application/json" } });
+  } catch (error) {
+    showFatal("Couldn't load this player", error.message, { retry: true });
     return;
   }
   if (response.status === 404) {
@@ -353,7 +353,7 @@ async function load(id) {
     return;
   }
   if (!response.ok) {
-    showFatal("Couldn't load this player", `The server returned an error (HTTP ${response.status}). Try again in a moment.`, { retry: true });
+    showFatal("Couldn't load this player", await PlayerUI.errorMessage(response, "This player couldn't be loaded"), { retry: true });
     return;
   }
   let profile;

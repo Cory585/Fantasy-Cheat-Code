@@ -5,7 +5,7 @@
 // Names come from outside providers, so they're always inserted as text.
 
 (() => {
-  const { el, request, errorMessage, avatar } = window.PlayerUI;
+  const { el, getJson, errorBlock, avatar } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -78,9 +78,10 @@
     return summary.name || summary.team;
   }
 
-  function showError(message) {
-    els.error.textContent = message;
-    els.error.hidden = !message;
+  // A failed request, with a button to try it again; showError(null) clears it.
+  function showError(error, retry) {
+    els.error.replaceChildren(...(error ? [errorBlock(error, retry)] : []));
+    els.error.hidden = !error;
   }
 
   function remember(team) {
@@ -207,14 +208,12 @@
   async function showTeam(team, { push = true } = {}) {
     const id = ++loading;
     els.select.value = team;
-    showError("");
+    showError(null);
     let data;
     try {
-      const response = await request(`/defenses/${encodeURIComponent(team)}`);
-      if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load that defense"));
-      data = await response.json();
+      data = await getJson(`/defenses/${encodeURIComponent(team)}`, "Couldn't load that defense");
     } catch (error) {
-      if (id === loading) showError(error.message);
+      if (id === loading) showError(error, () => showTeam(team, { push }));
       return;
     }
     if (id !== loading) return;
@@ -314,13 +313,12 @@
   // ---------- start ----------
 
   async function start() {
+    showError(null);
     try {
-      const response = await request("/defenses");
-      if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load defenses"));
-      league = await response.json();
+      league = await getJson("/defenses", "Couldn't load defenses");
     } catch (error) {
       els.select.replaceChildren(el("option", null, "No data"));
-      showError(error.message);
+      showError(error, start);
       return;
     }
     els.status.textContent = `${league.season} season through week ${league.through_week}.`;

@@ -62,12 +62,7 @@ const profileUrl = (playerId) => `/player/?id=${encodeURIComponent(playerId)}`;
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-}
+const { el, request, errorMessage, getJson, messageOf, errorBlock } = window.PlayerUI;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 function svg(tag, attrs = {}, text) {
@@ -471,7 +466,7 @@ function targetItem(target, overall, dry = new Set()) {
 function renderPlan() {
   const plan = state.plan;
   if (!plan) {
-    if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks..."));
+    if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks…"));
     return;
   }
   if (!plan.picks.length && state.live) {
@@ -515,10 +510,10 @@ function renderPlan() {
       : "No average draft position data yet, so players are ranked by projection.");
 }
 
-function renderError(message) {
-  state.error = message;
-  els.planList.replaceChildren(el("li", "result-error", message));
-  els.status.textContent = message;
+function renderError(error) {
+  state.error = error;
+  els.planList.replaceChildren(errorBlock(error, () => update(), { tag: "li" }));
+  els.status.textContent = messageOf(error);
 }
 
 async function loadPlan() {
@@ -531,23 +526,11 @@ async function loadPlan() {
     params.set("picks_made", livePicksMade());
     for (const pick of picks) if (pick.player_id) params.append("drafted", pick.player_id);
   }
-  let response;
-  try {
-    response = await fetch(`/draft/plan?${params}`);
-  } catch {
-    if (id === requestId) renderError("Couldn't reach the server. Check that it's running, then change a setting to retry.");
-    return;
-  }
-  if (id !== requestId) return;
-  if (!response.ok) {
-    renderError(`Couldn't load the draft plan (the server returned HTTP ${response.status}).`);
-    return;
-  }
   let plan;
   try {
-    plan = await response.json();
-  } catch {
-    if (id === requestId) renderError("The server sent a response this page couldn't read. Change a setting to retry.");
+    plan = await getJson(`/draft/plan?${params}`, "Couldn't load the draft plan");
+  } catch (error) {
+    if (id === requestId) renderError(error);
     return;
   }
   if (id !== requestId) return;
@@ -609,10 +592,7 @@ async function errorText(response) {
     return "Check the league ID and cookies. The league ID is digits only, espn_s2 is a long code, " +
       "and SWID looks like {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}.";
   }
-  if (response.status === 429) return "Too many connection attempts. Wait a minute, then try again.";
-  let body = null;
-  try { body = await response.json(); } catch { /* not JSON */ }
-  return typeof body?.detail === "string" ? body.detail : `Couldn't connect (the server returned HTTP ${response.status}).`;
+  return errorMessage(response, "Couldn't connect to ESPN");
 }
 
 function liveProgressText(draft) {
@@ -705,7 +685,7 @@ function openStream() {
   source.addEventListener("error", () => {
     if (state.live !== live || live.source !== source) return;
     if (source.readyState === EventSource.CLOSED) checkSession(live);
-    else liveMessage("Lost the live connection. Reconnecting...", true);
+    else liveMessage("Lost the live connection. Reconnecting…", true);
   });
 }
 
@@ -720,7 +700,7 @@ async function checkSession(live) {
     endLive("That live session ended. Connect your league again.", true);
     return;
   }
-  liveMessage("Lost the live connection. Reconnecting...", true);
+  liveMessage("Lost the live connection. Reconnecting…", true);
   setTimeout(() => {
     if (state.live === live && live.draft?.status !== "complete") openStream();
   }, 5000);
@@ -760,14 +740,14 @@ async function connectLive(event) {
   const body = { league_id: leagueId };
   if (s2) Object.assign(body, { espn_s2: s2, swid });
   els.liveConnect.disabled = true;
-  liveMessage("Connecting to ESPN...");
+  liveMessage("Connecting to ESPN…");
   let response;
   try {
-    response = await fetch("/draft/live", {
+    response = await request("/draft/live", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-  } catch {
-    liveMessage("Couldn't reach the server. Check that it's running, then try again.", true);
+  } catch (error) {
+    liveMessage(error.message, true);
     return;
   } finally {
     els.liveConnect.disabled = false;
