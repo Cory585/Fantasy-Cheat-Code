@@ -417,6 +417,8 @@ main {
   font-size: 0.9375rem;
 }
 
+.picker .pos-filter { justify-self: start; }
+
 .picker {
   display: grid;
   gap: 0.5rem;
@@ -490,32 +492,6 @@ main {
   font-family: var(--font-display);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.pos-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-
-.pos-chip {
-  padding: 0.125rem 0.625rem;
-  min-height: 1.875rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pos-chip:hover { color: var(--ink); }
-
-.pos-chip[aria-pressed="true"] {
-  background: var(--side);
-  border-color: var(--side);
-  color: var(--surface);
 }
 
 /* Headshots and team logos */

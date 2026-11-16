@@ -287,7 +287,7 @@ function onSearchKey(side, event) {
 function setPositionFilter(side, position) {
   state.search[side].position = position;
   state.search[side].active = -1;
-  for (const chipEl of sideEl(side).querySelectorAll(".pos-chip")) {
+  for (const chipEl of sideEl(side).querySelectorAll(".pos-filter button")) {
     chipEl.setAttribute("aria-pressed", String(chipEl.dataset.pos === position));
   }
   sideEl(side).querySelector(".player-search").focus();
@@ -911,7 +911,7 @@ function bindEvents() {
     input.addEventListener("click", () => setSearchOpen(side, true));
     input.addEventListener("blur", () => setSearchOpen(side, false));
     input.addEventListener("keydown", (event) => onSearchKey(side, event));
-    for (const chipEl of el.querySelectorAll(".pos-chip")) {
+    for (const chipEl of el.querySelectorAll(".pos-filter button")) {
       chipEl.addEventListener("click", () => setPositionFilter(side, chipEl.dataset.pos));
     }
     el.querySelector(".team-name").addEventListener("input", onTradeChanged);

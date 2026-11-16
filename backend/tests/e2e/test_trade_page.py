@@ -58,3 +58,16 @@ def test_searches_wait_for_the_player_list(page):
     search.fill("Sample RB One")
     search.press("Enter")
     expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(1)
+
+
+def test_position_filter_is_a_segmented_control(page):
+    page.goto("/")
+    side = page.locator('.side[data-side="a"]')
+    expect(side.locator(".player-search")).to_be_enabled()
+    side.get_by_role("group", name="Filter Team A search by position").get_by_role("button", name="RB").click()
+    expect(side.locator('.segmented button[data-pos="RB"]')).to_have_attribute("aria-pressed", "true")
+    expect(side.locator('.segmented button[data-pos=""]')).to_have_attribute("aria-pressed", "false")
+    metas = side.locator(".search-option-meta")
+    expect(metas.first).to_be_visible()
+    for text in metas.all_inner_texts():
+        assert text.startswith("RB")

@@ -28,7 +28,7 @@
 
   // ---------- Presses ----------
 
-  const PRESSABLE = "button, .btn, summary, .pos-chip";
+  const PRESSABLE = "button, .btn, summary";
   const pressable = (target) => {
     const el = target instanceof Element ? target.closest(PRESSABLE) : null;
     return el && !el.disabled && !el.closest(".backdrop") ? el : null;
