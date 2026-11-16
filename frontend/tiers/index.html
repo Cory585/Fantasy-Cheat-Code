@@ -36,72 +36,48 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1>Player Tier Lists</h1>
-      <p class="lede">See players grouped into tiers at each position, so you know where the real drop-offs are before you trade, start, or pick up a player.</p>
-      <p class="feature-status">In development</p>
+      <p class="lede">Players grouped into tiers at each position. Players in a tier are roughly interchangeable;
+        a new tier starts where projected points drop sharply, so you can see the real drop-offs before you
+        trade, start, or pick up a player.</p>
+      <p class="data-status" id="tier-status" role="status" aria-live="polite"></p>
     </div>
   </header>
 
   <main>
-    <figure class="preview">
-      <figcaption>Planned layout: pick a position, then scan tiers from best to worst. Every player in a tier is roughly interchangeable.</figcaption>
-      <div class="position-tabs" aria-hidden="true">
-        <span class="position-tab">QB</span>
-        <span class="position-tab is-active">RB</span>
-        <span class="position-tab">WR</span>
-        <span class="position-tab">TE</span>
-        <span class="position-tab">Flex</span>
-        <span class="position-tab">K</span>
-        <span class="position-tab">DST</span>
-      </div>
-      <div aria-hidden="true">
-        <div class="tier-row">
-          <div class="tier-label">Tier 1</div>
-          <div class="tier-players">
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-          </div>
+    <form class="draft-setup tier-controls" id="tier-controls" aria-label="Tier list settings">
+      <fieldset class="setup-group">
+        <legend>Position</legend>
+        <div class="segmented" id="tier-position" role="group">
+          <button type="button" data-position="QB">QB</button>
+          <button type="button" data-position="RB">RB</button>
+          <button type="button" data-position="WR">WR</button>
+          <button type="button" data-position="TE">TE</button>
+          <button type="button" data-position="FLEX" aria-label="Flex (RB, WR, and TE)">Flex</button>
+          <button type="button" data-position="K">K</button>
+          <button type="button" data-position="DST">DST</button>
         </div>
-        <div class="tier-row">
-          <div class="tier-label">Tier 2</div>
-          <div class="tier-players">
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-          </div>
+      </fieldset>
+      <fieldset class="setup-group">
+        <legend>Projections</legend>
+        <div class="segmented" id="tier-horizon" role="group">
+          <button type="button" data-horizon="week">This week</button>
+          <button type="button" data-horizon="ros">Rest of season</button>
         </div>
-        <div class="tier-row">
-          <div class="tier-label">Tier 3</div>
-          <div class="tier-players">
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-            <div class="slot"><span class="bar bar-wide"></span><span class="bar bar-short"></span></div>
-          </div>
-        </div>
-      </div>
-    </figure>
+      </fieldset>
+      <fieldset class="setup-group">
+        <legend>League size</legend>
+        <select id="tier-teams" aria-label="Teams in your league">
+          <option value="8">8 teams</option>
+          <option value="10">10 teams</option>
+          <option value="12" selected>12 teams</option>
+          <option value="14">14 teams</option>
+          <option value="16">16 teams</option>
+        </select>
+      </fieldset>
+    </form>
 
-    <section class="roadmap">
-      <div>
-        <h2>Still to build</h2>
-        <ul>
-          <li>Tier breaks at each position, placed where projected points drop sharply.</li>
-          <li>Position tabs, plus a flex view that mixes RB, WR, and TE.</li>
-          <li>A marker on players who moved up or down a tier since last week.</li>
-          <li>Links from a player to the trade analyzer and start/sit guide.</li>
-        </ul>
-      </div>
-      <div>
-        <h2>Data it uses</h2>
-        <p>Rest-of-season projections from Sleeper and ESPN, which the player sync already collects.
-          Week-over-week tier changes will need the sync to keep past snapshots.</p>
-      </div>
-    </section>
+    <p class="section-note tier-note" id="tier-note"></p>
+    <ol class="tier-list" id="tier-list" aria-label="Tiers"></ol>
   </main>
 
   <script src="/theme.js"></script>
@@ -109,5 +85,6 @@
   <script src="/vendor/gsap.min.js"></script>
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
+  <script src="/tiers/tiers.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | My team | `/team/` | Saves your roster and lineup spots for each league |
 | Profile | `/profile/` | Holds your leagues (up to 10): add, rename, remove, and move them to another device |
 | Player profiles | `/player/?id=…` | Bio, NFL and college stats, and combine results |
-| Tier lists | `/tiers/` | In development |
+| Tier lists | `/tiers/` | Groups each position (or flex) into tiers where projected points drop sharply, for this week or the rest of the season |
 
 ## Architecture
 
@@ -203,6 +203,5 @@ breakdown, and the test suite.
 
 ## Next steps
 
-- Tier lists page.
 - Lineup impact in the trade analyzer (`TradeAnalyzer._lineup_impact`, optimal lineup before and after).
 - Draft guide that accounts for your roster so far, tiers, and positional runs.
