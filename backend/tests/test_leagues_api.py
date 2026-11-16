@@ -161,3 +161,63 @@ def test_store_has_a_global_cap(tmp_path):
     store.create("b", "2", {}, [], MAX_LEAGUES)
     with pytest.raises(StoreFull):
         store.create("c", "3", {}, [], MAX_LEAGUES)
+
+
+def put(key, league_id, body, if_match=None):
+    extra = {"If-Match": if_match} if if_match is not None else {}
+    return client.put(f"/leagues/{league_id}", json=body, headers={**headers(key), **extra})
+
+
+def test_saves_carry_a_version(key):
+    made = create(key)
+    assert made.json()["version"] == 1 and made.headers["ETag"] == '"1"'
+    league_id = made.json()["id"]
+    saved = put(key, league_id, {"name": "A"}, if_match='"1"')
+    assert saved.status_code == 200 and saved.json()["version"] == 2 and saved.headers["ETag"] == '"2"'
+    got = client.get(f"/leagues/{league_id}", headers=headers(key))
+    assert got.json()["version"] == 2 and got.headers["ETag"] == '"2"'
+
+
+def test_stale_save_is_a_conflict_with_the_current_league(key):
+    league_id = create(key).json()["id"]
+    assert put(key, league_id, {"name": "From tab one", "roster": ["rb1"]}, if_match='"1"').status_code == 200
+    stale = put(key, league_id, {"name": "From tab two", "roster": ["wr1"]}, if_match='"1"')
+    assert stale.status_code == 409 and stale.json()["code"] == "league_conflict"
+    assert stale.json()["league"]["name"] == "From tab one" and stale.json()["league"]["version"] == 2
+    assert stale.headers["ETag"] == '"2"'
+    assert client.get(f"/leagues/{league_id}", headers=headers(key)).json()["roster"] == ["rb1"]  # not overwritten
+
+
+def test_saves_without_if_match_still_replace_the_league(key):
+    league_id = create(key).json()["id"]
+    put(key, league_id, {"name": "One"})
+    assert put(key, league_id, {"name": "Two"}).json()["version"] == 3
+    assert put(key, league_id, {"name": "Any"}, if_match="*").status_code == 200
+    assert put(key, league_id, {"name": "Weak"}, if_match='W/"4"').status_code == 200
+
+
+@pytest.mark.parametrize("if_match", ['"abc"', "1.5", '"-1"', '"' + "9" * 20 + '"'])
+def test_malformed_if_match_is_rejected(key, if_match):
+    league_id = create(key).json()["id"]
+    resp = put(key, league_id, {"name": "A"}, if_match=if_match)
+    assert resp.status_code == 400 and resp.json()["code"] == "invalid_if_match"
+
+
+def test_conflict_check_is_scoped_to_the_profile(key):
+    league_id = create(key).json()["id"]
+    assert put(new_key(), league_id, {"name": "Theirs"}, if_match='"1"').status_code == 404
+
+
+def test_store_adds_versions_to_an_older_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "leagues.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE leagues (id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, "
+                 "slots TEXT NOT NULL, roster TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL)")
+    conn.execute("INSERT INTO leagues VALUES ('old-league', 'me', 'Old', '{}', '[]', 0, 0)")
+    conn.commit()
+    conn.close()
+    store = LeagueStore(path)
+    assert store.get("me", "old-league").version == 1
+    assert store.update("me", "old-league", "New", {}, [], expected_version=1).version == 2
