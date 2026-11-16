@@ -5,7 +5,7 @@
 // Names come from outside providers, so they're always inserted as text.
 
 (() => {
-  const { el, getJson, errorBlock, avatar, noteSampleData } = window.PlayerUI;
+  const { el, ordinal, getJson, errorBlock, avatar, noteSampleData } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -36,12 +36,6 @@
   let loading = 0; // id of the latest team request, so a slow older one can't overwrite it
 
   // ---------- helpers ----------
-
-  function ordinal(n) {
-    const s = ["th", "st", "nd", "rd"];
-    const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  }
 
   // Top quarter of the league reads as a strength, bottom quarter as a weakness.
   function tone(rank, teams) {

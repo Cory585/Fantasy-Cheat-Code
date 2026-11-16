@@ -52,17 +52,12 @@ let requestId = 0; // ignore responses to settings that have since changed
 
 // ---------- Helpers ----------
 
-function ordinal(n) {
-  const suffix = { 1: "st", 2: "nd", 3: "rd" }[n % 100 >= 11 && n % 100 <= 13 ? 0 : n % 10] || "th";
-  return `${n}${suffix}`;
-}
-
 const profileUrl = (playerId) => `/player/?id=${encodeURIComponent(playerId)}`;
 
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const { el, request, errorMessage, getJson, messageOf, errorBlock } = window.PlayerUI;
+const { el, ordinal, request, errorMessage, getJson, messageOf, errorBlock } = window.PlayerUI;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 function svg(tag, attrs = {}, text) {

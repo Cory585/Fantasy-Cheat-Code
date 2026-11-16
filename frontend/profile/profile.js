@@ -20,15 +20,9 @@
     keyInput: $("key-input"),
   };
 
+  const { el } = window.PlayerUI;
   const state = { leagues: [], max: Store.MAX_LEAGUES, loaded: false, busy: false, renaming: null };
   let removeArmed = null; // { id, timer }
-
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
 
   function say(message, isError = false) {
     els.status.textContent = message;
