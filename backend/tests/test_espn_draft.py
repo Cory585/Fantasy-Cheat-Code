@@ -111,7 +111,8 @@ def test_fetch_without_cookies_sends_none():
     assert "Cookie" not in seen[0].headers
 
 
-@pytest.mark.parametrize(("status", "error"), [(401, LeaguePrivate), (403, LeaguePrivate), (404, LeagueNotFound)])
+@pytest.mark.parametrize(("status", "error"), [(401, LeaguePrivate), (403, LeaguePrivate), (404, LeagueNotFound),
+                                               (400, LeagueNotFound)])
 def test_fetch_maps_espn_errors(status, error):
     with pytest.raises(error):
         source(lambda request: httpx.Response(status)).draft(2026, "777")
