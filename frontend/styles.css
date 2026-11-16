@@ -31,35 +31,7 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
-    --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
-    --ridge-0: hsl(var(--land-hue) var(--land-sat) 10.5%);
-    --ridge-1: hsl(var(--land-hue) var(--land-sat) 9%);
-    --ridge-2: hsl(var(--land-hue) var(--land-sat) 7.5%);
-    --ridge-3: hsl(var(--land-hue) var(--land-sat) 6%);
-    --ridge-4: hsl(var(--land-hue) var(--land-sat) 4.5%);
-    --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 24%);
-    --bg: hsl(var(--land-hue) 27% 8%);
-    --surface: hsl(var(--land-hue) 22% 12%);
-    --ink: #e4ece7;
-    --muted: #9aaba2;
-    --line: hsl(var(--land-hue) 15% 21%);
-    --turf: #1f4d37;
-    --turf-dark: #1a422f;
-    --chalk: rgba(228, 236, 231, 0.55);
-    --chalk-text: rgba(228, 236, 231, 0.85);
-    --side-a: #86a7ef;
-    --side-b: #e3a74c;
-    --good: #6cc896;
-    --bad: #ef8a7d;
-    --focus: #86a7ef;
-    color-scheme: dark;
-  }
-}
-
-/* Explicit choice from the theme switch (same values as the media query above). */
+/* Dark mode: theme-boot.js sets data-theme from the saved choice or the system preference. */
 :root[data-theme="dark"] {
   --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
   --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
@@ -216,9 +188,6 @@ button, input, select { font: inherit; color: inherit; }
 
 /* --turf is a background shade in dark mode; use the readable green for the current tab. */
 :root[data-theme="dark"] .nav-links a[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .nav-links a[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--good); }
-}
 
 /* ---------- Masthead ---------- */
 
@@ -1023,9 +992,6 @@ main {
 }
 
 :root[data-theme="dark"] .feature-status { color: var(--good); border-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .feature-status { color: var(--good); border-color: var(--good); }
-}
 
 .preview {
   margin: 0;
@@ -1474,17 +1440,6 @@ main {
   --pos-DST: #008300;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --pos-QB: #3987e5;
-    --pos-RB: #d95926;
-    --pos-WR: #199e70;
-    --pos-TE: #c98500;
-    --pos-K: #d55181;
-    --pos-DST: #008300;
-  }
-}
-
 :root[data-theme="dark"] {
   --pos-QB: #3987e5;
   --pos-RB: #d95926;
@@ -1601,10 +1556,6 @@ main {
 .timeline-svg .my-pick-dot { fill: var(--turf); stroke: var(--bg); stroke-width: 2; }
 :root[data-theme="dark"] .timeline-svg .arc { stroke: var(--good); }
 :root[data-theme="dark"] .timeline-svg .my-pick-dot { fill: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .timeline-svg .arc { stroke: var(--good); }
-  :root:not([data-theme="light"]) .timeline-svg .my-pick-dot { fill: var(--good); }
-}
 
 /* Legend */
 
@@ -1703,10 +1654,6 @@ main {
 /* --turf is a background shade in dark mode; use the readable green for "yours" there. */
 :root[data-theme="dark"] .team-head.is-mine { border-bottom-color: var(--good); }
 :root[data-theme="dark"] .pick.is-mine { outline-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .team-head.is-mine { border-bottom-color: var(--good); }
-  :root:not([data-theme="light"]) .pick.is-mine { outline-color: var(--good); }
-}
 
 .timeline-svg .my-pick-dot:focus-visible { outline: none; stroke: var(--focus); stroke-width: 3; }
 
@@ -1997,9 +1944,6 @@ main {
 }
 
 :root[data-theme="dark"] .drill-fill { background: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .drill-fill { background: var(--good); }
-}
 
 .drill-note { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 
@@ -2022,9 +1966,6 @@ main {
 .season-chart .bar-value { fill: var(--ink); font-size: 11px; font-weight: 600; }
 .season-chart .bar-year { fill: var(--muted); font-size: 11px; }
 :root[data-theme="dark"] .season-chart rect { fill: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .season-chart rect { fill: var(--good); }
-}
 
 .stat-table-wrap {
   overflow-x: auto;
@@ -2093,9 +2034,6 @@ main {
 
 .not-found h1 { font-size: clamp(2rem, 5vw, 3rem); }
 :root[data-theme="dark"] .not-found-code { color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .not-found-code { color: var(--good); }
-}
 
 .not-found-links {
   display: flex;
@@ -2978,10 +2916,6 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 
 :root[data-theme="dark"] .league-card.is-active { border-left-color: var(--good); }
 :root[data-theme="dark"] .league-badge { color: var(--good); border-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .league-card.is-active { border-left-color: var(--good); }
-  :root:not([data-theme="light"]) .league-badge { color: var(--good); border-color: var(--good); }
-}
 
 @media (max-width: 760px) {
   .profile-page { grid-template-columns: minmax(0, 1fr); }
@@ -3091,12 +3025,6 @@ a.tag-pill:hover { border-color: var(--tag); }
 :root[data-theme="dark"] .tag-usage { --tag: #4fae7f; }
 :root[data-theme="dark"] .tag-trend { --tag: #d39a3c; }
 :root[data-theme="dark"] .tag-status { --tag: #a790bd; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tag-role { --tag: #6f97e8; }
-  :root:not([data-theme="light"]) .tag-usage { --tag: #4fae7f; }
-  :root:not([data-theme="light"]) .tag-trend { --tag: #d39a3c; }
-  :root:not([data-theme="light"]) .tag-status { --tag: #a790bd; }
-}
 
 @media (max-width: 760px) {
   .finder-tags, .finder-results { padding: 1rem; }
