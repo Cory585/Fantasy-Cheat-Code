@@ -214,7 +214,12 @@
     ink = match ? match.slice(0, 3).map(Number) : [0, 0, 0];
   }
 
-  let density = null; // per-pixel ink density in [0, 1] for the current star
+  let density = null; // per-pixel dot density in [0, 1] for the current star
+  let shown = null; // that star's headshot, so a theme switch can redo its density
+  function show(img) {
+    shown = img;
+    density = toDensity(img);
+  }
   let level = 0; // how far it has faded in, in [0, 1]
 
   function render() {
@@ -268,11 +273,18 @@
     return out;
   }
 
-  // Turn a headshot into ink density, tuned so faces stay recognizable at dot size:
+  // In dark mode the dots are lighter than the sky, so they have to stand for light, not ink.
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const isDark = () => (root.dataset.theme || (darkQuery.matches ? "dark" : "light")) === "dark";
+
+  // Turn a headshot into dot density, tuned so faces stay recognizable at dot size:
   // stretch the contrast (ignoring the extreme 2% at each end), boost local contrast so
   // eyes, brows, and mouth stand out, draw facial features as lines from their edges,
   // and outline the whole silhouette so the head and shoulders read at a glance.
-  function toDensity(img) {
+  // With dark dots (light mode) dots go where the photo is dark, like ink. With light dots
+  // (dark mode) they go where it's bright, so the face stays a positive image instead of a
+  // negative with glowing eyes and hair.
+  function toDensity(img, lightDots = isDark()) {
     const scratch = document.createElement("canvas");
     scratch.width = COLS;
     scratch.height = ROWS;
@@ -301,7 +313,7 @@
 
     const out = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      const tone = 0.03 + 0.82 * Math.pow(1 - sharp[i], 1.6);
+      const tone = 0.03 + 0.82 * Math.pow(lightDots ? sharp[i] : 1 - sharp[i], 1.6);
       const feature = clamp01(featureEdges[i] * 0.9 - 0.25);
       out[i] = clamp01(alpha[i] * (tone + feature) + clamp01(outline[i] * 0.8));
     }
@@ -380,7 +392,7 @@
     readInk();
     let current = await loadNext(list, 0);
     if (!current) return;
-    density = toDensity(current.img);
+    show(current.img);
     if (reduceMotion.matches) {
       tintTo(list[current.index].team, 0);
       level = 1;
@@ -400,19 +412,20 @@
       tintTo(list[next.index].team, FADE_MS * 2 + GAP_MS);
       await fade(1, 0);
       await wait(GAP_MS);
-      density = toDensity(next.img);
+      show(next.img);
       await fade(0, 1);
       current = next;
     }
   }
 
-  // Recolor when the theme changes.
+  // Recolor when the theme changes, and flip the shown star between dark and light dots.
   const recolor = () => {
     readInk();
+    if (shown) density = toDensity(shown);
     render();
   };
   new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", recolor);
+  darkQuery.addEventListener("change", recolor);
 
   run().catch(() => {
     // Decorative only: if players or images can't load, the landscape stays without a portrait.
