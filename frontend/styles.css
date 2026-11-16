@@ -3152,3 +3152,18 @@ a.tag-pill:hover { border-color: var(--tag); }
 }
 
 .tier-chip.is-dry { border-color: var(--bad); color: var(--bad); }
+
+/* Touch screens: every small control gets at least a 44px tap target. */
+@media (pointer: coarse) {
+  .btn-remove,
+  .ss-chip .btn-remove,
+  .team-item .btn-remove { width: 2.75rem; height: 2.75rem; }
+  .btn-small,
+  .step-btn,
+  .ss-quick-btn,
+  .tag-chip,
+  .segmented button { min-height: 2.75rem; }
+  .slot-stepper { grid-template-columns: minmax(0, 1fr) 2.75rem 2rem 2.75rem; }
+  .stepper-btn,
+  .slot-stepper .stepper-btn { height: 2.75rem; min-width: 2.75rem; }
+}
