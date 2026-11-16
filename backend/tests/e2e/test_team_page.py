@@ -178,3 +178,24 @@ def test_old_saved_team_moves_into_a_league(page):
     count = page.evaluate("""async () => (await (await fetch('/leagues',
         {headers: {'X-Profile-Key': localStorage.getItem('fcc.profile.v1')}})).json()).leagues.length""")
     assert count == 1
+
+
+def test_search_waits_for_the_player_list(page):
+    # Hold the player list back, as a slow connection would: the search stays disabled until
+    # it arrives, so a name typed and entered straight away still gets added.
+    release = []
+    page.route("**/players", lambda route: release.append(route))
+    page.goto("/team/")
+    search = page.locator("#team-search")
+    expect(search).to_be_disabled()
+    expect(search).to_have_attribute("placeholder", "Loading players…")
+    while not release:
+        page.wait_for_timeout(50)
+    # The page's backdrop asks for /players too; let every held request through.
+    for route in release:
+        route.continue_()
+    page.unroute("**/players")
+    search.fill("Sample RB One")
+    search.press("Enter")
+    expect(page.locator(".team-item")).to_have_count(1)
+    expect(search).to_have_attribute("placeholder", "Search players or teams to add")

@@ -188,6 +188,8 @@ window.PlayerUI = (() => {
       } else if (event.key === "Enter") {
         event.preventDefault();
         if (full()) return;
+        // Search again: the players may have arrived since the list was last drawn.
+        state.results = search();
         const choice = state.results[state.active >= 0 ? state.active : 0];
         if (choice) pick(choice);
       } else if (event.key === "Escape" && state.open) {
