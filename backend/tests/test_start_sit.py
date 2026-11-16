@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 import pytest
 
@@ -114,14 +115,17 @@ def test_finished_game_uses_actual_points():
 
 
 def test_missing_weekly_projections_fall_back_to_rest_of_season():
-    pw = advisor(MatchupData()).evaluate(player("a", ros=90.0), 9)
+    pw = advisor(MatchupData(), today=lambda: date(2026, 9, 1)).evaluate(player("a", ros=90.0), 9)
     assert pw.projection == pytest.approx(90.0 / 9)  # weeks 9-17, no bye
     assert pw.reasons[0].kind == "estimate"
 
 
 def test_current_week_is_first_with_unplayed_games():
     assert advisor().current_week == WEEK
-    assert advisor(MatchupData()).current_week == 9
+    # Without a schedule, the calendar says, within the synced weeks.
+    assert advisor(MatchupData(), today=lambda: date(2026, 9, 1)).current_week == 9
+    assert advisor(MatchupData(), today=lambda: date(2026, 11, 18)).current_week == 11
+    assert advisor(MatchupData(), today=lambda: date(2027, 2, 1)).current_week == 17
     assert advisor().compare([player("a", week_points=1.0), player("b", week_points=2.0)]).week == WEEK
 
 

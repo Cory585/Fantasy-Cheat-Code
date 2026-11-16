@@ -43,6 +43,7 @@ from app.models.start_sit import (
     StartSitAnalysis,
 )
 from app.services.matchups import MatchupData
+from app.services import season as calendar
 from app.services.outlook import schedule_label
 
 FORM_GAMES = 4
@@ -88,25 +89,17 @@ class StartSitAdvisor:
     form_weight: float = 0.3
     model_weight: float = 0.5
     simulations: int = SIMULATIONS
-    today: Callable[[], date] = field(default=date.today, repr=False)
+    today: Callable[[], date] = field(default=lambda: calendar.today(), repr=False)
+    # Week 1's start, from the sync's Sleeper state (see app.services.season.week_start).
+    season_start: date | None = None
 
     # ---------- public ----------
 
     @property
     def current_week(self) -> int:
-        """First week in range with a game still to be played (the first week without a schedule).
-
-        A game with no score whose date has passed was almost certainly played after the data
-        was collected, so it doesn't hold the current week back."""
-        first, last = self.weeks
-        if not self.matchups.available:
-            return first
-        today = self.today().isoformat()
-        for week in range(first, last + 1):
-            games = [w[week] for w in self.matchups.schedule.values() if week in w]
-            if any(not g.played and (g.gameday is None or g.gameday >= today) for g in games):
-                return week
-        return last
+        """First week in range with a game still to be played, or the calendar week without a
+        collected schedule (see `app.services.season.current_week`)."""
+        return calendar.current_week(self.matchups, self.weeks, self.season, self.season_start, self.today())
 
     def check_week(self, week: int | None) -> int:
         if week is None:

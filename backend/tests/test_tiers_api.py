@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -11,7 +13,8 @@ client = TestClient(app)
 
 
 @pytest.fixture
-def pool():
+def pool(monkeypatch):
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 9, 20))  # week 2: before the synced weeks
     app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(POOL)
     app.dependency_overrides[get_matchups] = lambda: (MatchupData(), {"season": 2026, "weeks": [11, 17]})
 

@@ -30,6 +30,7 @@ from app.services.player_profile import LocalPlayerData
 from app.services.profiles import ProfileService
 from app.services.matchups import MatchupData, load_matchups
 from app.services.outlook import OutlookBuilder
+from app.services.season import parse_date
 from app.services.start_sit import StartSitAdvisor
 from app.services.tiers import TierService
 from app.models.tags import PlayerTag
@@ -237,7 +238,7 @@ def get_start_sit_advisor(data: tuple[MatchupData, dict] = Depends(get_matchups)
     except (TypeError, ValueError, IndexError):
         first, last = DEFAULT_WEEKS
     return StartSitAdvisor(matchups, meta.get("season"), (first, last), form_weight=settings.form_weight,
-                           model_weight=settings.model_weight)
+                           model_weight=settings.model_weight, season_start=parse_date(meta.get("season_start")))
 
 
 def get_draft_planner(

@@ -236,20 +236,25 @@ def sync(
             )
 
     players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks, sleeper_weekly)
-    write_cache(output, players, season=season, weeks=weeks, scoring=scoring)
+    write_cache(output, players, season=season, weeks=weeks, scoring=scoring,
+                season_start=state.get("season_start_date"))
     log.info("Wrote %d players to %s", len(players), output)
     return players
 
 
 def write_cache(
-    output: Path, players: list[Player], season: int, weeks: range, scoring: ScoringFormat
+    output: Path, players: list[Player], season: int, weeks: range, scoring: ScoringFormat,
+    season_start: str | None = None,
 ) -> None:
+    """`season_start` is Sleeper's `season_start_date`; without a collected schedule, the API
+    counts the current week from it."""
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "season": season,
         "weeks": [weeks.start, weeks.stop - 1],
         "scoring": scoring.value,
+        **({"season_start": season_start} if season_start else {}),
         "players": [p.model_dump(mode="json") for p in players],
     }
     # Write to a temp file and swap it in, so the running API never reads a half-written cache.
