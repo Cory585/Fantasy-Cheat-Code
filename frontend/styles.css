@@ -123,16 +123,18 @@ button, input, select { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+/* The groups wrap onto more rows when the screen is too narrow, so no tab is hidden. */
 .nav-links {
   order: 3;
   flex-basis: 100%;
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
   margin: 0 -0.75rem;
   padding: 0;
   list-style: none;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow-x: clip; /* hides the divider of a group that starts a row (see below) */
 }
 
 .nav-group {
@@ -142,8 +144,9 @@ button, input, select { font: inherit; color: inherit; }
   padding: 0 0.5rem;
 }
 
-/* A divider between groups, so each group reads as its own section. */
-.nav-group + .nav-group { border-left: 1px solid var(--line); }
+/* A divider between groups, so each group reads as its own section. Every group has one,
+   pulled 1px left: at the start of a row it falls outside .nav-links and is clipped. */
+.nav-group { border-left: 1px solid var(--line); margin-left: -1px; }
 
 .nav-group-label {
   padding: 0 0.75rem;
@@ -157,6 +160,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .nav-group ul {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.125rem;
   margin: 0;
   padding: 0;
@@ -174,12 +178,6 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .nav-links a:hover { color: var(--ink); background: var(--bg); }
-
-/* Set by theme.js when more tabs are off to the right. */
-.nav-links.has-more {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
-}
 
 .nav-links a[aria-current="page"] {
   color: var(--ink);
@@ -2023,6 +2021,7 @@ main {
 @media (max-width: 760px) {
   .site-nav-inner { padding: 0.5rem 1rem 0; }
   .nav-group { padding: 0 0.25rem; }
+  .nav-links a { padding: 0.5rem 0.625rem; }
   .masthead { padding: 1.75rem 1rem 1.25rem; }
   main { padding: 0 1rem 2.5rem; }
   .sides { grid-template-columns: minmax(0, 1fr); }

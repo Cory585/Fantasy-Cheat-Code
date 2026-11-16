@@ -103,3 +103,14 @@ def test_404_page_links_every_section_in_nav_order(page):
     nav = page.locator(".nav-links a").evaluate_all("links => links.map(a => a.getAttribute(\"href\"))")
     links = page.locator(".not-found-links a").evaluate_all("links => links.map(a => a.getAttribute(\"href\"))")
     assert links == nav
+
+
+@pytest.mark.parametrize("width", [320, 375, 600, 800])
+def test_every_nav_tab_is_visible_without_scrolling(page, width):
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto("/finder/")
+    links = page.locator(".nav-links a")
+    expect(links).to_have_count(8)
+    boxes = [links.nth(i).bounding_box() for i in range(8)]
+    assert all(b["x"] >= 0 and b["x"] + b["width"] <= width for b in boxes), boxes
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
