@@ -43,3 +43,18 @@ def test_security_headers_reach_the_browser(page):
     headers = response.headers
     assert "script-src 'self'" in headers["content-security-policy"]
     assert headers["x-frame-options"] == "DENY"
+
+
+NAV_GROUPS = ["Weekly", "Players", "Draft", "My leagues"]
+
+
+@pytest.mark.parametrize("path", ["/", "/finder/", "/draft/", "/tiers/", "/start-sit/", "/team/", "/profile/",
+                                  "/defense/"])
+def test_nav_groups_tabs_and_marks_the_current_one(page, path):
+    page.goto(path)
+    expect(page.locator(".nav-group-label")).to_have_text(NAV_GROUPS)
+    current = page.locator('.nav-links a[aria-current="page"]')
+    expect(current).to_have_count(1)
+    assert current.get_attribute("href") == path
+    # Each group is a list named by its label, for screen readers.
+    expect(page.get_by_role("list", name="Draft").get_by_role("link")).to_have_text(["Draft masterclass"])

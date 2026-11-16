@@ -17,14 +17,34 @@
     <div class="site-nav-inner">
       <a class="site-name" href="/">Fantasy Cheat Code</a>
       <ul class="nav-links">
-        <li><a href="/">Trade analyzer</a></li>
-        <li><a href="/finder/">Player finder</a></li>
-        <li><a href="/tiers/">Tier lists</a></li>
-        <li><a href="/start-sit/">Start/sit</a></li>
-        <li><a href="/draft/">Draft masterclass</a></li>
-        <li><a href="/defense/">Defenses</a></li>
-        <li><a href="/team/">My team</a></li>
-        <li><a href="/profile/" aria-current="page">Profile</a></li>
+        <li class="nav-group">
+          <span class="nav-group-label" id="nav-weekly">Weekly</span>
+          <ul aria-labelledby="nav-weekly">
+            <li><a href="/start-sit/">Start/sit</a></li>
+            <li><a href="/">Trade analyzer</a></li>
+            <li><a href="/defense/">Defenses</a></li>
+          </ul>
+        </li>
+        <li class="nav-group">
+          <span class="nav-group-label" id="nav-players">Players</span>
+          <ul aria-labelledby="nav-players">
+            <li><a href="/tiers/">Tier lists</a></li>
+            <li><a href="/finder/">Player finder</a></li>
+          </ul>
+        </li>
+        <li class="nav-group">
+          <span class="nav-group-label" id="nav-draft">Draft</span>
+          <ul aria-labelledby="nav-draft">
+            <li><a href="/draft/">Draft masterclass</a></li>
+          </ul>
+        </li>
+        <li class="nav-group">
+          <span class="nav-group-label" id="nav-leagues">My leagues</span>
+          <ul aria-labelledby="nav-leagues">
+            <li><a href="/team/">My team</a></li>
+            <li><a href="/profile/" aria-current="page">Profile</a></li>
+          </ul>
+        </li>
       </ul>
       <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
         <span class="theme-icon" aria-hidden="true"></span>
