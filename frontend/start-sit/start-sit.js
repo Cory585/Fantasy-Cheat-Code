@@ -8,7 +8,7 @@
 //                    start, how confident the call is, each player's range, and the reasons.
 
 (() => {
-  const { el, request, errorMessage, loadPlayers, loadMeta, noteSampleData, copyText, avatar, profileUrl, createSearch } = window.PlayerUI;
+  const { el, request, errorMessage, loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -701,10 +701,8 @@
   function renderStatus() {
     const meta = state.meta;
     if (!meta) return;
-    if (meta.source !== "synced") {
-      noteSampleData(meta);
-      return;
-    }
+    noteDataStatus(meta);
+    if (meta.source !== "synced") return;
     const parts = [`Week ${meta.current_week} is the current week`];
     if (!meta.matchups) parts.push("matchups and recent form aren't available yet");
     els.status.textContent = `${parts.join("; ")}.`;

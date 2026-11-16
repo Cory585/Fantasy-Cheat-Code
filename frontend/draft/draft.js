@@ -877,7 +877,7 @@ function init() {
 
   update();
   resumeLive();
-  PlayerUI.noteSampleData();
+  PlayerUI.noteDataStatus();
 }
 
 init();

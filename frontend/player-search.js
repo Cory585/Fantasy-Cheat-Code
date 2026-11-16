@@ -157,14 +157,27 @@ window.PlayerUI = (() => {
     }
   }
 
-  // A note under the page title while the API serves its built-in sample players instead of
-  // real projections. Pass /meta when the page already has it (null if it failed); otherwise
-  // it's fetched. Returns the meta.
-  async function noteSampleData(meta) {
+  // What's wrong with the data, if anything: the API serves its built-in sample players, or
+  // synced projections that have gone stale (`stale`, with the week they were synced in).
+  function dataWarning(meta) {
+    if (!meta) return null;
+    if (meta.source !== "synced") return "Showing sample players, not real projections.";
+    if (meta.stale) {
+      return Number.isInteger(meta.synced_week)
+        ? `Projections were last updated in week ${meta.synced_week}, so they may be out of date.`
+        : "Projections haven't been updated recently, so they may be out of date.";
+    }
+    return null;
+  }
+
+  // A note under the page title when dataWarning has something to say. Pass /meta when the
+  // page already has it (null if it failed); otherwise it's fetched. Returns the meta.
+  async function noteDataStatus(meta) {
     if (meta === undefined) meta = await loadMeta();
+    const warning = dataWarning(meta);
     const title = document.querySelector(".masthead-title");
-    if (meta && meta.source !== "synced" && title && !title.querySelector(".sample-notice")) {
-      const note = el("p", "data-status sample-notice", "Showing sample players, not real projections.");
+    if (warning && title && !title.querySelector(".data-notice")) {
+      const note = el("p", "data-status data-notice", warning);
       (title.querySelector(".lede") || title.lastElementChild).after(note);
     }
     return meta;
@@ -359,6 +372,6 @@ window.PlayerUI = (() => {
 
   return {
     POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
-    loadPlayers, loadMeta, noteSampleData, copyText, avatar, profileUrl, createSearch,
+    loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
   };
 })();

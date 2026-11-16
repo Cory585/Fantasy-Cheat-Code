@@ -85,10 +85,8 @@ async function loadMeta() {
   if (!state.meta) return;
   const el = document.getElementById("data-status");
   const meta = state.meta;
-  if (meta.source !== "synced") {
-    PlayerUI.noteSampleData(meta);
-    return;
-  }
+  PlayerUI.noteDataStatus(meta);
+  if (meta.source !== "synced") return;
   const synced = new Date(meta.synced_at);
   const when = Number.isNaN(synced.getTime()) ? null : synced.toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",

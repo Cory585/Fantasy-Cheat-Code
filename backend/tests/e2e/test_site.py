@@ -73,10 +73,11 @@ def test_pages_show_no_developer_instructions(page, path):
     assert not DEVELOPER_TEXT.search(text), DEVELOPER_TEXT.search(text).group(0)
 
 
-def fake_meta(page, source):
+def fake_meta(page, source, **extra):
     meta = {"source": source, "players": 30, "outlooks": 0, "weeks": [1, 18], "current_week": 1, "matchups": False}
     if source == "synced":
         meta.update(season=2025, scoring="half_ppr", synced_at="2025-09-01T12:00:00Z")
+    meta.update(extra)
     page.route("**/meta", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(meta)))
 
 
@@ -87,7 +88,15 @@ SAMPLE_PAGES = ["/", "/start-sit/", "/draft/", "/tiers/", "/tiers/?h=ros", "/fin
 def test_sample_data_is_flagged(page, path):
     fake_meta(page, "sample")
     page.goto(path)
-    expect(page.locator(".masthead-title .sample-notice")).to_have_text("Showing sample players, not real projections.")
+    expect(page.locator(".masthead-title .data-notice")).to_have_text("Showing sample players, not real projections.")
+
+
+@pytest.mark.parametrize("path", ["/", "/start-sit/", "/draft/"])
+def test_stale_synced_data_is_flagged(page, path):
+    fake_meta(page, "synced", stale=True, synced_week=3, current_week=7)
+    page.goto(path)
+    expect(page.locator(".masthead-title .data-notice")).to_have_text(
+        "Projections were last updated in week 3, so they may be out of date.")
 
 
 @pytest.mark.parametrize("path", ["/", "/draft/", "/tiers/"])
@@ -95,7 +104,7 @@ def test_synced_data_is_not_flagged(page, path):
     fake_meta(page, "synced")
     page.goto(path)
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".sample-notice")).to_have_count(0)
+    expect(page.locator(".data-notice")).to_have_count(0)
 
 
 def test_404_page_links_every_section_in_nav_order(page):
