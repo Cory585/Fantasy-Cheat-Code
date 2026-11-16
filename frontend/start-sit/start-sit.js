@@ -52,7 +52,7 @@
   const state = {
     players: new Map(),
     meta: null,
-    weeks: [1, 17],
+    weeks: [1, 18], // replaced by /meta's weeks once it loads
     week: null, // null until the current week is known
     slot: "",
     starts: 1,
