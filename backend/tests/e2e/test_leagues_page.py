@@ -54,6 +54,31 @@ def test_add_rename_and_remove_leagues(page, key):
     assert page.problems.errors == []
 
 
+def test_rename_does_not_overwrite_a_change_made_elsewhere(page, key):
+    league = add_league(page, key, "Work league")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name", has_text="Work league")).to_be_visible()
+    # Another device renames it after this page loaded it.
+    resp = page.request.put(f"/leagues/{league['id']}", data={"name": "Renamed elsewhere"},
+                            headers={"X-Profile-Key": key})
+    assert resp.status == 200
+
+    page.click('button[aria-label="Rename Work league"]')
+    rename = page.locator('input[aria-label="New name for Work league"]')
+    rename.fill("Office league")
+    rename.press("Enter")
+    expect(page.locator("#profile-status")).to_contain_text("changed in another tab or on another device")
+    # The page picks up the other device's version, and nothing was overwritten.
+    rename = page.locator('input[aria-label="New name for Renamed elsewhere"]')
+    expect(rename).to_have_value("Renamed elsewhere")
+    assert [lg["name"] for lg in leagues(page, key)] == ["Renamed elsewhere"]
+
+    rename.fill("Office league")
+    rename.press("Enter")
+    expect(page.locator(".league-card-name", has_text="Office league")).to_be_visible()
+    assert [lg["name"] for lg in leagues(page, key)] == ["Office league"]
+
+
 def test_profile_holds_at_most_ten_leagues(page, key):
     for i in range(MAX_LEAGUES):
         add_league(page, key, f"League {i + 1}")
