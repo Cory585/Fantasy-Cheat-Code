@@ -73,18 +73,11 @@ class EspnSource:
         return [entry["player"] for entry in data["players"]]
 
 
-def ros_points(
-    player: dict, season: int, weeks: range, scoring: ScoringFormat, skip_week: int | None = None
-) -> float:
-    """Sum of a player's weekly ESPN projections over `weeks`, optionally skipping one week
-    (used when the player's game that week is already final)."""
-    return sum(weekly_points(player, season, weeks, scoring, skip_week).values())
-
-
 def weekly_points(
     player: dict, season: int, weeks: range, scoring: ScoringFormat, skip_week: int | None = None
 ) -> dict[int, float]:
-    """A player's ESPN projection for each week in `weeks` (weeks without one are left out)."""
+    """A player's ESPN projection for each week in `weeks` (weeks without one are left out),
+    optionally skipping one week (used when the player's game that week is already final)."""
     points_by_week: dict[int, float] = {}
     for stat in player.get("stats") or []:
         if (
