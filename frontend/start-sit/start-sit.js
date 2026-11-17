@@ -187,14 +187,17 @@
     if (state.slot) params.set("slot", state.slot);
     params.set("starts", Math.min(state.starts, state.chosen.length - 1));
     state.loading = true;
+    state.error = null; // an old error would hide "Comparing?" until this answer arrives
     els.result.setAttribute("aria-busy", "true");
     renderResult();
+    // A newer request can start during any await below; only the latest one may render.
     try {
       const response = await request(`/start-sit?${params}`);
       if (id !== requestId) return;
       if (!response.ok) throw new Error(await errorMessage(response, "Couldn't compare these players"));
-      state.analysis = await response.json();
-      state.error = null;
+      const analysis = await response.json();
+      if (id !== requestId) return;
+      state.analysis = analysis;
     } catch (error) {
       if (id !== requestId) return;
       state.analysis = null;
@@ -382,6 +385,7 @@
       return;
     }
     state.lineupLoading = true;
+    state.lineupError = null;
     els.lineup.setAttribute("aria-busy", "true");
     renderLineup();
     try {
@@ -392,8 +396,9 @@
       });
       if (id !== lineupRequestId) return;
       if (!response.ok) throw new Error(await errorMessage(response, "Couldn't set your lineup"));
-      state.lineup = await response.json();
-      state.lineupError = null;
+      const lineup = await response.json();
+      if (id !== lineupRequestId) return;
+      state.lineup = lineup;
     } catch (error) {
       if (id !== lineupRequestId) return;
       state.lineup = null;
