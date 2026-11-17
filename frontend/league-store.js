@@ -10,7 +10,7 @@
 //
 // Saves only overwrite the version of a league this page last saw: each save sends that
 // version (If-Match), and if the league was saved somewhere else since (another tab or
-// device), the server refuses with a 409. `save` then rejects with an error whose `conflict`
+// device), the server refuses with a 409. Saves of one league go out one at a time. `save` then rejects with an error whose `conflict`
 // is true and whose `league` is the server's copy, and `onChange` listeners on this page run
 // so they can reload. Nothing is overwritten until the page loads the newer copy.
 
@@ -135,12 +135,13 @@ window.LeagueStore = (() => {
 
   // ---------- Versions ----------
 
-  // The version of each league this page last got from the server, and how many of its saves
-  // are on their way. Saves from a page run one at a time, so each one in flight will move the
-  // league up one version; a save sent while another is in flight (the one sent as the page
-  // closes) expects that.
+  // The version of each league this page last got from the server, and the save of each
+  // league still on its way. A league's saves go out one at a time: a save made while another
+  // is in flight (like the one sent as the page closes) waits for it, then sends the version
+  // that save came back with. Versions are never guessed, so if the earlier save failed or was
+  // refused, the later one is refused too instead of overwriting someone else's save.
   const versions = new Map();
-  const pending = new Map();
+  const inFlight = new Map();
 
   function remember(league) {
     if (league && typeof league.id === "string" && Number.isInteger(league.version)) {
@@ -151,7 +152,7 @@ window.LeagueStore = (() => {
 
   function ifMatch(id) {
     if (!versions.has(id)) return {}; // never loaded here: save as before, without a check
-    return { "If-Match": `"${versions.get(id) + (pending.get(id) || 0)}"` };
+    return { "If-Match": `"${versions.get(id)}"` };
   }
 
   // Keep only well-formed values, so a hand-edited entry can't break a request.
@@ -227,18 +228,27 @@ window.LeagueStore = (() => {
 
   // Rejects with `error.conflict` (and the server's copy in `error.league`) if the league was
   // saved somewhere else since this page loaded it.
-  async function save(id, league, options = {}) {
-    const headers = ifMatch(id);
-    pending.set(id, (pending.get(id) || 0) + 1);
+  function save(id, league, options = {}) {
+    const earlier = inFlight.get(id);
+    // With nothing in flight, send right away (synchronously, so a save made as the page
+    // closes goes out before it does); otherwise once the earlier save has settled.
+    const run = earlier ? earlier.then(() => send(id, league, options)) : send(id, league, options);
+    const settled = run.catch(() => {});
+    inFlight.set(id, settled);
+    settled.then(() => {
+      if (inFlight.get(id) === settled) inFlight.delete(id);
+    });
+    return run;
+  }
+
+  async function send(id, league, options) {
     let saved;
     try {
-      saved = await call("PUT", `/leagues/${encodeURIComponent(id)}`, body(league), { ...options, headers });
+      saved = await call("PUT", `/leagues/${encodeURIComponent(id)}`, body(league), { ...options, headers: ifMatch(id) });
     } catch (error) {
       // Tell this page's listeners to reload, after the caller has handled the error.
       if (error.conflict) setTimeout(() => window.dispatchEvent(new Event(STALE_EVENT)), 0);
       throw error;
-    } finally {
-      pending.set(id, pending.get(id) - 1);
     }
     remember(saved);
     announce();

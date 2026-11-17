@@ -79,6 +79,43 @@ def test_rename_does_not_overwrite_a_change_made_elsewhere(page, key):
     assert [lg["name"] for lg in leagues(page, key)] == ["Office league"]
 
 
+def test_save_made_while_another_is_in_flight_never_guesses_the_version(page, key):
+    """The save sent as a page closes can start while an earlier save is still out. It waits
+    for that one and sends the version it came back with; if it was refused, the later save
+    sends the old version (and is refused too) rather than a guessed one that might match
+    another device's save."""
+    league = add_league(page, key, "Work league")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name", has_text="Work league")).to_be_visible()
+    log = page.evaluate("""async (id) => {
+        const log = [];
+        const realFetch = window.fetch;
+        let first = true;
+        window.fetch = async (url, options = {}) => {
+            if (options.method !== 'PUT') return realFetch(url, options);
+            log.push({event: 'sent', ifMatch: options.headers['If-Match'], keepalive: options.keepalive});
+            if (first) {
+                first = false;
+                // Another device saved first: this save is refused, after a delay.
+                await new Promise((resolve) => setTimeout(resolve, 300));
+                log.push({event: 'refused'});
+                return new Response(JSON.stringify({detail: 'x', code: 'league_conflict',
+                    league: {id, name: 'Elsewhere', slots: {}, roster: [], created: '', updated: '', version: 2}}),
+                    {status: 409, headers: {'Content-Type': 'application/json'}});
+            }
+            return new Response(JSON.stringify({detail: 'x', code: 'league_conflict'}), {status: 409});
+        };
+        const one = LeagueStore.save(id, {name: 'One'}).catch((e) => e.conflict);
+        const two = LeagueStore.save(id, {name: 'Two'}, {keepalive: true}).catch((e) => e.status);
+        await Promise.all([one, two]);
+        window.fetch = realFetch;
+        return log;
+    }""", league["id"])
+    assert [entry["event"] for entry in log] == ["sent", "refused", "sent"]  # one at a time
+    assert log[0]["ifMatch"] == log[2]["ifMatch"] == '"1"'  # the version this page saw, not a guess
+    assert log[2]["keepalive"] is True
+
+
 def test_profile_holds_at_most_ten_leagues(page, key):
     for i in range(MAX_LEAGUES):
         add_league(page, key, f"League {i + 1}")
