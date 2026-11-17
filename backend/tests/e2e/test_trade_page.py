@@ -93,12 +93,16 @@ def test_search_adds_players_with_the_keyboard(page):
     search = page.locator('.side[data-side="b"] .player-search')
     expect(search).to_be_enabled()
     search.fill("Sample WR")
-    expect(page.locator("#results-b .search-option").first).to_be_visible()
-    search.press("ArrowDown")
+    # Typing highlights the first match, so Enter has a visible, announced choice.
+    first = page.locator("#results-b .search-option").first
+    expect(first).to_have_attribute("aria-selected", "true")
+    expect(search).to_have_attribute("aria-activedescendant", "results-b-opt-0")
     search.press("ArrowDown")
     expect(search).to_have_attribute("aria-activedescendant", "results-b-opt-1")
+    second = page.locator("#results-b .search-option-name").nth(1).inner_text()
     search.press("Enter")
     expect(page.locator('.side[data-side="b"] .roster-item')).to_have_count(1)
+    expect(page.locator('.side[data-side="b"] .roster-item')).to_contain_text(second)
     expect(page.locator("#results-b")).to_be_hidden()
     assert "b=" in page.url
 

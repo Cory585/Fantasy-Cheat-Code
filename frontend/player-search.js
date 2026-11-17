@@ -337,7 +337,8 @@ window.PlayerUI = (() => {
     }
 
     input.addEventListener("input", () => {
-      state.active = -1;
+      // Highlight the first match while typing, so Enter visibly picks it.
+      state.active = input.value.trim() ? 0 : -1;
       setOpen(true);
     });
     input.addEventListener("click", () => setOpen(true));
