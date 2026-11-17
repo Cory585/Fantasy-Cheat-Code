@@ -173,3 +173,14 @@ def test_pages_ask_for_meta_once(page, path):
     page.goto(path)
     page.wait_for_load_state("networkidle")
     assert len(asked) == 1
+
+
+def test_nav_masthead_and_main_share_one_page_width(page):
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto("/")
+    boxes = page.evaluate("""() => ['.site-nav-inner', '.masthead', 'main'].map(s => {
+        const e = document.querySelector(s);
+        return [getComputedStyle(e).maxWidth, e.getBoundingClientRect().left];
+    })""")
+    assert {width for width, _ in boxes} == {"1120px"}, boxes
+    assert len({left for _, left in boxes}) == 1, boxes
