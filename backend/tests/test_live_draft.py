@@ -246,9 +246,11 @@ def test_unknown_or_malformed_session_ids(use_source):
 
 def read_events(session_id):
     events = []
-    with client.stream("GET", f"/draft/live/{session_id}/events") as resp:
+    with client.stream("GET", f"/draft/live/{session_id}/events", headers={"Accept-Encoding": "gzip"}) as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
+        # GZip would buffer the events, so the stream goes out uncompressed.
+        assert "content-encoding" not in resp.headers
         assert resp.headers["cache-control"] == "no-store"
         name = None
         for line in resp.iter_lines():

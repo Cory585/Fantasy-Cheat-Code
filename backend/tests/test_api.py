@@ -16,6 +16,20 @@ def test_list_players_by_position():
     assert players and all(p["position"] == "RB" for p in players)
 
 
+def test_players_are_gzipped_when_the_client_accepts_it():
+    resp = client.get("/players", headers={"Accept-Encoding": "gzip"})
+    assert resp.status_code == 200
+    assert resp.headers["content-encoding"] == "gzip"
+    assert "Accept-Encoding" in resp.headers["vary"]
+    assert len(resp.json()) == 12  # httpx decodes it
+
+
+def test_players_are_not_gzipped_for_clients_that_dont_ask():
+    resp = client.get("/players", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in resp.headers
+    assert len(resp.json()) == 12
+
+
 def test_get_unknown_player_404():
     assert client.get("/players/nope").status_code == 404
 
