@@ -7,6 +7,8 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_CACHE_PATH = DATA_DIR / "players.json"
 DEFAULT_DATABASE_PATH = DATA_DIR / "fantasy.db"
+# Last week of the NFL regular season (17 games over 18 weeks since 2021).
+REGULAR_SEASON_END_WEEK = 18
 
 
 @dataclass(frozen=True)

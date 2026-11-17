@@ -28,6 +28,7 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
 
+from app.config import REGULAR_SEASON_END_WEEK
 from app.models.player import Player, PlayerOutlook, Position
 from app.models.trade import ScoringFormat
 
@@ -49,8 +50,13 @@ class OutlookBuilder:
     conn: sqlite3.Connection
     season: int
     scoring: ScoringFormat
-    end_week: int = 17
+    end_week: int = REGULAR_SEASON_END_WEEK
     form_weight: float = 0.3
+    # Games before this week don't count as remaining, even without a score collected.
+    start_week: int = 1
+    # Teams whose `start_week` game is over (see app.services.season.played_teams), so it
+    # isn't remaining either: the same games rest-of-season projections leave out.
+    played: frozenset[str] = frozenset()
 
     # ---------- public ----------
 
@@ -109,13 +115,15 @@ class OutlookBuilder:
         """Team -> [(week, opponent)] for regular-season games not yet played."""
         rows = self.conn.execute(
             """SELECT week, away_team, home_team FROM games
-               WHERE season = ? AND game_type = 'REG' AND week <= ?
+               WHERE season = ? AND game_type = 'REG' AND week BETWEEN ? AND ?
                  AND (away_score IS NULL OR home_score IS NULL)
                ORDER BY week""",
-            (self.season, self.end_week),
+            (self.season, self.start_week, self.end_week),
         ).fetchall()
         remaining: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for week, away, home in rows:
+            if week == self.start_week and (away in self.played or home in self.played):
+                continue
             remaining[away].append((week, home))
             remaining[home].append((week, away))
         return remaining

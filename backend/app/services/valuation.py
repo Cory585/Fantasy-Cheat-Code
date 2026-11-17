@@ -22,8 +22,9 @@ from app.services.outlook import schedule_label
 INJURY_DISCOUNT = {"Q": 0.9, "D": 0.75, "O": 0.6, "IR": 0.2}
 
 
-# Positions that can fill a FLEX lineup slot.
+# Positions that can fill a FLEX or SUPERFLEX lineup slot.
 FLEX_POSITIONS = (Position.RB, Position.WR, Position.TE)
+SUPERFLEX_POSITIONS = (Position.QB, *FLEX_POSITIONS)
 # Providers this far apart (relative to their average) make a projection shaky; this close, solid.
 PROJECTIONS_DISAGREE = 0.15
 PROJECTIONS_AGREE = 0.05
@@ -39,18 +40,20 @@ def fill_lineups(pools: dict[Position, list[float]], league: LeagueSettings) -> 
 
     Dedicated slots fill first (e.g. 2 RB x 12 teams = the top 24 RBs). FLEX slots then go
     to the best remaining RB/WR/TE, so a WR3 who starts at flex has value instead of sitting
-    below the replacement line with the waiver wire.
+    below the replacement line with the waiver wire. SUPERFLEX slots go last, to the best
+    remaining QB/RB/WR/TE: in practice mostly QBs, which pushes the QB replacement level down
+    and raises every starting QB's value.
     """
     pools = {pos: pools.get(pos, []) for pos in Position}
     taken = {pos: min(league.roster_slots.get(pos.value, 0) * league.num_teams, len(pools[pos])) for pos in Position}
 
-    flex_slots = league.roster_slots.get("FLEX", 0) * league.num_teams
-    for _ in range(flex_slots):
-        candidates = [pos for pos in FLEX_POSITIONS if taken[pos] < len(pools[pos])]
-        if not candidates:
-            break
-        best = max(candidates, key=lambda pos: pools[pos][taken[pos]])
-        taken[best] += 1
+    for slot, positions in (("FLEX", FLEX_POSITIONS), ("SUPERFLEX", SUPERFLEX_POSITIONS)):
+        for _ in range(league.roster_slots.get(slot, 0) * league.num_teams):
+            candidates = [pos for pos in positions if taken[pos] < len(pools[pos])]
+            if not candidates:
+                break
+            best = max(candidates, key=lambda pos: pools[pos][taken[pos]])
+            taken[best] += 1
 
     # A pool too small to have anyone left over (e.g. the sample data) gets a 0 baseline.
     levels = {pos: pools[pos][taken[pos]] if taken[pos] < len(pools[pos]) else 0.0 for pos in Position}

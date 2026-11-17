@@ -38,7 +38,8 @@ def test_errors():
     assert get([("player", "wr1"), ("player", "rb1"), ("slot", "WR")]).json()["code"] == "invalid_start_sit"
     assert get([("player", "wr1"), ("player", "wr1")]).json()["code"] == "invalid_start_sit"
     assert get([("player", "wr1"), ("player", "wr2"), ("starts", 2)]).json()["code"] == "invalid_start_sit"
-    assert get([("player", "wr1"), ("player", "wr2"), ("week", 18)]).json()["code"] == "invalid_week"
+    assert get([("player", "wr1"), ("player", "wr2"), ("week", 18)]).status_code == 200  # the regular season runs 18 weeks
+    assert get([("player", "wr1"), ("player", "wr2"), ("week", 19)]).status_code == 422
     assert get([("player", "wr1"), ("player", "<script>")]).json()["code"] == "invalid_request"
     assert get([("player", p) for p in ["wr1"] * 9]).status_code == 422
 
@@ -72,5 +73,6 @@ def test_lineup_errors():
     assert post({"roster_ids": ["wr1"], "slots": {"BENCH": 1}}).json()["code"] == "invalid_request"
     assert post({"roster_ids": ["wr1"], "slots": {"WR": 6}}).json()["code"] == "invalid_request"
     assert post({"roster_ids": ["wr1"], "slots": {"WR": 0}}).json()["code"] == "invalid_lineup"
-    assert post({"roster_ids": ["wr1"], "week": 18}).json()["code"] == "invalid_week"
+    assert post({"roster_ids": ["wr1"], "week": 18}).status_code == 200
+    assert post({"roster_ids": ["wr1"], "week": 19}).status_code == 422
     assert post({"roster_ids": ["x"] * 41}).status_code == 422

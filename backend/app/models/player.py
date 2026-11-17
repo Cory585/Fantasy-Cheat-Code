@@ -20,7 +20,8 @@ class Player(BaseModel):
     position: Position
     team: str = Field(description="NFL team abbreviation, e.g. 'KC'")
     bye_week: int | None = None
-    # Rest-of-season projected fantasy points (scoring-format specific).
+    # Rest-of-season projected fantasy points (scoring-format specific). The API recomputes it
+    # from `weekly_projections` for the current week on (see app.services.season.rest_of_season).
     ros_projection: float = 0.0
     injury_status: str | None = None  # e.g. "Q", "O", "IR"
     # External IDs, used to join data across providers.

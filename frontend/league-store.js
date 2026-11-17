@@ -7,6 +7,12 @@
 //
 // A team saved by the old single-team version of the site (`fcc.team.v1`) is moved into
 // a league the first time the profile is loaded with no leagues.
+//
+// Saves only overwrite the version of a league this page last saw: each save sends that
+// version (If-Match), and if the league was saved somewhere else since (another tab or
+// device), the server refuses with a 409. Saves of one league go out one at a time. `save` then rejects with an error whose `conflict`
+// is true and whose `league` is the server's copy, and `onChange` listeners on this page run
+// so they can reload. Nothing is overwritten until the page loads the newer copy.
 
 window.LeagueStore = (() => {
   const PROFILE_KEY = "fcc.profile.v1";
@@ -21,6 +27,7 @@ window.LeagueStore = (() => {
   const DEFAULT_SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, SUPERFLEX: 0, K: 1, DST: 1 };
   const ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
   const KEY_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
+  const STALE_EVENT = "fcc:leagues-stale";
 
   // ---------- Browser storage (always guarded: it can be blocked or hold junk) ----------
 
@@ -77,8 +84,8 @@ window.LeagueStore = (() => {
 
   // ---------- Requests ----------
 
-  async function call(method, path, body, { keepalive = false } = {}) {
-    const options = { method, headers: { "X-Profile-Key": profileKey() }, keepalive };
+  async function call(method, path, body, { keepalive = false, headers = {} } = {}) {
+    const options = { method, headers: { "X-Profile-Key": profileKey(), ...headers }, keepalive };
     if (body !== undefined) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(body);
@@ -90,24 +97,64 @@ window.LeagueStore = (() => {
       throw new Error("Couldn't reach the server.");
     }
     if (response.ok) return response.status === 204 ? null : response.json();
-    throw new Error(await problem(response));
+    throw await problem(response);
   }
 
+  // An Error for a failed response, with its HTTP `status` and error `code`.
   async function problem(response) {
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      // not JSON
+    }
+    const error = new Error(message(response, body));
+    error.status = response.status;
+    error.code = body && typeof body.code === "string" ? body.code : null;
+    if (response.status === 409 && body && body.code === "league_conflict" && body.league) {
+      error.conflict = true;
+      error.league = body.league;
+    }
+    return error;
+  }
+
+  function message(response, body) {
     if (response.status === 429) {
       const wait = Number(response.headers.get("Retry-After"));
       return Number.isFinite(wait) && wait > 0
         ? `Too many league changes at once. Try again in ${wait} second${wait === 1 ? "" : "s"}.`
         : "Too many league changes at once. Try again shortly.";
     }
-    try {
-      const body = await response.json();
-      if (typeof body.detail === "string") return body.detail;
-      if (response.status === 422) return "That league couldn't be saved: check its name, spots, and roster.";
-    } catch {
-      // not JSON
+    if (body && body.code === "league_conflict") {
+      return "This league was changed in another tab or on another device. Reload to see the latest version.";
     }
-    return `The server returned HTTP ${response.status}.`;
+    // The server's own explanation, when it sent one.
+    if (body && typeof body.detail === "string" && body.detail.trim()) return body.detail.trim();
+    if (response.status === 422) return "That league couldn't be saved: check its name, spots, and roster.";
+    if (response.status >= 500) return "Your leagues can't be loaded or saved right now. Try again in a moment.";
+    return "Something went wrong with your leagues. Reload the page and try again.";
+  }
+
+  // ---------- Versions ----------
+
+  // The version of each league this page last got from the server, and the save of each
+  // league still on its way. A league's saves go out one at a time: a save made while another
+  // is in flight (like the one sent as the page closes) waits for it, then sends the version
+  // that save came back with. Versions are never guessed, so if the earlier save failed or was
+  // refused, the later one is refused too instead of overwriting someone else's save.
+  const versions = new Map();
+  const inFlight = new Map();
+
+  function remember(league) {
+    if (league && typeof league.id === "string" && Number.isInteger(league.version)) {
+      versions.set(league.id, league.version);
+    }
+    return league;
+  }
+
+  function ifMatch(id) {
+    if (!versions.has(id)) return {}; // never loaded here: save as before, without a check
+    return { "If-Match": `"${versions.get(id)}"` };
   }
 
   // Keep only well-formed values, so a hand-edited entry can't break a request.
@@ -156,7 +203,7 @@ window.LeagueStore = (() => {
       if (!leagues.length) write(LEGACY_TEAM_KEY, null);
       return leagues;
     }
-    const league = await call("POST", "/leagues", body({ ...legacy, name: legacy.name || "My league" }));
+    const league = remember(await call("POST", "/leagues", body({ ...legacy, name: legacy.name || "My league" })));
     write(LEGACY_TEAM_KEY, null);
     write(ACTIVE_KEY, league.id);
     return [league];
@@ -164,6 +211,7 @@ window.LeagueStore = (() => {
 
   async function list() {
     const result = await call("GET", "/leagues");
+    result.leagues.forEach(remember);
     let leagues = result.leagues;
     try {
       leagues = await migrateLegacyTeam(leagues);
@@ -175,19 +223,43 @@ window.LeagueStore = (() => {
   }
 
   async function create(league) {
-    const made = await call("POST", "/leagues", body(league));
+    const made = remember(await call("POST", "/leagues", body(league)));
     announce();
     return made;
   }
 
-  async function save(id, league, options) {
-    const saved = await call("PUT", `/leagues/${encodeURIComponent(id)}`, body(league), options);
+  // Rejects with `error.conflict` (and the server's copy in `error.league`) if the league was
+  // saved somewhere else since this page loaded it.
+  function save(id, league, options = {}) {
+    const earlier = inFlight.get(id);
+    // With nothing in flight, send right away (synchronously, so a save made as the page
+    // closes goes out before it does); otherwise once the earlier save has settled.
+    const run = earlier ? earlier.then(() => send(id, league, options)) : send(id, league, options);
+    const settled = run.catch(() => {});
+    inFlight.set(id, settled);
+    settled.then(() => {
+      if (inFlight.get(id) === settled) inFlight.delete(id);
+    });
+    return run;
+  }
+
+  async function send(id, league, options) {
+    let saved;
+    try {
+      saved = await call("PUT", `/leagues/${encodeURIComponent(id)}`, body(league), { ...options, headers: ifMatch(id) });
+    } catch (error) {
+      // Tell this page's listeners to reload, after the caller has handled the error.
+      if (error.conflict) setTimeout(() => window.dispatchEvent(new Event(STALE_EVENT)), 0);
+      throw error;
+    }
+    remember(saved);
     announce();
     return saved;
   }
 
   async function remove(id) {
     await call("DELETE", `/leagues/${encodeURIComponent(id)}`);
+    versions.delete(id);
     if (read(ACTIVE_KEY) === id) write(ACTIVE_KEY, null);
     announce();
   }
@@ -210,11 +282,13 @@ window.LeagueStore = (() => {
 
   const hasTeam = (league) => Boolean(league && league.roster.length > 0);
 
-  // Runs `callback` when another tab changes the leagues or switches profiles.
+  // Runs `callback` when another tab changes the leagues or switches profiles, or when a save
+  // here finds the league was changed somewhere else.
   function onChange(callback) {
     window.addEventListener("storage", (event) => {
       if (event.key === CHANGED_KEY || event.key === PROFILE_KEY) callback();
     });
+    window.addEventListener(STALE_EVENT, () => callback());
   }
 
   // A labeled league <select> plus a link to manage leagues, for pages that show a team.

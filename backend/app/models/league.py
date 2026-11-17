@@ -52,6 +52,7 @@ class League(BaseModel):
     roster: list[str]
     created: str = Field(description="ISO 8601, UTC")
     updated: str = Field(description="ISO 8601, UTC")
+    version: int = Field(default=1, description="Goes up by one with each save; send it back in If-Match")
 
 
 class LeagueList(BaseModel):

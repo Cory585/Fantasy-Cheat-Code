@@ -8,6 +8,7 @@ from app.models.trade import (
     BalanceSuggestion,
     LeagueSettings,
     PlayerValuation,
+    ScoringFormat,
     SideAnalysis,
     TradeAnalysis,
     TradeRequest,
@@ -24,10 +25,27 @@ class UnknownPlayerError(ValueError):
         self.player_ids = player_ids
 
 
+class ScoringMismatchError(ValueError):
+    """The request asks for a scoring format the synced projections weren't built for."""
+
+    def __init__(self, requested: ScoringFormat, available: ScoringFormat):
+        super().__init__(
+            f"Projections are synced for {_label(available)} scoring, so trades can't be valued "
+            f"for {_label(requested)}. Leave scoring out, or re-sync with --scoring {requested.value}."
+        )
+
+
+def _label(scoring: ScoringFormat) -> str:
+    return {"standard": "standard", "half_ppr": "half-PPR", "ppr": "PPR"}[scoring.value]
+
+
 class TradeAnalyzer:
-    def __init__(self, repo: PlayerRepository, valuation: ValuationService):
+    def __init__(self, repo: PlayerRepository, valuation: ValuationService, scoring: ScoringFormat | None = None):
+        """`scoring` is the format the player data was synced for (None for sample data,
+        which accepts any)."""
         self._repo = repo
         self._valuation = valuation
+        self._scoring = scoring
 
     def analyze(self, request: TradeRequest) -> TradeAnalysis:
         self._validate(request)
@@ -83,6 +101,9 @@ class TradeAnalyzer:
         return BalanceSuggestion(side=side_key, value_gap=round(gap, 2), players=valued[:limit])
 
     def _validate(self, request: TradeRequest) -> None:
+        requested = request.league.scoring
+        if requested is not None and self._scoring is not None and requested != self._scoring:
+            raise ScoringMismatchError(requested, self._scoring)
         ids = request.side_a.player_ids + request.side_b.player_ids
         missing = [pid for pid in ids if self._repo.get(pid) is None]
         if missing:
