@@ -198,3 +198,22 @@ def test_weekly_projections_survive_the_cache(tmp_path):
     write_cache(path, players, SEASON, WEEKS, ScoringFormat.PPR)
     [loaded] = load_player_cache(path)
     assert loaded.weekly_projections == {10: {"sleeper": 20.0}}
+
+
+def test_cache_keeps_the_season_start_when_given(tmp_path):
+    from app.data.repository import load_cache_metadata
+
+    path = tmp_path / "players.json"
+    write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR, season_start="2026-09-10")
+    assert load_cache_metadata(path)["season_start"] == "2026-09-10"
+    write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR)
+    assert "season_start" not in load_cache_metadata(path)
+
+
+def test_season_start_is_only_kept_for_sleepers_current_season():
+    from app.data.sync import season_start
+
+    state = {"season": "2026", "week": 11, "season_start_date": "2026-09-10"}
+    assert season_start(state, 2026) == "2026-09-10"
+    assert season_start(state, 2025) is None  # --season 2025: Sleeper's date is for 2026
+    assert season_start({"season_start_date": "2026-09-10"}, 2026) is None

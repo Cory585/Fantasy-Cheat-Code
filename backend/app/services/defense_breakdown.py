@@ -372,7 +372,7 @@ class DefenseBreakdowns:
     def get(self, season: int | None = None) -> LeagueDefenses:
         """The season's breakdowns (default: the latest season with team stats)."""
         if not self._path or not self._path.exists():
-            raise NoDefenseData("No collected database. Run `python -m app.data.collect`.")
+            raise NoDefenseData("Defense stats aren't available yet. Check back once the season's games are loaded.")
         with self._lock:
             version = self._version()
             cached = self._cache.get(season)
@@ -382,11 +382,11 @@ class DefenseBreakdowns:
             try:
                 target = season or self.latest_season(conn)
                 if target is None:
-                    raise NoDefenseData("No team stats collected. Run `python -m app.data.collect`.")
+                    raise NoDefenseData("Defense stats aren't available for that season yet.")
                 league = LeagueDefenses(conn, target)
             except sqlite3.Error as error:
                 log.error("Couldn't build defense breakdowns from %s: %s", self._path, error)
-                raise NoDefenseData("The database couldn't be read.") from None
+                raise NoDefenseData("Defense stats can't be loaded right now. Try again in a moment.") from None
             finally:
                 conn.close()
             # Read the version again: opening a WAL database can create its -wal file.

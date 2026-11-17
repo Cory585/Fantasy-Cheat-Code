@@ -6,14 +6,15 @@ The API reads players from a local cache (`backend/data/players.json`, gitignore
 Build or refresh it with the sync job, from `backend/`:
 
 ```
-python -m app.data.sync                         # current week -> week 17, PPR
+python -m app.data.sync                         # current week -> week 18, PPR
 python -m app.data.sync --scoring half_ppr      # standard | half_ppr | ppr
-python -m app.data.sync --start-week 10 --end-week 17
+python -m app.data.sync --start-week 10 --end-week 18
 python -m app.data.sync --no-espn               # Sleeper projections only
 ```
 
-Restart the server after syncing. If no cache exists, the API falls back to the
-fictional sample players in `app/data/sample_players.py`.
+The running API picks up a new cache without a restart. If no cache exists (or it can't be
+read), the API falls back to the fictional sample players in `app/data/sample_players.py`, and
+`/meta` reports `"source": "sample"`.
 
 ### Sources
 
@@ -25,7 +26,17 @@ fictional sample players in `app/data/sample_players.py`.
 | ESPN `seasons/{season}?view=proTeamSchedules_wl` | Team abbreviations, bye weeks | |
 
 Each player's `ros_projection` is the mean of the sources that project them
-(`projection_sources` shows each one). Players are joined by Sleeper's `espn_id`
+(`projection_sources` shows each one). The API recomputes both from `weekly_projections` for
+the current week on (skipping the current week once the player's team has played), so played
+weeks stop counting as the season goes on, without a re-sync.
+
+**The current week** (`app/services/season.py`) is shared by start/sit, tiers, tags, defenses,
+and rest-of-season projections. With a collected schedule it's the first week with a game
+still to play; without one it's the calendar week (weeks turn over on Tuesdays, counted from
+Sleeper's season start date saved by the sync, or the Tuesday after Labor Day), kept within
+the synced weeks. `/meta` reports it as `current_week`, along with `synced_week` (the week the
+sync ran) and `stale` (true when that's before the current week: rest-of-season totals still
+drop played weeks, but projections, injuries, and the player pool are from that week). Players are joined by Sleeper's `espn_id`
 where present, otherwise by normalized name + position (+ team). D/ST is joined by team.
 
 ### Rate limiting
@@ -107,7 +118,9 @@ All sources here are public APIs or published data files. No scraping is needed.
 ## How trade values are calculated
 
 1. **Projection.** Each player's rest-of-season projection starts as the mean of Sleeper's and
-   ESPN's weekly projections over the remaining weeks (games already played are skipped).
+   ESPN's weekly projections over the remaining weeks, from the current week through week 18
+   (games already played are skipped). Projections are for the scoring format the data was
+   synced with; a trade request for another format is refused (`422 scoring_unavailable`).
 2. **Schedule-adjusted recent form** (needs `app.data.collect`). Average points over the last
    4 games (within the last 6 weeks), times remaining games, times the player's strength of
    schedule. The final projection is 70% provider projection and 30% this estimate
@@ -121,8 +134,10 @@ All sources here are public APIs or published data files. No scraping is needed.
    projections already account for opponents, so the schedule only adjusts the form estimate,
    so it isn't counted twice.
 4. **Value over replacement.** Value is the projection minus the best player at the same
-   position who wouldn't start in a league of this size, counting FLEX slots, then discounted
-   for injury status (Q ×0.9, D ×0.75, O ×0.6, IR ×0.2).
+   position who wouldn't start in a league of this size, counting FLEX slots (the best RB, WR,
+   or TE left after the position spots) and then SUPERFLEX slots (the best QB, RB, WR, or TE
+   left, usually a QB, so superflex leagues value QBs more), then discounted for injury status
+   (Q ×0.9, D ×0.75, O ×0.6, IR ×0.2).
 
 Each valuation in the `/trades/analyze` response includes the projection used and an `outlook`
 with remaining opponents, schedule rank (1 = easiest at the position), and recent points per game.
@@ -267,7 +282,7 @@ lineup spot in one week and says who to start:
 | Parameter | Default | Notes |
 |---|---|---|
 | `player` | required | Repeat once per player: `?player=7564&player=6794` |
-| `week` | current week | Must be within the synced weeks. The current week is the first with games still to play (also in `/meta` as `current_week`). |
+| `week` | current week | Must be within the synced weeks. The current week is the first with games still to play, or the calendar week without a collected schedule (also in `/meta` as `current_week`). |
 | `slot` | narrowest that fits | `QB`, `RB`, `WR`, `TE`, `FLEX` (RB/WR/TE), `SUPERFLEX` (QB/RB/WR/TE), `K`, `DST`. Every player must be eligible. |
 | `starts` | 1 | How many of the players you can start (fewer than the number compared) |
 
@@ -424,11 +439,19 @@ moved into a league the first time the profile loads with none.
 | `GET /leagues` | `{"leagues": [...], "max_leagues": 10}`, oldest first |
 | `POST /leagues` | Adds one: `{"name": "Work league", "slots": {"SUPERFLEX": 1}, "roster": ["4984"]}` (missing spots get the defaults). `201` |
 | `GET /leagues/{id}` | One league |
-| `PUT /leagues/{id}` | Replaces its name, spots, and roster (same body as `POST`) |
+| `PUT /leagues/{id}` | Replaces its name, spots, and roster (same body as `POST`). With `If-Match: "<version>"`, only if nobody has saved it since |
 | `DELETE /leagues/{id}` | Removes it. `204` |
 
-Errors: `401 profile_key_required` (missing or malformed key), `404 league_not_found` (no such
-league on this profile), `409 league_limit` (already 10), `503 leagues_unavailable` (the store
+Each league has a `version` that goes up by one with every save (also sent as the `ETag`
+header). The pages send the version they last saw as `If-Match`; if the league was saved
+somewhere else since (another tab or device), the save is refused with `409 league_conflict`
+and the body's `league` holds the current copy, so nothing is silently overwritten. A `PUT`
+without `If-Match` replaces the league as before.
+
+Errors: `400 invalid_if_match` (an `If-Match` that isn't a version), `401 profile_key_required`
+(missing or malformed key), `404 league_not_found` (no such league on this profile),
+`409 league_limit` (already 10), `409 league_conflict` (saved elsewhere since the `If-Match`
+version), `503 leagues_unavailable` (the store
 couldn't be read or written), `503 leagues_full` (the server holds `MAX_STORED_LEAGUES`,
 default 100,000, across all profiles). The 10-league check and the insert share a transaction,
 so simultaneous requests can't slip past the cap. Making and removing leagues is rate limited
@@ -485,14 +508,14 @@ stable for clients to branch on:
 
 | Status | Codes |
 |---|---|
-| 400 | `bad_request` (including unparseable bodies) |
+| 400 | `bad_request` (including unparseable bodies), `invalid_if_match` |
 | 401 | `profile_key_required` |
 | 403 | `espn_private_league` (ESPN refused: add or refresh the league's cookies) |
 | 404 | `not_found`, `player_not_found`, `league_not_found`, `espn_league_not_found`, `live_draft_not_found` |
 | 405 | `method_not_allowed` |
-| 409 | `league_limit` |
+| 409 | `league_limit`, `league_conflict` |
 | 413 | `payload_too_large` (bodies over 256 KB) |
-| 422 | `invalid_request`, `invalid_trade`, `invalid_draft_slot`, `invalid_drafted`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
+| 422 | `invalid_request`, `invalid_trade`, `scoring_unavailable`, `invalid_draft_slot`, `invalid_drafted`, `invalid_start_sit`, `invalid_lineup`, `invalid_week` |
 | 429 | `rate_limited` (with a `Retry-After` header, in seconds) |
 | 500 | `internal_error` (details are logged on the server, never returned) |
 | 502 / 503 / 504 | `upstream_error`, `espn_unavailable`, `service_unavailable`, `leagues_unavailable`, `leagues_full`, `live_draft_busy`, `upstream_timeout` |

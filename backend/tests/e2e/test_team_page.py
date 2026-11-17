@@ -50,6 +50,30 @@ def test_building_a_team_saves_it(page):
     assert page.problems.errors == []
 
 
+def test_edit_does_not_overwrite_a_roster_saved_elsewhere(page):
+    seed(page)
+    page.goto("/team/")
+    expect(page.locator(".team-item")).to_have_count(len(ROSTER))
+    league = saved(page)
+    # Another device saves a different roster after this page loaded the league.
+    page.evaluate("""async (id) => {
+        await fetch(`/leagues/${id}`, {method: 'PUT', body: JSON.stringify({name: 'Elsewhere', roster: ['wr1']}),
+            headers: {'X-Profile-Key': localStorage.getItem('fcc.profile.v1'), 'Content-Type': 'application/json'}});
+    }""", league["id"])
+    page.click('button[aria-label="Remove Sample QB Two"]')
+    expect(page.locator("#save-status")).to_contain_text("changed in another tab or on another device")
+    assert saved(page)["roster"] == ["wr1"]  # the other device's roster is kept
+    # The page switches to the other device's version, and the next edit saves on top of it.
+    expect(page.locator(".team-item")).to_have_count(1)
+    expect(page.locator("#team-name-input")).to_have_value("Elsewhere")
+    search = page.locator("#team-search")
+    search.fill("Sample RB One")
+    search.press("Enter")
+    expect(page.locator(".team-item")).to_have_count(2)
+    expect(page.locator("#save-status")).not_to_contain_text("changed in another tab")
+    assert saved(page)["roster"] == ["wr1", "rb1"]
+
+
 def test_roster_is_grouped_and_removable(page):
     seed(page)
     page.goto("/team/")

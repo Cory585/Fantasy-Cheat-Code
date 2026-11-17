@@ -87,6 +87,10 @@
         renderLink();
         if (!dirty) say(doneMessage);
       } catch (error) {
+        if (error.conflict && editing === team) {
+          await adoptServerCopy(error.league);
+          return;
+        }
         if (editing === team) dirty = true; // try again with the next change
         say(`${error.message} Your last change isn't saved yet.`, true);
       } finally {
@@ -94,6 +98,23 @@
       }
     })();
     await inFlight;
+  }
+
+  // The league was saved in another tab or on another device since this page loaded it: show
+  // that version instead, dropping the edits here (saving them would overwrite it). Reloading
+  // the list also picks up its new version, so the next edit saves on top of it.
+  async function adoptServerCopy(serverCopy) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    dirty = false;
+    try {
+      leagues = (await Store.list()).leagues;
+    } catch {
+      leagues = leagues.map((x) => (x.id === serverCopy.id ? serverCopy : x));
+    }
+    useLeague(leagues.find((x) => x.id === serverCopy.id) || serverCopy);
+    say("This league was changed in another tab or on another device, so your last change here wasn't saved. "
+      + "Showing the latest version.", true);
   }
 
   // Leaving with an edit still waiting: send it anyway.

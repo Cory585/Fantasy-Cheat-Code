@@ -2,6 +2,7 @@ import pytest
 
 from app.api.dependencies import (
     get_adp,
+    get_data_source,
     get_defense_breakdowns,
     get_league_store,
     get_live_drafts,
@@ -44,6 +45,7 @@ def use_sample_players(tmp_path):
     app.dependency_overrides[get_adp] = lambda: {}
     app.dependency_overrides[get_outlooks] = lambda: {}
     app.dependency_overrides[get_matchups] = lambda: (MatchupData(), {})
+    app.dependency_overrides[get_data_source] = lambda: "sample"
     app.dependency_overrides[get_profile_service] = NoNetworkProfiles
     app.dependency_overrides[get_local_player_data] = lambda: LocalPlayerData(None)
     app.dependency_overrides[get_defense_breakdowns] = lambda: DefenseBreakdowns(None)

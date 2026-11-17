@@ -99,6 +99,102 @@ def test_player_repository_reloads_when_cache_changes(tmp_path):
     assert data.current()[0].get("x1") is None
 
 
+def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path, monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    weekly = {10: {"sleeper": 10.0}, 11: {"sleeper": 20.0}, 12: {"sleeper": 30.0}}
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=60.0,
+                              projection_sources={"sleeper": 60.0}, weekly_projections=weekly)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    data = ReloadingPlayerData(path)
+    today = date(2026, 11, 11)  # week 10
+    monkeypatch.setattr("app.services.season.today", lambda: today)
+    assert data.current()[0].get("x1").ros_projection == 60.0
+    today = date(2026, 11, 18)  # week 11: week 10 no longer counts
+    player = data.current()[0].get("x1")
+    assert player.ros_projection == 50.0 and player.projection_sources == {"sleeper": 50.0}
+    assert player.weekly_projections == weekly
+    today = date(2027, 2, 1)  # season over: keep the synced totals instead of dropping everyone to 0
+    assert data.current()[0].get("x1").ros_projection == 60.0
+
+
+def test_week_state_is_worked_out_once_a_day(tmp_path, monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+    from app.services import season
+
+    path = tmp_path / "players.json"
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=1.0)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    calls = []
+    real = season.week_state
+    monkeypatch.setattr(season, "week_state", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    day = date(2026, 11, 11)
+    monkeypatch.setattr(season, "today", lambda: day)
+    data = ReloadingPlayerData(path)
+    for _ in range(5):
+        data.current()
+        data.matchups()
+    assert len(calls) == 1
+    day = date(2026, 11, 12)
+    data.current()
+    assert len(calls) == 2
+
+
+def test_players_and_outlooks_are_read_together_once_per_request(monkeypatch):
+    from app.api import dependencies
+
+    calls = []
+    monkeypatch.setattr(dependencies._data, "current", lambda: (calls.append(1), ("repo", {"o": 1}))[1])
+    app.dependency_overrides.pop(dependencies.get_player_repository, None)
+    app.dependency_overrides.pop(dependencies.get_outlooks, None)
+
+    from fastapi import Depends, FastAPI
+
+    probe = FastAPI()
+
+    @probe.get("/probe")
+    def both(repo=Depends(dependencies.get_player_repository), outlooks=Depends(dependencies.get_outlooks)):
+        return {"repo": repo, "outlooks": outlooks}
+
+    assert TestClient(probe).get("/probe").json() == {"repo": "repo", "outlooks": {"o": 1}}
+    assert len(calls) == 1
+
+
+def test_projections_move_with_the_weeks_while_a_broken_cache_is_ignored(tmp_path, monkeypatch):
+    import os
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    weekly = {10: {"sleeper": 10.0}, 11: {"sleeper": 20.0}}
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=30.0,
+                              projection_sources={"sleeper": 30.0}, weekly_projections=weekly)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    today = date(2026, 11, 11)  # week 10
+    monkeypatch.setattr("app.services.season.today", lambda: today)
+    data = ReloadingPlayerData(path)
+    assert data.current()[0].get("x1").ros_projection == 30.0
+    path.write_text("{not json", encoding="utf-8")
+    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+    today = date(2026, 11, 18)  # week 11: the old players are still served, without week 10
+    assert data.current()[0].get("x1").ros_projection == 20.0
+
+
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     from app.api.dependencies import ReloadingPlayerData
 
@@ -113,8 +209,40 @@ def test_meta_reports_data_source():
     data = client.get("/meta").json()
     assert data["players"] == 12  # sample data in tests
     assert data["source"] in {"sample", "synced"}
-    assert data["current_week"] == data["weeks"][0] == 1  # sample data: no schedule, weeks 1-17
+    assert data["current_week"] == data["weeks"][0] == 1  # sample data: no schedule, weeks 1-18
     assert data["matchups"] is False
+    assert data["source"] == "sample" and data["stale"] is False
+
+
+def test_meta_reports_synced_data_and_whether_it_is_stale(monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import get_data_source, get_matchups
+    from app.services.matchups import MatchupData
+
+    cache = {"season": 2026, "weeks": [10, 18], "scoring": "ppr", "synced_at": "2026-11-11T09:00:00+00:00"}
+    app.dependency_overrides[get_data_source] = lambda: "synced"
+    app.dependency_overrides[get_matchups] = lambda: (MatchupData(), cache)
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 12))
+    data = client.get("/meta").json()
+    assert (data["source"], data["season"], data["scoring"]) == ("synced", 2026, "ppr")
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (10, 10, False)
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 18))
+    data = client.get("/meta").json()
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (11, 10, True)
+    # A sync run before the cached weeks (--start-week 12 in week 10) counts as their first week.
+    cache.update(weeks=[12, 18])
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 12))
+    data = client.get("/meta").json()
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (12, 12, False)
+
+
+def test_unreadable_cache_reports_sample_source(tmp_path):
+    from app.api.dependencies import ReloadingPlayerData
+
+    cache = tmp_path / "players.json"
+    cache.write_text('{"season": 2026, "players": [{"id": "x1", "name": "No position"}]}', encoding="utf-8")
+    assert ReloadingPlayerData(cache).source() == "sample"  # the file exists, but sample data is served
 
 
 @pytest.mark.parametrize(
@@ -127,11 +255,32 @@ def test_meta_reports_data_source():
         {"side_a": {"player_ids": [""]}, "side_b": {"player_ids": ["wr1"]}},
         {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"num_teams": 33}},
         {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"FLEX": 11}}},
-        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"SUPERFLEX": 1}}},
+        {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "league": {"roster_slots": {"BENCH": 1}}},
     ],
 )
 def test_analyze_rejects_out_of_range_input(body):
     assert client.post("/trades/analyze", json=body).status_code == 422
+
+
+def test_analyze_values_qbs_higher_in_superflex():
+    body = {"side_a": {"player_ids": ["qb2"]}, "side_b": {"player_ids": ["rb2"]},
+            "league": {"num_teams": 1, "roster_slots": {"QB": 1, "RB": 1}}}
+    one_qb = client.post("/trades/analyze", json=body).json()
+    body["league"]["roster_slots"]["SUPERFLEX"] = 1
+    superflex = client.post("/trades/analyze", json=body).json()
+    assert superflex["side_a"]["total_value_given"] > one_qb["side_a"]["total_value_given"]
+
+
+def test_analyze_rejects_scoring_the_synced_data_was_not_built_for():
+    from app.api.dependencies import get_matchups
+    from app.services.matchups import MatchupData
+
+    app.dependency_overrides[get_matchups] = lambda: (MatchupData(), {"season": 2026, "scoring": "ppr"})
+    body = {"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}}
+    assert client.post("/trades/analyze", json=body).status_code == 200
+    assert client.post("/trades/analyze", json={**body, "league": {"scoring": "ppr"}}).status_code == 200
+    resp = client.post("/trades/analyze", json={**body, "league": {"scoring": "standard"}})
+    assert resp.status_code == 422 and resp.json()["code"] == "scoring_unavailable"
 
 
 def test_duplicate_check_is_fast_at_the_limit():

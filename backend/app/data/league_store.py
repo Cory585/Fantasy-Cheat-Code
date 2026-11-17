@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS leagues (
     slots       TEXT NOT NULL,      -- JSON {slot: count}
     roster      TEXT NOT NULL,      -- JSON [player id]
     created_at  REAL NOT NULL,      -- unix time
-    updated_at  REAL NOT NULL
+    updated_at  REAL NOT NULL,
+    version     INTEGER NOT NULL DEFAULT 1  -- goes up by one with each save
 );
 CREATE INDEX IF NOT EXISTS leagues_by_owner ON leagues (owner, created_at);
 """
@@ -35,6 +36,14 @@ CREATE INDEX IF NOT EXISTS leagues_by_owner ON leagues (owner, created_at);
 
 class LeagueStoreError(Exception):
     """The store couldn't be read or written."""
+
+
+class LeagueConflict(Exception):
+    """The league was saved since the version the client last saw. Holds the current league."""
+
+    def __init__(self, current: League):
+        super().__init__(f"league {current.id} is at version {current.version}")
+        self.current = current
 
 
 class LeagueLimitReached(Exception):
@@ -54,12 +63,22 @@ def _iso(timestamp: float) -> str:
 
 
 def _league(row) -> League:
-    league_id, name, slots, roster, created, updated = row
+    league_id, name, slots, roster, created, updated, version = row
     return League(id=league_id, name=name, slots=json.loads(slots), roster=json.loads(roster),
-                  created=_iso(created), updated=_iso(updated))
+                  created=_iso(created), updated=_iso(updated), version=version)
 
 
-COLUMNS = "id, name, slots, roster, created_at, updated_at"
+COLUMNS = "id, name, slots, roster, created_at, updated_at, version"
+
+
+def add_version_column(conn: sqlite3.Connection) -> None:
+    """Gives a database made before leagues had versions its `version` column. Safe to run
+    more than once, and when another process adds the column at the same moment."""
+    try:
+        conn.execute("ALTER TABLE leagues ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+    except sqlite3.OperationalError as error:
+        if "duplicate column" not in str(error).lower():
+            raise
 
 
 class LeagueStore:
@@ -67,6 +86,7 @@ class LeagueStore:
         self._path = path
         self._max_total = max_total
         self._lock = threading.Lock()
+        self._migrated = False
 
     def _connect(self) -> sqlite3.Connection:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +94,9 @@ class LeagueStore:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            if not self._migrated:
+                add_version_column(conn)
+                self._migrated = True
         except sqlite3.Error:
             conn.close()
             raise
@@ -120,19 +143,30 @@ class LeagueStore:
                 raise StoreFull
             now = time.time()
             league_id = secrets.token_urlsafe(9)
-            conn.execute("INSERT INTO leagues VALUES (?, ?, ?, ?, ?, ?, ?)",
+            conn.execute("INSERT INTO leagues (id, owner, name, slots, roster, created_at, updated_at) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?)",
                          (league_id, owner, name, json.dumps(slots), json.dumps(roster), now, now))
             return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()  # noqa: S608 - COLUMNS is a constant
 
         return _league(self._run(work))
 
-    def update(self, owner: str, league_id: str, name: str, slots: dict[str, int], roster: list[str]) -> League | None:
+    def update(self, owner: str, league_id: str, name: str, slots: dict[str, int], roster: list[str],
+               expected_version: int | None = None) -> League | None:
+        """Replaces a league (None if it isn't on the profile). With `expected_version`, the save
+        only goes through if the league is still at that version; otherwise it raises
+        `LeagueConflict` with the current league. The check and the write share a transaction."""
+
         def work(conn):
-            changed = conn.execute(
-                "UPDATE leagues SET name = ?, slots = ?, roster = ?, updated_at = ? WHERE owner = ? AND id = ?",
-                (name, json.dumps(slots), json.dumps(roster), time.time(), owner, league_id)).rowcount
-            if not changed:
+            current = conn.execute(
+                f"SELECT {COLUMNS} FROM leagues WHERE owner = ? AND id = ?", (owner, league_id)).fetchone()  # noqa: S608 - COLUMNS is a constant
+            if current is None:
                 return None
+            if expected_version is not None and current[-1] != expected_version:
+                raise LeagueConflict(_league(current))
+            conn.execute(
+                "UPDATE leagues SET name = ?, slots = ?, roster = ?, updated_at = ?, version = version + 1 "
+                "WHERE owner = ? AND id = ?",
+                (name, json.dumps(slots), json.dumps(roster), time.time(), owner, league_id))
             return conn.execute(f"SELECT {COLUMNS} FROM leagues WHERE id = ?", (league_id,)).fetchone()  # noqa: S608 - COLUMNS is a constant
 
         row = self._run(work)

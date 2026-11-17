@@ -54,6 +54,68 @@ def test_add_rename_and_remove_leagues(page, key):
     assert page.problems.errors == []
 
 
+def test_rename_does_not_overwrite_a_change_made_elsewhere(page, key):
+    league = add_league(page, key, "Work league")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name", has_text="Work league")).to_be_visible()
+    # Another device renames it after this page loaded it.
+    resp = page.request.put(f"/leagues/{league['id']}", data={"name": "Renamed elsewhere"},
+                            headers={"X-Profile-Key": key})
+    assert resp.status == 200
+
+    page.click('button[aria-label="Rename Work league"]')
+    rename = page.locator('input[aria-label="New name for Work league"]')
+    rename.fill("Office league")
+    rename.press("Enter")
+    expect(page.locator("#profile-status")).to_contain_text("changed in another tab or on another device")
+    # The page picks up the other device's version, and nothing was overwritten.
+    rename = page.locator('input[aria-label="New name for Renamed elsewhere"]')
+    expect(rename).to_have_value("Renamed elsewhere")
+    assert [lg["name"] for lg in leagues(page, key)] == ["Renamed elsewhere"]
+
+    rename.fill("Office league")
+    rename.press("Enter")
+    expect(page.locator(".league-card-name", has_text="Office league")).to_be_visible()
+    assert [lg["name"] for lg in leagues(page, key)] == ["Office league"]
+
+
+def test_save_made_while_another_is_in_flight_never_guesses_the_version(page, key):
+    """The save sent as a page closes can start while an earlier save is still out. It waits
+    for that one and sends the version it came back with; if it was refused, the later save
+    sends the old version (and is refused too) rather than a guessed one that might match
+    another device's save."""
+    league = add_league(page, key, "Work league")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name", has_text="Work league")).to_be_visible()
+    log = page.evaluate("""async (id) => {
+        const log = [];
+        const realFetch = window.fetch;
+        let first = true;
+        window.fetch = async (url, options = {}) => {
+            if (options.method !== 'PUT') return realFetch(url, options);
+            log.push({event: 'sent', ifMatch: options.headers['If-Match'], keepalive: options.keepalive});
+            if (first) {
+                first = false;
+                // Another device saved first: this save is refused, after a delay.
+                await new Promise((resolve) => setTimeout(resolve, 300));
+                log.push({event: 'refused'});
+                return new Response(JSON.stringify({detail: 'x', code: 'league_conflict',
+                    league: {id, name: 'Elsewhere', slots: {}, roster: [], created: '', updated: '', version: 2}}),
+                    {status: 409, headers: {'Content-Type': 'application/json'}});
+            }
+            return new Response(JSON.stringify({detail: 'x', code: 'league_conflict'}), {status: 409});
+        };
+        const one = LeagueStore.save(id, {name: 'One'}).catch((e) => e.conflict);
+        const two = LeagueStore.save(id, {name: 'Two'}, {keepalive: true}).catch((e) => e.status);
+        await Promise.all([one, two]);
+        window.fetch = realFetch;
+        return log;
+    }""", league["id"])
+    assert [entry["event"] for entry in log] == ["sent", "refused", "sent"]  # one at a time
+    assert log[0]["ifMatch"] == log[2]["ifMatch"] == '"1"'  # the version this page saw, not a guess
+    assert log[2]["keepalive"] is True
+
+
 def test_profile_holds_at_most_ten_leagues(page, key):
     for i in range(MAX_LEAGUES):
         add_league(page, key, f"League {i + 1}")
@@ -61,6 +123,20 @@ def test_profile_holds_at_most_ten_leagues(page, key):
     expect(page.locator(".league-card")).to_have_count(MAX_LEAGUES)
     expect(page.locator("#league-add")).to_be_disabled()
     expect(page.locator(".league-full")).to_contain_text(f"limit of {MAX_LEAGUES} leagues")
+
+
+def test_league_errors_read_as_plain_language(page, key):
+    page.route("**/leagues", lambda route: route.fulfill(status=502, body="Bad gateway"))
+    page.goto("/profile/")
+    expect(page.locator(".result-error")).to_have_text(
+        "Your leagues can't be loaded or saved right now. Try again in a moment.")
+    page.unroute("**/leagues")
+    page.route("**/leagues", lambda route: route.fulfill(
+        status=503, content_type="application/json",
+        body='{"detail": "Leagues are being moved. Back soon.", "code": "leagues_unavailable"}'))
+    page.reload()
+    expect(page.locator(".result-error")).to_have_text("Leagues are being moved. Back soon.")
+    assert "HTTP" not in page.locator("main").inner_text()
 
 
 def test_rate_limited_changes_explain_the_wait(page, key):

@@ -3,11 +3,12 @@
 import logging
 import sqlite3
 import threading
+from datetime import date
 from pathlib import Path
 
 from fastapi import Depends
 
-from app.config import settings
+from app.config import REGULAR_SEASON_END_WEEK, settings
 from app.data.repository import (
     InMemoryPlayerRepository,
     PlayerRepository,
@@ -15,7 +16,7 @@ from app.data.repository import (
     load_player_cache,
 )
 from app.data.sample_players import SAMPLE_PLAYERS
-from app.models.player import PlayerOutlook
+from app.models.player import Player, PlayerOutlook
 from app.models.trade import ScoringFormat
 from app.data.adp import load_adp
 from app.data.league_store import LeagueStore
@@ -30,6 +31,8 @@ from app.services.player_profile import LocalPlayerData
 from app.services.profiles import ProfileService
 from app.services.matchups import MatchupData, load_matchups
 from app.services.outlook import OutlookBuilder
+from app.services import season as calendar
+from app.services.season import parse_date
 from app.services.start_sit import StartSitAdvisor
 from app.services.tiers import TierService
 from app.models.tags import PlayerTag
@@ -38,6 +41,26 @@ from app.services.trade_analyzer import TradeAnalyzer
 from app.services.valuation import ValuationService
 
 log = logging.getLogger(__name__)
+
+
+# Weeks used when there's no synced cache to say which weeks it covers (sample data).
+DEFAULT_WEEKS = (1, REGULAR_SEASON_END_WEEK)
+
+
+def cache_weeks(meta: dict) -> tuple[int, int]:
+    """(first, last) week the player cache covers, or DEFAULT_WEEKS."""
+    weeks = meta.get("weeks") or DEFAULT_WEEKS
+    try:
+        return int(weeks[0]), int(weeks[1])
+    except (TypeError, ValueError, IndexError):
+        return DEFAULT_WEEKS
+
+
+def _season(meta: dict) -> int | None:
+    try:
+        return int(meta["season"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _mtime(*paths: Path) -> float | None:
@@ -49,7 +72,11 @@ def _mtime(*paths: Path) -> float | None:
 class ReloadingPlayerData:
     """Players from the sync cache, plus schedule/form outlooks from the collected
     database. Both reload when their files change, so a fresh `app.data.sync` or
-    `app.data.collect` shows up without restarting the server."""
+    `app.data.collect` shows up without restarting the server.
+
+    Rest-of-season projections are summed from each player's weekly projections from the
+    current week on, and recomputed (with the outlooks and tags built from them) whenever the
+    week turns over or a team plays its game, so played weeks stop counting without a re-sync."""
 
     def __init__(self, cache_path: Path, database_path: Path | None = None,
                  model_paths: tuple[Path, Path] | None = None):
@@ -64,6 +91,10 @@ class ReloadingPlayerData:
         self._matchups = MatchupData()
         self._meta: dict = {}
         self._tags: dict[str, list[PlayerTag]] = {}
+        self._players: list[Player] | None = None  # as synced; None with sample data
+        self._as_of: calendar.WeekState | None = None  # where the season stood for the projections
+        # The week state for one day, so it's worked out once a day, not on every request.
+        self._state_cache: tuple[date, calendar.WeekState] | None = None
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
         with self._lock:
@@ -88,11 +119,43 @@ class ReloadingPlayerData:
             self._refresh()
             return self._matchups, self._meta
 
+    def source(self) -> str:
+        """"synced" when serving the sync cache, "sample" when serving the built-in sample players."""
+        with self._lock:
+            self._refresh()
+            return "sample" if self._players is None else "synced"
+
     def _refresh(self) -> None:
         versions = (_mtime(self._cache_path), _mtime(*self._db_paths),
                     tuple(_mtime(p) for p in self._model_paths if p is not None))
         if self._repo is None or versions != self._versions:
             self._reload(versions)
+        # Also after a failed reload, which keeps serving the previous players: they still need
+        # to move on with the weeks.
+        if self._players is not None and self._week_state() != self._as_of:
+            self._derive()
+
+    def _week_state(self) -> calendar.WeekState:
+        """Where the season stands today. It only changes with the date or the data, so it's
+        cached for the day and cleared on reload."""
+        day = calendar.today()
+        if self._state_cache is None or self._state_cache[0] != day:
+            state = calendar.week_state(self._matchups, cache_weeks(self._meta), _season(self._meta),
+                                        parse_date(self._meta.get("season_start")), day)
+            self._state_cache = (day, state)
+        return self._state_cache[1]
+
+    def _derive(self) -> None:
+        """Rest-of-season projections, outlooks, and tags for the current week. Once the season
+        is over, the synced totals stand (with no outlooks: there's no schedule left)."""
+        self._as_of = state = self._week_state()
+        if state.over:
+            players, self._outlooks = self._players, {}
+        else:
+            players = [calendar.rest_of_season(p, state.week, state.played) for p in self._players]
+            self._outlooks = self._build_outlooks(players, state.week, state.played)
+        self._repo = InMemoryPlayerRepository(players)
+        self._tags = self._build_tags(players)
 
     def _reload(self, versions: tuple) -> None:
         try:
@@ -108,13 +171,15 @@ class ReloadingPlayerData:
             self._repo, self._outlooks = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
             self._matchups, self._meta = MatchupData(), {}
             self._tags = {}
+            self._players, self._as_of = None, None
         else:
-            self._repo = InMemoryPlayerRepository(players)
-            self._outlooks = self._build_outlooks(players)
+            self._players = players
             self._meta = self._load_meta()
             self._matchups = self._load_matchups()
-            self._tags = self._build_tags(players)
-            log.info("Loaded %d players (%d with schedule/form outlooks)", len(players), len(self._outlooks))
+            self._state_cache = None
+            self._derive()
+            log.info("Loaded %d players (%d with schedule/form outlooks) for week %d",
+                     len(players), len(self._outlooks), self._as_of.week)
         self._adp = self._load_adp()
         self._versions = versions
 
@@ -173,20 +238,22 @@ class ReloadingPlayerData:
             log.error("Couldn't load ADP from %s: %s", self._db_paths[0], error)
             return {}
 
-    def _build_outlooks(self, players) -> dict[str, PlayerOutlook]:
+    def _build_outlooks(self, players, week: int, played: frozenset[str]) -> dict[str, PlayerOutlook]:
         if not self._db_paths or not self._db_paths[0].exists():
             log.info("No database at %s; trade values use projections only. Run `python -m app.data.collect`.",
                      self._db_paths[0] if self._db_paths else None)
             return {}
         try:
-            meta = load_cache_metadata(self._cache_path)
+            meta = self._meta
             conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
             try:
                 return OutlookBuilder(
                     conn,
                     season=int(meta["season"]),
                     scoring=ScoringFormat(meta.get("scoring", settings.default_scoring)),
-                    end_week=int(meta.get("weeks", [None, 17])[1]),
+                    start_week=week,
+                    played=played,
+                    end_week=cache_weeks(meta)[1],
                     form_weight=settings.form_weight,
                 ).build(players)
             finally:
@@ -200,14 +267,29 @@ _data = ReloadingPlayerData(settings.player_cache_path, settings.database_path,
                             (settings.dst_model_path, settings.kicker_model_path))
 
 
-def get_player_repository() -> PlayerRepository:
+def get_player_data() -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
+    """The players and their outlooks, read together once per request, so both come from the
+    same week even if it turns over mid-request."""
+    return _data.current()
+
+
+def get_player_repository(
+    data: tuple[PlayerRepository, dict[str, PlayerOutlook]] = Depends(get_player_data),
+) -> PlayerRepository:
     """Synced Sleeper/ESPN data if `python -m app.data.sync` has been run, else sample data."""
-    return _data.current()[0]
+    return data[0]
 
 
-def get_outlooks() -> dict[str, PlayerOutlook]:
+def get_data_source() -> str:
+    """"synced" when serving the sync cache, "sample" when serving the sample players."""
+    return _data.source()
+
+
+def get_outlooks(
+    data: tuple[PlayerRepository, dict[str, PlayerOutlook]] = Depends(get_player_data),
+) -> dict[str, PlayerOutlook]:
     """Schedule and form outlooks by player id (empty without a collected database)."""
-    return _data.current()[1]
+    return data[1]
 
 
 def get_adp() -> dict[int, float]:
@@ -225,19 +307,10 @@ def get_matchups() -> tuple[MatchupData, dict]:
     return _data.matchups()
 
 
-# Weeks used when there's no synced cache to say which weeks it covers (sample data).
-DEFAULT_WEEKS = (1, 17)
-
-
 def get_start_sit_advisor(data: tuple[MatchupData, dict] = Depends(get_matchups)) -> StartSitAdvisor:
     matchups, meta = data
-    weeks = meta.get("weeks") or DEFAULT_WEEKS
-    try:
-        first, last = int(weeks[0]), int(weeks[1])
-    except (TypeError, ValueError, IndexError):
-        first, last = DEFAULT_WEEKS
-    return StartSitAdvisor(matchups, meta.get("season"), (first, last), form_weight=settings.form_weight,
-                           model_weight=settings.model_weight)
+    return StartSitAdvisor(matchups, _season(meta), cache_weeks(meta), form_weight=settings.form_weight,
+                           model_weight=settings.model_weight, season_start=parse_date(meta.get("season_start")))
 
 
 def get_draft_planner(
@@ -289,8 +362,17 @@ def get_local_player_data() -> LocalPlayerData:
 def get_trade_analyzer(
     repo: PlayerRepository = Depends(get_player_repository),
     outlooks: dict[str, PlayerOutlook] = Depends(get_outlooks),
+    data: tuple[MatchupData, dict] = Depends(get_matchups),
 ) -> TradeAnalyzer:
-    return TradeAnalyzer(repo, ValuationService(repo, outlooks))
+    return TradeAnalyzer(repo, ValuationService(repo, outlooks), scoring=_scoring(data[1]))
+
+
+def _scoring(meta: dict) -> ScoringFormat | None:
+    """The scoring format the synced players were built for (None for sample data)."""
+    try:
+        return ScoringFormat(meta["scoring"])
+    except (KeyError, ValueError):
+        return None
 
 
 def get_tier_service(

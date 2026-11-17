@@ -1,7 +1,7 @@
 """Pull players and projections from Sleeper and ESPN into a local JSON cache.
 
 Usage (from backend/):
-    python -m app.data.sync                     # current season, current week -> week 17, PPR
+    python -m app.data.sync                     # current season, current week -> week 18, PPR
     python -m app.data.sync --scoring half_ppr --start-week 10 --no-espn
 
 The API reads only from this cache, so user requests never hit external providers.
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from app.config import settings
+from app.config import REGULAR_SEASON_END_WEEK, settings
 from app.data.sources import espn, sleeper
 from app.data.sources.espn import EspnSource, ProTeam
 from app.data.sources.http import RateLimitedClient
@@ -203,7 +203,7 @@ def sync(
     scoring: ScoringFormat,
     season: int | None = None,
     start_week: int | None = None,
-    end_week: int = 17,
+    end_week: int = REGULAR_SEASON_END_WEEK,
     use_espn: bool = True,
 ) -> list[Player]:
     with RateLimitedClient(min_interval=settings.request_interval_seconds) as client:
@@ -236,20 +236,35 @@ def sync(
             )
 
     players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks, sleeper_weekly)
-    write_cache(output, players, season=season, weeks=weeks, scoring=scoring)
+    write_cache(output, players, season=season, weeks=weeks, scoring=scoring,
+                season_start=season_start(state, season))
     log.info("Wrote %d players to %s", len(players), output)
     return players
 
 
+def season_start(state: dict, season: int) -> str | None:
+    """Sleeper's `season_start_date`, if its state is for `season` (it only describes the
+    current season, so a sync of another season with --season doesn't get it)."""
+    try:
+        current = int(state.get("season"))
+    except (TypeError, ValueError):
+        return None
+    return state.get("season_start_date") if current == season else None
+
+
 def write_cache(
-    output: Path, players: list[Player], season: int, weeks: range, scoring: ScoringFormat
+    output: Path, players: list[Player], season: int, weeks: range, scoring: ScoringFormat,
+    season_start: str | None = None,
 ) -> None:
+    """`season_start` is Sleeper's `season_start_date`; without a collected schedule, the API
+    counts the current week from it."""
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "season": season,
         "weeks": [weeks.start, weeks.stop - 1],
         "scoring": scoring.value,
+        **({"season_start": season_start} if season_start else {}),
         "players": [p.model_dump(mode="json") for p in players],
     }
     # Write to a temp file and swap it in, so the running API never reads a half-written cache.
@@ -265,7 +280,7 @@ def main() -> None:
     parser.add_argument("--scoring", type=ScoringFormat, default=ScoringFormat(settings.default_scoring))
     parser.add_argument("--season", type=int)
     parser.add_argument("--start-week", type=int, help="Default: Sleeper's current week")
-    parser.add_argument("--end-week", type=int, default=17)
+    parser.add_argument("--end-week", type=int, default=REGULAR_SEASON_END_WEEK)
     parser.add_argument("--no-espn", action="store_true", help="Use Sleeper projections only")
     parser.add_argument("--output", type=Path, default=settings.player_cache_path)
     args = parser.parse_args()

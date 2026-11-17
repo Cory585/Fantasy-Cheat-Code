@@ -2,8 +2,8 @@ import pytest
 
 from app.data.repository import InMemoryPlayerRepository
 from app.data.sample_players import SAMPLE_PLAYERS
-from app.models.trade import PlayerValuation, TradeRequest, TradeSide, Verdict
-from app.services.trade_analyzer import TradeAnalyzer, UnknownPlayerError
+from app.models.trade import LeagueSettings, PlayerValuation, ScoringFormat, TradeRequest, TradeSide, Verdict
+from app.services.trade_analyzer import ScoringMismatchError, TradeAnalyzer, UnknownPlayerError
 from app.services.valuation import ValuationService
 
 
@@ -100,3 +100,21 @@ def test_balance_uses_winners_roster_when_given(analyzer):
 
 def test_no_balance_for_fair_trade(analyzer):
     assert analyzer.analyze(trade(["rb1"], ["wr1"])).balance is None
+
+
+def test_scoring_must_match_the_synced_data():
+    repo = InMemoryPlayerRepository(SAMPLE_PLAYERS)
+    synced_ppr = TradeAnalyzer(repo, ValuationService(repo), scoring=ScoringFormat.PPR)
+    request = trade(["rb1"], ["wr1"])
+    assert synced_ppr.analyze(request)  # no scoring given: the synced data's
+    request.league = LeagueSettings(scoring=ScoringFormat.PPR)
+    assert synced_ppr.analyze(request)
+    request.league = LeagueSettings(scoring=ScoringFormat.HALF_PPR)
+    with pytest.raises(ScoringMismatchError, match="synced for PPR"):
+        synced_ppr.analyze(request)
+
+
+def test_sample_data_accepts_any_scoring(analyzer):
+    request = trade(["rb1"], ["wr1"])
+    request.league = LeagueSettings(scoring=ScoringFormat.STANDARD)
+    assert analyzer.analyze(request)
