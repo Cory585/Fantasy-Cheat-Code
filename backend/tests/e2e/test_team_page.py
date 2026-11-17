@@ -234,6 +234,17 @@ def test_search_waits_for_the_player_list(page):
     expect(search).to_have_attribute("placeholder", "Search players or teams to add")
 
 
+def test_enter_in_an_empty_search_adds_nobody(page):
+    page.goto("/team/")
+    search = page.locator("#team-search")
+    expect(search).to_be_enabled()
+    search.click()
+    search.press("Enter")
+    page.wait_for_timeout(800)  # longer than the save delay
+    expect(page.locator(".roster-empty")).to_be_visible()
+    assert saved(page) is None  # nothing was saved, so no league was made
+
+
 # ---------- Leagues that fail to load, and saves that must reach the right league ----------
 
 

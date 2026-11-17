@@ -379,7 +379,10 @@ window.PlayerUI = (() => {
         if (full()) return;
         // Search again: the players may have arrived since the list was last drawn.
         state.results = search();
-        const choice = state.results[state.active >= 0 ? state.active : 0];
+        // With nothing typed and no option highlighted, Enter picks nothing (rather than the
+        // top-projected player).
+        const index = state.active >= 0 ? state.active : input.value.trim() ? 0 : -1;
+        const choice = state.results[index];
         if (choice) pick(choice);
       } else if (event.key === "Escape" && state.open) {
         event.preventDefault();
