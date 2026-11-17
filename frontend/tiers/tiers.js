@@ -5,6 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
+  const { el, profileUrl, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -24,13 +25,6 @@
   // the in-season default, which falls back to rest of season when there's no weekly data.
   const state = { position: "RB", horizon: null, horizonChosen: false, teams: 12, currentWeek: null, fellBack: false };
   let requestId = 0;
-
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const fmt = (n) => (Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -74,7 +68,7 @@
     const head = el("div", "tier-player-head");
     head.append(el("span", "tier-rank", String(player.rank)));
     const name = el("a", "tier-player-name profile-link", player.name);
-    name.href = `/player/?id=${encodeURIComponent(player.player_id)}`;
+    name.href = profileUrl(player.player_id);
     head.append(name);
     if (player.injury_status) {
       const injury = el("span", "tier-injury", player.injury_status);
@@ -138,28 +132,19 @@
     els.list.replaceChildren(el("li", className, text));
   }
 
-  async function getJson(url) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
   async function load() {
     const id = ++requestId;
     renderControls();
     writeUrl();
-    renderMessage("Loading tiers...");
+    renderMessage("Loading tiers…");
     const params = new URLSearchParams({ position: state.position, horizon: state.horizon, teams: state.teams });
     let result;
     try {
-      result = await getJson(`/tiers?${params}`);
+      result = await getJson(`/tiers?${params}`, "Couldn't load tiers");
     } catch (error) {
       if (id !== requestId) return;
-      const text = error instanceof TypeError
-        ? "Couldn't reach the server. Check that it's running, then pick a position to retry."
-        : `Couldn't load tiers (${error.message}). Pick a position to retry.`;
-      renderMessage(text, "result-error");
-      els.status.textContent = text;
+      els.list.replaceChildren(errorBlock(error, load, { tag: "li" }));
+      els.status.textContent = ""; // the error block announces itself
       return;
     }
     if (id !== requestId) return;
@@ -188,13 +173,9 @@
 
   // In season, open on this week; before week 2, on the rest of the season.
   async function defaultHorizon() {
-    try {
-      const meta = await getJson("/meta");
-      state.currentWeek = meta.current_week ?? null;
-      return state.currentWeek > 1 ? "week" : "ros";
-    } catch {
-      return "ros";
-    }
+    const meta = await loadMeta();
+    state.currentWeek = meta?.current_week ?? null;
+    return state.currentWeek > 1 ? "week" : "ros";
   }
 
   async function init() {
@@ -220,6 +201,7 @@
     $("tier-controls").addEventListener("submit", (event) => event.preventDefault());
 
     renderControls();
+    noteDataStatus(); // shares the /meta request with defaultHorizon
     if (!state.horizon) state.horizon = await defaultHorizon();
     load();
   }

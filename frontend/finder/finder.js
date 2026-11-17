@@ -5,7 +5,7 @@
 // URL (?tag=slot,high_target_share&pos=WR&match=all&q=), so a search can be shared.
 
 (() => {
-  const { el, loadPlayers, avatar, profileUrl, request, errorMessage } = window.PlayerUI;
+  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("finder-status"),
@@ -38,6 +38,7 @@
     match: "all",
     q: "",
     shown: PAGE,
+    loaded: false, // players and tags are in; until then the list shows loading or the error
   };
 
   const normalize = (text) => text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
@@ -136,6 +137,7 @@
   }
 
   function renderResults() {
+    if (!state.loaded) return; // keep "Loading players…" or the Try again block
     const found = [...state.players.values()].filter(matches).sort((a, b) => b.ros_projection - a.ros_projection);
     const chosen = state.selected.map((k) => state.byKey.get(k)).filter(Boolean);
     const what = chosen.length
@@ -228,35 +230,35 @@
     $("finder-setup").addEventListener("submit", (event) => event.preventDefault());
   }
 
-  async function loadTags() {
-    const response = await request("/tags");
-    if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load tags"));
-    return response.json();
-  }
-
-  async function init() {
-    readUrl();
-    els.q.value = state.q;
-    bind();
-    render();
+  async function loadData() {
     els.list.replaceChildren(el("li", "result-empty", "Loading players…"));
     let index;
     try {
-      [state.players, index] = await Promise.all([loadPlayers(), loadTags()]);
+      [state.players, index] = await Promise.all([loadPlayers(), getJson("/tags", "Couldn't load tags")]);
     } catch (error) {
-      els.list.replaceChildren(el("li", "result-error", error.message));
+      els.list.replaceChildren(errorBlock(error, loadData, { tag: "li" }));
       return;
     }
     state.catalog = index.tags;
     state.byKey = new Map(index.tags.map((t) => [t.key, t]));
     state.playerTags = index.players;
     state.season = index.season;
+    state.loaded = true;
     state.selected = state.selected.filter((k) => state.byKey.has(k));
     els.status.textContent = index.season
       ? `Role, usage, and trend tags come from the ${index.season} season so far.`
-      : "Only status tags are available until the data collector has run.";
+      : "Role, usage, and trend tags aren't available yet, so only status tags are shown.";
     writeUrl();
     render();
+  }
+
+  function init() {
+    readUrl();
+    els.q.value = state.q;
+    bind();
+    render();
+    loadData();
+    noteDataStatus();
   }
 
   init();

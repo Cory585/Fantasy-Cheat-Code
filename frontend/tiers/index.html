@@ -67,7 +67,7 @@
     <form class="draft-setup tier-controls" id="tier-controls" aria-label="Tier list settings">
       <fieldset class="setup-group">
         <legend>Position</legend>
-        <div class="segmented" id="tier-position" role="group">
+        <div class="segmented" id="tier-position" role="group" aria-label="Position">
           <button type="button" data-position="QB">QB</button>
           <button type="button" data-position="RB">RB</button>
           <button type="button" data-position="WR">WR</button>
@@ -79,7 +79,7 @@
       </fieldset>
       <fieldset class="setup-group">
         <legend>Projections</legend>
-        <div class="segmented" id="tier-horizon" role="group">
+        <div class="segmented" id="tier-horizon" role="group" aria-label="Projections">
           <button type="button" data-horizon="week">This week</button>
           <button type="button" data-horizon="ros">Rest of season</button>
         </div>
@@ -105,6 +105,7 @@
   <script src="/vendor/gsap.min.js"></script>
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
+  <script src="/player-search.js"></script>
   <script src="/tiers/tiers.js"></script>
 </body>
 </html>

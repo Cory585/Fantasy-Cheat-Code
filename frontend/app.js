@@ -1,5 +1,8 @@
 "use strict";
 
+// Shared helpers from /player-search.js.
+const { avatar, createSearch, ordinal, profileUrl } = window.PlayerUI;
+
 const SIDES = ["a", "b"];
 
 const state = {
@@ -7,7 +10,8 @@ const state = {
   sides: { a: [], b: [] }, // player ids each side sends
   numTeams: 12,
   values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
-  search: { a: { position: "", active: -1, results: [], open: false }, b: { position: "", active: -1, results: [], open: false } },
+  position: { a: "", b: "" }, // each side's search filter ("" = all positions)
+  loaded: false, // whether the players have loaded
 };
 
 const MAX_RESULTS = 8;
@@ -72,36 +76,22 @@ const sideEl = (side) => document.querySelector(`.side[data-side="${side}"]`);
 
 // ---------- Data ----------
 
-// fetch() that turns network failures into a plain-language error.
-async function request(url, options) {
-  try {
-    return await fetch(url, options);
-  } catch {
-    throw new Error("Couldn't reach the server.");
-  }
-}
-
 async function loadPlayers() {
-  const response = await request("/players");
-  if (!response.ok) throw new Error(`Couldn't load players (the server returned HTTP ${response.status}).`);
-  for (const player of await response.json()) state.players.set(player.id, player);
+  state.players = await PlayerUI.loadPlayers();
 }
 
 // Where the data comes from and how fresh it is. Not essential, so failures are quiet.
 async function loadMeta() {
-  try {
-    const response = await request("/meta");
-    if (!response.ok) return;
-    state.meta = await response.json();
-  } catch {
-    return;
-  }
+  state.meta = await PlayerUI.loadMeta();
+  if (!state.meta) return;
   const el = document.getElementById("data-status");
   const meta = state.meta;
-  if (meta.source !== "synced") {
-    el.textContent = "Using sample players. Run the data sync to load real projections.";
-    return;
+  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
+  if (state.loaded) {
+    for (const side of SIDES) renderRoster(side);
+    refreshValues();
   }
+  if (meta.source !== "synced") return;
   const synced = new Date(meta.synced_at);
   const when = Number.isNaN(synced.getTime()) ? null : synced.toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -111,14 +101,13 @@ async function loadMeta() {
   if (start && end) parts.push(`weeks ${start}–${end}`);
   if (meta.scoring) parts.push(meta.scoring.replace("_", "-").toUpperCase());
   el.textContent = `${parts.join(", ")}.${meta.outlooks ? " Includes schedule and recent form." : ""}`;
-  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
-  for (const side of SIDES) renderRoster(side);
-  refreshValues();
 }
 
+// A bye before the current week (or, without one, before the first week with projections)
+// has already happened, so it's left out.
 function byeLabel(player) {
-  const firstWeek = state.meta?.weeks?.[0];
-  if (!player.bye_week || (firstWeek && player.bye_week < firstWeek)) return null; // already past
+  const thisWeek = state.meta?.current_week ?? state.meta?.weeks?.[0];
+  if (!player.bye_week || (thisWeek && player.bye_week < thisWeek)) return null; // already past
   return `bye week ${player.bye_week}`;
 }
 
@@ -132,168 +121,30 @@ function formatPoints(value) {
   return value.toFixed(1);
 }
 
-// ESPN's image CDN, resized server-side so thumbnails stay small.
-const ESPN_LOGO_CODES = { WAS: "wsh" };
-
-function teamLogoUrl(team) {
-  const code = (ESPN_LOGO_CODES[team] || team).toLowerCase();
-  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${code}.png&w=80&h=80`;
-}
-
-function headshotUrl(player) {
-  if (player.position === "DST") return teamLogoUrl(player.team);
-  if (!player.espn_id) return null;
-  return `https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.espn_id}.png&w=96&h=70`;
-}
-
-// Headshot (or team logo for defenses), falling back to initials if the image is missing.
-function avatar(player, size = "md") {
-  const wrap = document.createElement("span");
-  wrap.className = `avatar avatar-${size}`;
-  wrap.setAttribute("aria-hidden", "true");
-  const initials = player.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
-  const url = headshotUrl(player);
-  if (!url) {
-    wrap.textContent = initials;
-    return wrap;
-  }
-  const img = document.createElement("img");
-  img.src = url;
-  img.alt = "";
-  img.loading = "lazy";
-  img.addEventListener("error", () => {
-    img.remove();
-    wrap.textContent = initials;
-  });
-  wrap.append(img);
-  return wrap;
-}
-
 // ---------- Player search ----------
 
-function normalize(text) {
-  return text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
-}
+const searches = {}; // side -> PlayerUI search combobox
 
-function searchPlayers(query, position) {
-  const q = normalize(query.trim());
-  return [...state.players.values()]
-    .filter((p) => !inTrade(p.id))
-    .filter((p) => !position || p.position === position)
-    .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
-    .sort((x, y) => y.ros_projection - x.ros_projection)
-    .slice(0, MAX_RESULTS);
-}
-
-function searchOption(side, player, index) {
-  const option = document.createElement("li");
-  option.id = `result-${side}-${index}`;
-  option.className = "search-option";
-  option.setAttribute("role", "option");
-  option.setAttribute("aria-selected", String(index === state.search[side].active));
-
-  const text = document.createElement("span");
-  text.className = "search-option-text";
-  const name = document.createElement("span");
-  name.className = "search-option-name";
-  name.textContent = player.name;
-  const meta = document.createElement("span");
-  meta.className = "search-option-meta";
-  meta.textContent = [player.position, player.team, player.injury_status].filter(Boolean).join(", ");
-  text.append(name, meta);
-
-  const proj = document.createElement("span");
-  proj.className = "search-option-proj";
-  proj.textContent = formatPoints(player.ros_projection);
-
-  option.append(avatar(player, "sm"), text, proj);
-  // mousedown (not click) so the input doesn't blur and close the list first.
-  option.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-    addPlayer(side, player.id);
+function setupSearch(side) {
+  const box = sideEl(side);
+  searches[side] = createSearch({
+    input: box.querySelector(".player-search"),
+    list: box.querySelector(".search-results"),
+    players: () => state.players,
+    allowed: (p) => !inTrade(p.id) && (!state.position[side] || p.position === state.position[side]),
+    onPick: (p) => addPlayer(side, p.id),
+    full: () => (sideIsFull(side) ? `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.` : null),
+    limit: MAX_RESULTS,
   });
-  return option;
-}
-
-// Open or close a side's results list, then redraw it.
-function setSearchOpen(side, open) {
-  state.search[side].open = open;
-  if (!open) state.search[side].active = -1;
-  renderSearch(side);
-}
-
-function renderSearch(side) {
-  const el = sideEl(side);
-  const input = el.querySelector(".player-search");
-  const list = el.querySelector(".search-results");
-  const search = state.search[side];
-  search.results = searchPlayers(input.value, search.position);
-  if (search.active >= search.results.length) search.active = search.results.length - 1;
-
-  const show = search.open && document.activeElement === input;
-  list.hidden = !show;
-  input.setAttribute("aria-expanded", String(show));
-  input.removeAttribute("aria-activedescendant");
-  if (!show) return;
-
-  if (sideIsFull(side)) {
-    const full = document.createElement("li");
-    full.className = "search-empty";
-    full.textContent = `A side can include up to ${MAX_PER_SIDE} players. Remove one to add another.`;
-    list.replaceChildren(full);
-    return;
-  }
-
-  if (search.results.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "search-empty";
-    const query = input.value.trim();
-    empty.textContent = query ? `No players match "${query}".` : "No players left to add.";
-    list.replaceChildren(empty);
-    return;
-  }
-
-  list.replaceChildren(...search.results.map((p, i) => searchOption(side, p, i)));
-  if (search.active >= 0) {
-    input.setAttribute("aria-activedescendant", `result-${side}-${search.active}`);
-    list.children[search.active]?.scrollIntoView({ block: "nearest" });
-  }
-}
-
-function onSearchKey(side, event) {
-  const search = state.search[side];
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
-    if (!search.open) {
-      search.open = true;
-      renderSearch(side); // refresh results before moving through them
-    }
-    const total = search.results.length;
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    search.active = total ? (search.active + step + total) % total : -1;
-    if (event.key === "ArrowUp" && search.active === -1) search.active = total - 1;
-    renderSearch(side);
-  } else if (event.key === "Enter") {
-    event.preventDefault();
-    const pick = search.results[search.active >= 0 ? search.active : 0];
-    if (pick) addPlayer(side, pick.id);
-  } else if (event.key === "Escape") {
-    // First Escape closes the list; a second one (list already closed) clears the text.
-    if (search.open) {
-      event.preventDefault();
-      setSearchOpen(side, false);
-    }
-  }
 }
 
 function setPositionFilter(side, position) {
-  state.search[side].position = position;
-  state.search[side].active = -1;
-  for (const chipEl of sideEl(side).querySelectorAll(".pos-chip")) {
-    chipEl.setAttribute("aria-pressed", String(chipEl.dataset.pos === position));
+  state.position[side] = position;
+  for (const button of sideEl(side).querySelectorAll(".pos-filter button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.pos === position));
   }
   sideEl(side).querySelector(".player-search").focus();
-  setSearchOpen(side, true);
+  searches[side].setOpen(true);
 }
 
 function renderRoster(side) {
@@ -327,7 +178,7 @@ function rosterItem(side, player) {
   name.className = "player-name";
   const link = document.createElement("a");
   link.className = "profile-link";
-  link.href = `/player/?id=${encodeURIComponent(player.id)}`;
+  link.href = profileUrl(player.id);
   link.textContent = player.name;
   name.append(link);
   if (player.injury_status) {
@@ -369,7 +220,7 @@ function rosterItem(side, player) {
 
 function render() {
   for (const side of SIDES) {
-    renderSearch(side);
+    searches[side].render();
     renderRoster(side);
   }
   refreshValues();
@@ -431,19 +282,16 @@ function readUrl() {
 async function copyShareLink(button) {
   writeUrl();
   const status = document.getElementById("share-status");
-  try {
-    await navigator.clipboard.writeText(location.href);
-    status.textContent = "Link copied";
-  } catch {
-    // Clipboard can be blocked (e.g. insecure context); fall back to selecting the URL.
-    window.prompt("Copy this link:", location.href);
-    status.textContent = "";
-  }
+  status.textContent = (await PlayerUI.copyText(location.href)) ? "Link copied" : "Copy the address bar to share";
   clearTimeout(button._statusTimer);
   button._statusTimer = setTimeout(() => { status.textContent = ""; }, 2500);
 }
 
 function onTradeChanged() {
+  // Until players load (or after loading fails) there's no trade to show: leave the URL alone,
+  // so a shared link survives (its settings are read once players arrive), and keep the
+  // loading message or error block on screen.
+  if (!state.loaded) return;
   writeUrl();
   clearTimeout(analysisTimer);
   analysisSeq++; // discard any in-flight response for the previous trade
@@ -463,26 +311,17 @@ async function analyze() {
     league: { num_teams: state.numTeams, roster_slots: state.slots },
   };
   try {
-    const response = await request("/trades/analyze", {
+    const data = await PlayerUI.getJson("/trades/analyze", "Couldn't analyze this trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await response.json().catch(() => null); // error pages may not be JSON
     if (seq !== analysisSeq) return; // a newer request superseded this one
-    if (!response.ok) throw new Error(errorDetail(data) || `the server returned HTTP ${response.status}.`);
-    if (!data) throw new Error("the server sent a response the page couldn't read.");
     renderAnalysis(data);
   } catch (error) {
     if (seq !== analysisSeq) return;
-    renderError(`Couldn't analyze this trade: ${error.message}`);
+    renderError(error, analyze);
   }
-}
-
-function errorDetail(data) {
-  if (typeof data?.detail === "string") return data.detail;
-  if (Array.isArray(data?.detail)) return data.detail.map((d) => d.msg).join("; ");
-  return null;
 }
 
 function renderEmptyResult() {
@@ -494,12 +333,8 @@ function renderEmptyResult() {
   refreshValues();
 }
 
-function renderError(text) {
-  const result = document.getElementById("result");
-  const message = document.createElement("p");
-  message.className = "result-error";
-  message.textContent = text;
-  result.replaceChildren(message);
+function renderError(error, retry) {
+  document.getElementById("result").replaceChildren(PlayerUI.errorBlock(error, retry));
 }
 
 function verdictText(analysis) {
@@ -658,7 +493,7 @@ function playerCard(valuation, sideTotal) {
   title.className = "tr-player-title";
   const name = document.createElement("a");
   name.className = "tr-player-name";
-  name.href = `/player/?id=${encodeURIComponent(v.player.id)}`;
+  name.href = profileUrl(v.player.id);
   name.textContent = v.player.name;
   const meta = document.createElement("span");
   meta.className = "tr-player-meta";
@@ -698,12 +533,6 @@ function playerCard(valuation, sideTotal) {
   if (strengths) card.append(strengths);
   if (concerns) card.append(concerns);
   return card;
-}
-
-function ordinal(n) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function playerBreakdown(analysis) {
@@ -888,8 +717,7 @@ function addPlayer(side, id) {
   if (!id || inTrade(id) || !state.players.has(id) || sideIsFull(side)) return;
   state.sides[side].push(id);
   sideEl(side).querySelector(".player-search").value = "";
-  state.search[side].open = false;
-  state.search[side].active = -1;
+  searches[side].setOpen(false);
   render();
 }
 
@@ -917,16 +745,8 @@ function clearTrade() {
 function bindEvents() {
   for (const side of SIDES) {
     const el = sideEl(side);
-    const input = el.querySelector(".player-search");
-    input.addEventListener("input", () => {
-      state.search[side].open = true;
-      state.search[side].active = input.value.trim() ? 0 : -1;
-      renderSearch(side);
-    });
-    input.addEventListener("click", () => setSearchOpen(side, true));
-    input.addEventListener("blur", () => setSearchOpen(side, false));
-    input.addEventListener("keydown", (event) => onSearchKey(side, event));
-    for (const chipEl of el.querySelectorAll(".pos-chip")) {
+    setupSearch(side);
+    for (const chipEl of el.querySelectorAll(".pos-filter button")) {
       chipEl.addEventListener("click", () => setPositionFilter(side, chipEl.dataset.pos));
     }
     el.querySelector(".team-name").addEventListener("input", onTradeChanged);
@@ -940,6 +760,7 @@ function bindEvents() {
 }
 
 async function init() {
+  PlayerUI.noteDataStatus();
   bindEvents();
   renderLineupSettings();
   // Close the lineup popover on an outside click or Escape.
@@ -961,26 +782,43 @@ async function init() {
     onTradeChanged();
   });
   document.getElementById("share").addEventListener("click", (e) => copyShareLink(e.currentTarget));
+  loadData();
+}
+
+// The player searches stay disabled until there are players to find, so nothing typed is lost.
+function setSearchesReady(ready, placeholder) {
+  for (const input of document.querySelectorAll(".player-search")) {
+    input.disabled = !ready;
+    input.placeholder = placeholder;
+  }
+}
+
+// Players first (nothing works without them), then the trade in the URL.
+async function loadData() {
+  setSearchesReady(false, "Loading players…");
+  const loading = document.createElement("p");
+  loading.className = "result-empty";
+  loading.textContent = "Loading players…";
+  document.getElementById("result").replaceChildren(loading);
   try {
     await loadPlayers();
+  } catch (error) {
+    setSearchesReady(false, "Players couldn't be loaded");
+    renderError(error, loadData);
+    return;
+  }
+  setSearchesReady(true, "Search players or teams");
+  state.loaded = true;
+  readUrl();
+  renderLineupSettings();
+  render();
+  loadMeta();
+  // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
+  window.addEventListener("hashchange", () => {
     readUrl();
     renderLineupSettings();
     render();
-    loadMeta();
-    // replaceState (our own URL updates) doesn't fire this; pasting or clicking a link does.
-    window.addEventListener("hashchange", () => {
-      readUrl();
-      renderLineupSettings();
-      render();
-    });
-  } catch (error) {
-    const result = document.getElementById("result");
-    result.innerHTML = "";
-    const message = document.createElement("p");
-    message.className = "result-error";
-    message.textContent = `${error.message} Check that the backend is running, then reload the page.`;
-    result.append(message);
-  }
+  });
 }
 
 init();

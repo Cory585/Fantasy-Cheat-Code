@@ -73,7 +73,7 @@ def test_cards_for_old_settings_never_reappear(page):
 
     page.route("**/draft/plan?*", fail_after_first)
     page.select_option("#draft-slot", "9")
-    expect(page.locator(".result-error")).to_be_visible()
+    expect(page.locator(".error-block")).to_be_visible()
     page.click('#position-filter button[data-position="QB"]')
     expect(page.locator(".plan-pick")).to_have_count(0)
     assert calls["n"] == 1
@@ -83,7 +83,7 @@ def test_unreadable_response_shows_an_error(page):
     open_draft(page)
     page.route("**/draft/plan?*", lambda route: route.fulfill(status=200, content_type="application/json", body="<html>proxy</html>"))
     page.select_option("#draft-slot", "2")
-    expect(page.locator(".result-error")).to_contain_text("couldn't read")
+    expect(page.locator(".error-block")).to_contain_text("couldn't read")
 
 
 def test_timeline_dots_are_focusable_and_labeled(page):

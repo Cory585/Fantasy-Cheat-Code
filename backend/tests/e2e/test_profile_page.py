@@ -1,4 +1,6 @@
 import re
+import time
+from email.utils import formatdate
 
 import pytest
 from playwright.sync_api import expect
@@ -65,6 +67,16 @@ def test_espn_unavailable_shows_local_data_and_a_countdown(page):
     page.clock.run_for(31_000)
     expect(retry).to_be_enabled()
     expect(retry).to_have_text("Try again")
+
+
+def test_rate_limit_retry_after_can_be_a_date(page):
+    page.clock.install()
+    page.route("**/players/9221/profile", lambda route: route.fulfill(
+        status=429, content_type="application/json", body='{"detail": "slow down", "code": "rate_limited"}',
+        headers={"Retry-After": formatdate(time.time() + 8, usegmt=True)}))
+    page.goto("/player/?id=9221")
+    # An HTTP date 8 seconds ahead, not the 10-second fallback for a missing header.
+    expect(page.locator("#profile-retry")).to_have_text(re.compile(r"Try again in [78]s"))
 
 
 def test_rate_limited_profile_counts_down_once_per_second(page):

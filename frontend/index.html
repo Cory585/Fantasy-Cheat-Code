@@ -57,7 +57,7 @@
     <div class="masthead-title">
       <h1>Trade Analyzer</h1>
       <p class="lede">Build both sides of a trade and see who comes out ahead on rest-of-season value.</p>
-      <p class="data-status" id="data-status"></p>
+      <p class="data-status" id="data-status" role="status" aria-live="polite"></p>
     </div>
     <div class="masthead-controls">
       <label class="inline-field">
@@ -87,17 +87,17 @@
         <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <div class="pos-chips" role="group" aria-label="Filter Team A search by position">
-            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
-            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
-            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
-            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
-            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
-            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
-            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          <div class="segmented pos-filter" role="group" aria-label="Filter Team A search by position">
+            <button type="button" data-pos="" aria-pressed="true">All</button>
+            <button type="button" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" data-pos="DST" aria-pressed="false">DST</button>
           </div>
           <div class="search">
-            <input type="search" class="player-search" placeholder="Search players or teams"
+            <input type="search" class="player-search" placeholder="Loading players…" disabled
               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-a"
               aria-label="Search players to add to Team A" autocomplete="off" spellcheck="false">
             <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
@@ -117,17 +117,17 @@
         <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
-          <div class="pos-chips" role="group" aria-label="Filter Team B search by position">
-            <button type="button" class="pos-chip" data-pos="" aria-pressed="true">All</button>
-            <button type="button" class="pos-chip" data-pos="QB" aria-pressed="false">QB</button>
-            <button type="button" class="pos-chip" data-pos="RB" aria-pressed="false">RB</button>
-            <button type="button" class="pos-chip" data-pos="WR" aria-pressed="false">WR</button>
-            <button type="button" class="pos-chip" data-pos="TE" aria-pressed="false">TE</button>
-            <button type="button" class="pos-chip" data-pos="K" aria-pressed="false">K</button>
-            <button type="button" class="pos-chip" data-pos="DST" aria-pressed="false">DST</button>
+          <div class="segmented pos-filter" role="group" aria-label="Filter Team B search by position">
+            <button type="button" data-pos="" aria-pressed="true">All</button>
+            <button type="button" data-pos="QB" aria-pressed="false">QB</button>
+            <button type="button" data-pos="RB" aria-pressed="false">RB</button>
+            <button type="button" data-pos="WR" aria-pressed="false">WR</button>
+            <button type="button" data-pos="TE" aria-pressed="false">TE</button>
+            <button type="button" data-pos="K" aria-pressed="false">K</button>
+            <button type="button" data-pos="DST" aria-pressed="false">DST</button>
           </div>
           <div class="search">
-            <input type="search" class="player-search" placeholder="Search players or teams"
+            <input type="search" class="player-search" placeholder="Loading players…" disabled
               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results-b"
               aria-label="Search players to add to Team B" autocomplete="off" spellcheck="false">
             <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
@@ -154,6 +154,7 @@
   <script src="/vendor/gsap.min.js"></script>
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
+  <script src="/player-search.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -25,41 +25,14 @@
   --good: #23704b;
   --bad: #a8372b;
   --focus: #2952a3;
+  --on-color: #fff; /* text on a filled --tag or --bad background */
 
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-body: "Barlow", system-ui, sans-serif;
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
-    --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
-    --ridge-0: hsl(var(--land-hue) var(--land-sat) 10.5%);
-    --ridge-1: hsl(var(--land-hue) var(--land-sat) 9%);
-    --ridge-2: hsl(var(--land-hue) var(--land-sat) 7.5%);
-    --ridge-3: hsl(var(--land-hue) var(--land-sat) 6%);
-    --ridge-4: hsl(var(--land-hue) var(--land-sat) 4.5%);
-    --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 24%);
-    --bg: hsl(var(--land-hue) 27% 8%);
-    --surface: hsl(var(--land-hue) 22% 12%);
-    --ink: #e4ece7;
-    --muted: #9aaba2;
-    --line: hsl(var(--land-hue) 15% 21%);
-    --turf: #1f4d37;
-    --turf-dark: #1a422f;
-    --chalk: rgba(228, 236, 231, 0.55);
-    --chalk-text: rgba(228, 236, 231, 0.85);
-    --side-a: #86a7ef;
-    --side-b: #e3a74c;
-    --good: #6cc896;
-    --bad: #ef8a7d;
-    --focus: #86a7ef;
-    color-scheme: dark;
-  }
-}
-
-/* Explicit choice from the theme switch (same values as the media query above). */
+/* Dark mode: theme-boot.js sets data-theme from the saved choice or the system preference. */
 :root[data-theme="dark"] {
   --sky-top: hsl(var(--land-hue) var(--land-sat) 5%);
   --sky-low: hsl(var(--land-hue) var(--land-sat) 12%);
@@ -83,6 +56,7 @@
   --good: #6cc896;
   --bad: #ef8a7d;
   --focus: #86a7ef;
+  --on-color: #101a15; /* the dark-mode accents are light, so text on them is dark */
   color-scheme: dark;
 }
 
@@ -149,27 +123,31 @@ button, input, select { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+/* The groups wrap onto more rows when the screen is too narrow, so no tab is hidden. */
 .nav-links {
   order: 3;
   flex-basis: 100%;
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
   margin: 0 -0.75rem;
   padding: 0;
   list-style: none;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow-x: clip; /* hides the divider of a group that starts a row (see below) */
 }
 
 .nav-group {
-  flex: none;
+  flex: 0 1 auto; /* a group wider than the screen shrinks, and its tabs wrap */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   padding: 0 0.5rem;
 }
 
-/* A divider between groups, so each group reads as its own section. */
-.nav-group + .nav-group { border-left: 1px solid var(--line); }
+/* A divider between groups, so each group reads as its own section. Every group has one,
+   pulled 1px left: at the start of a row it falls outside .nav-links and is clipped. */
+.nav-group { border-left: 1px solid var(--line); margin-left: -1px; }
 
 .nav-group-label {
   padding: 0 0.75rem;
@@ -183,6 +161,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .nav-group ul {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.125rem;
   margin: 0;
   padding: 0;
@@ -201,12 +180,6 @@ button, input, select { font: inherit; color: inherit; }
 
 .nav-links a:hover { color: var(--ink); background: var(--bg); }
 
-/* Set by theme.js when more tabs are off to the right. */
-.nav-links.has-more {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
-}
-
 .nav-links a[aria-current="page"] {
   color: var(--ink);
   font-weight: 600;
@@ -216,9 +189,6 @@ button, input, select { font: inherit; color: inherit; }
 
 /* --turf is a background shade in dark mode; use the readable green for the current tab. */
 :root[data-theme="dark"] .nav-links a[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .nav-links a[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--good); }
-}
 
 /* ---------- Masthead ---------- */
 
@@ -257,6 +227,8 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .data-status:empty { display: none; }
+/* The data notice is a live region: keep it rendered (and announceable) while empty. */
+.data-notice:empty { display: block; margin: 0; }
 
 .inline-field {
   display: flex;
@@ -446,6 +418,10 @@ main {
   font-size: 0.9375rem;
 }
 
+/* Seven positions in one row across the side's width. */
+.picker .pos-filter { display: flex; flex-wrap: nowrap; }
+.picker .pos-filter button { flex: 1 1 0; min-width: 0; padding: 0.375rem 0.25rem; font-size: 0.875rem; }
+
 .picker {
   display: grid;
   gap: 0.5rem;
@@ -519,32 +495,6 @@ main {
   font-family: var(--font-display);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.pos-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-
-.pos-chip {
-  padding: 0.125rem 0.625rem;
-  min-height: 1.875rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pos-chip:hover { color: var(--ink); }
-
-.pos-chip[aria-pressed="true"] {
-  background: var(--side);
-  border-color: var(--side);
-  color: var(--surface);
 }
 
 /* Headshots and team logos */
@@ -704,6 +654,22 @@ main {
   border: 1px solid var(--bad);
   color: var(--bad);
 }
+
+/* A failed request: the message and a "Try again" button (PlayerUI.errorBlock). */
+.error-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--bad);
+  background: var(--surface); /* readable over the landscape backdrop */
+  list-style: none;
+}
+.error-block-text { margin: 0; flex: 1 1 18rem; color: var(--bad); }
+.error-block[hidden] { display: none; }
 
 .verdict h2 {
   font-size: clamp(2rem, 5vw, 3rem);
@@ -1023,9 +989,6 @@ main {
 }
 
 :root[data-theme="dark"] .feature-status { color: var(--good); border-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .feature-status { color: var(--good); border-color: var(--good); }
-}
 
 .preview {
   margin: 0;
@@ -1051,28 +1014,6 @@ main {
 .bar-wide { width: 75%; }
 .bar-mid { width: 50%; }
 .bar-short { width: 30%; }
-
-.roadmap {
-  margin-top: 2rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5rem 2rem;
-}
-
-.roadmap h2 { font-size: 1.5rem; }
-
-.roadmap ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-}
-
-.roadmap li { margin-bottom: 0.375rem; max-width: 60ch; }
-
-.roadmap p {
-  margin: 0.5rem 0 0;
-  color: var(--muted);
-  max-width: 60ch;
-}
 
 /* Tier lists */
 
@@ -1153,7 +1094,7 @@ main {
   padding: 0 0.3125rem;
   border-radius: 4px;
   background: var(--bad);
-  color: #fff;
+  color: var(--on-color);
   font-size: 0.6875rem;
   font-weight: 700;
 }
@@ -1238,7 +1179,8 @@ main {
 .ss-chip .player-meta { font-size: 0.8125rem; }
 .ss-chip .btn-remove { width: 1.875rem; height: 1.875rem; font-size: 1rem; }
 
-.result.is-stale { opacity: 0.6; transition: opacity 0.15s; }
+/* Content from the previous request, dimmed while the next one loads. */
+.is-stale { opacity: 0.6; transition: opacity 0.15s; }
 
 .ss-verdict {
   --tone: var(--good);
@@ -1474,17 +1416,6 @@ main {
   --pos-DST: #008300;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --pos-QB: #3987e5;
-    --pos-RB: #d95926;
-    --pos-WR: #199e70;
-    --pos-TE: #c98500;
-    --pos-K: #d55181;
-    --pos-DST: #008300;
-  }
-}
-
 :root[data-theme="dark"] {
   --pos-QB: #3987e5;
   --pos-RB: #d95926;
@@ -1601,10 +1532,6 @@ main {
 .timeline-svg .my-pick-dot { fill: var(--turf); stroke: var(--bg); stroke-width: 2; }
 :root[data-theme="dark"] .timeline-svg .arc { stroke: var(--good); }
 :root[data-theme="dark"] .timeline-svg .my-pick-dot { fill: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .timeline-svg .arc { stroke: var(--good); }
-  :root:not([data-theme="light"]) .timeline-svg .my-pick-dot { fill: var(--good); }
-}
 
 /* Legend */
 
@@ -1703,15 +1630,11 @@ main {
 /* --turf is a background shade in dark mode; use the readable green for "yours" there. */
 :root[data-theme="dark"] .team-head.is-mine { border-bottom-color: var(--good); }
 :root[data-theme="dark"] .pick.is-mine { outline-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .team-head.is-mine { border-bottom-color: var(--good); }
-  :root:not([data-theme="light"]) .pick.is-mine { outline-color: var(--good); }
-}
 
 .timeline-svg .my-pick-dot:focus-visible { outline: none; stroke: var(--focus); stroke-width: 3; }
 
 .pick-num {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -1733,7 +1656,7 @@ main {
 
 .pos-tag {
   flex: none;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--muted);
 }
@@ -1830,7 +1753,7 @@ main {
   overflow-wrap: anywhere;
 }
 
-.plan-list .result-error { grid-column: 1 / -1; }
+.plan-list .error-block { grid-column: 1 / -1; }
 
 /* Shared chart tooltip */
 
@@ -1997,9 +1920,6 @@ main {
 }
 
 :root[data-theme="dark"] .drill-fill { background: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .drill-fill { background: var(--good); }
-}
 
 .drill-note { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 
@@ -2022,9 +1942,6 @@ main {
 .season-chart .bar-value { fill: var(--ink); font-size: 11px; font-weight: 600; }
 .season-chart .bar-year { fill: var(--muted); font-size: 11px; }
 :root[data-theme="dark"] .season-chart rect { fill: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .season-chart rect { fill: var(--good); }
-}
 
 .stat-table-wrap {
   overflow-x: auto;
@@ -2093,9 +2010,6 @@ main {
 
 .not-found h1 { font-size: clamp(2rem, 5vw, 3rem); }
 :root[data-theme="dark"] .not-found-code { color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .not-found-code { color: var(--good); }
-}
 
 .not-found-links {
   display: flex;
@@ -2113,6 +2027,7 @@ main {
 @media (max-width: 760px) {
   .site-nav-inner { padding: 0.5rem 1rem 0; }
   .nav-group { padding: 0 0.25rem; }
+  .nav-links a { padding: 0.5rem 0.625rem; }
   .masthead { padding: 1.75rem 1rem 1.25rem; }
   main { padding: 0 1rem 2.5rem; }
   .sides { grid-template-columns: minmax(0, 1fr); }
@@ -2120,7 +2035,6 @@ main {
   .summary { grid-template-columns: minmax(0, 1fr); }
   .field { height: 6rem; grid-template-columns: 11% minmax(0, 1fr) 11%; }
   .yard-line:nth-of-type(even) span { display: none; }
-  .roadmap { grid-template-columns: minmax(0, 1fr); }
   .masthead-controls { flex-wrap: wrap; }
   .lineup-panel { right: auto; left: 0; width: min(17rem, calc(100vw - 2rem)); }
   .value-row { grid-template-columns: minmax(0, 1fr) 3.5rem; }
@@ -2255,6 +2169,7 @@ body[data-mode="compare"] .lineup-only { display: none; }
 
 .ss-lineup-head .section-note { margin-bottom: 0; }
 
+.ss-missing { margin: -0.5rem 0 1.25rem; }
 .ss-close-calls { margin-bottom: 1.25rem; }
 .ss-close-calls h3, .ss-bench h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
 
@@ -2978,10 +2893,6 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 
 :root[data-theme="dark"] .league-card.is-active { border-left-color: var(--good); }
 :root[data-theme="dark"] .league-badge { color: var(--good); border-color: var(--good); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .league-card.is-active { border-left-color: var(--good); }
-  :root:not([data-theme="light"]) .league-badge { color: var(--good); border-color: var(--good); }
-}
 
 @media (max-width: 760px) {
   .profile-page { grid-template-columns: minmax(0, 1fr); }
@@ -3026,7 +2937,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 
 .tag-chip:hover:not(:disabled) { border-color: var(--tag); }
 .tag-chip:disabled { opacity: 0.4; cursor: default; }
-.tag-chip[aria-pressed="true"] { background: var(--tag); border-color: var(--tag); color: #fff; }
+.tag-chip[aria-pressed="true"] { background: var(--tag); border-color: var(--tag); color: var(--on-color); }
 .tag-chip-count {
   min-width: 1.5rem;
   padding: 0 0.375rem;
@@ -3036,7 +2947,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   font-size: 0.75rem;
   text-align: center;
 }
-.tag-chip[aria-pressed="true"] .tag-chip-count { background: rgba(255, 255, 255, 0.25); color: #fff; }
+.tag-chip[aria-pressed="true"] .tag-chip-count { background: rgba(255, 255, 255, 0.25); color: var(--on-color); }
 
 /* Each chip and pill carries its category class, which sets its color. */
 .tag-role { --tag: #2952a3; }
@@ -3079,7 +2990,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   cursor: default;
 }
 
-.tag-pill.is-on { background: var(--tag); border-color: var(--tag); color: #fff; }
+.tag-pill.is-on { background: var(--tag); border-color: var(--tag); color: var(--on-color); }
 a.tag-pill { text-decoration: none; cursor: pointer; }
 a.tag-pill:hover { border-color: var(--tag); }
 .finder-more { justify-self: start; margin-top: 0.75rem; }
@@ -3091,12 +3002,6 @@ a.tag-pill:hover { border-color: var(--tag); }
 :root[data-theme="dark"] .tag-usage { --tag: #4fae7f; }
 :root[data-theme="dark"] .tag-trend { --tag: #d39a3c; }
 :root[data-theme="dark"] .tag-status { --tag: #a790bd; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tag-role { --tag: #6f97e8; }
-  :root:not([data-theme="light"]) .tag-usage { --tag: #4fae7f; }
-  :root:not([data-theme="light"]) .tag-trend { --tag: #d39a3c; }
-  :root:not([data-theme="light"]) .tag-status { --tag: #a790bd; }
-}
 
 @media (max-width: 760px) {
   .finder-tags, .finder-results { padding: 1rem; }
@@ -3252,3 +3157,18 @@ a.tag-pill:hover { border-color: var(--tag); }
 }
 
 .tier-chip.is-dry { border-color: var(--bad); color: var(--bad); }
+
+/* Touch screens: every small control gets at least a 44px tap target. */
+@media (pointer: coarse) {
+  .btn-remove,
+  .ss-chip .btn-remove,
+  .team-item .btn-remove { width: 2.75rem; height: 2.75rem; }
+  .btn-small,
+  .step-btn,
+  .ss-quick-btn,
+  .tag-chip,
+  .segmented button { min-height: 2.75rem; }
+  .slot-stepper { grid-template-columns: minmax(0, 1fr) 2.75rem 2rem 2.75rem; }
+  .stepper-btn,
+  .slot-stepper .stepper-btn { height: 2.75rem; min-width: 2.75rem; }
+}

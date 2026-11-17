@@ -65,7 +65,7 @@
     <form class="draft-setup" id="draft-setup" aria-label="Draft settings">
       <fieldset class="setup-group">
         <legend>League size</legend>
-        <div class="segmented" id="league-size" role="group">
+        <div class="segmented" id="league-size" role="group" aria-label="League size">
           <button type="button" data-teams="8">8</button>
           <button type="button" data-teams="10">10</button>
           <button type="button" data-teams="12">12</button>
@@ -169,7 +169,7 @@
           <h2 id="plan-heading" class="section-heading">Who to target at each pick</h2>
           <p class="section-note">The bar shows which positions go before your next pick, and warnings flag
             positions whose best tier left will likely be gone by then. Dots show where each target is usually
-            drafted compared with your pick; T1, T2... is the player's <a href="/tiers/">tier</a> at their position.</p>
+            drafted compared with your pick; T1, T2… is the player's <a href="/tiers/">tier</a> at their position.</p>
         </div>
         <div class="segmented position-filter" id="position-filter" role="group" aria-label="Show targets at">
           <button type="button" data-position="">All</button>
@@ -183,22 +183,6 @@
       </div>
       <ol class="plan-list" id="plan-list"></ol>
     </section>
-
-    <section class="roadmap">
-      <div>
-        <h2>Still to build</h2>
-        <ul>
-          <li>Suggestions that account for your roster so far, not just ADP.</li>
-          <li>Live drafts on Sleeper and Yahoo, and marking picks by hand when a league can't be connected.</li>
-        </ul>
-      </div>
-      <div>
-        <h2>Data it uses</h2>
-        <p>ESPN average draft position from <code>python -m app.data.collect</code>, falling back to
-          projections when there's no ADP. Your league size, draft slot, and number of rounds set
-          the pick order.</p>
-      </div>
-    </section>
   </main>
 
   <div class="viz-tooltip" id="viz-tooltip" role="tooltip" hidden></div>
@@ -207,6 +191,7 @@
   <script src="/vendor/gsap.min.js"></script>
   <script src="/vendor/lenis.min.js"></script>
   <script src="/motion.js"></script>
+  <script src="/player-search.js"></script>
   <script src="/draft/draft.js"></script>
 </body>
 </html>

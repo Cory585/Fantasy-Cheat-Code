@@ -5,7 +5,7 @@
 // Names come from outside providers, so they're always inserted as text.
 
 (() => {
-  const { el, request, errorMessage, avatar } = window.PlayerUI;
+  const { el, ordinal, getJson, errorBlock, avatar } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -34,14 +34,9 @@
   let league = null;
   let sort = { key: "overall_rank", ascending: true };
   let loading = 0; // id of the latest team request, so a slow older one can't overwrite it
+  let shown = null; // the team whose breakdown is on screen
 
   // ---------- helpers ----------
-
-  function ordinal(n) {
-    const s = ["th", "st", "nd", "rd"];
-    const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  }
 
   // Top quarter of the league reads as a strength, bottom quarter as a weakness.
   function tone(rank, teams) {
@@ -78,9 +73,11 @@
     return summary.name || summary.team;
   }
 
-  function showError(message) {
-    els.error.textContent = message;
-    els.error.hidden = !message;
+  // A failed request, with a button to try it again; showError(null) clears it.
+  function showError(error, retry) {
+    // Unhide first: an alert added inside a hidden element may never be announced.
+    els.error.hidden = !error;
+    els.error.replaceChildren(...(error ? [errorBlock(error, retry)] : []));
   }
 
   function remember(team) {
@@ -176,7 +173,7 @@
   function renderUpcoming(games) {
     const withModel = games.filter((g) => g.projection != null);
     els.upcomingNote.textContent = games.length && !withModel.length
-      ? "The DST model isn't trained yet (python -m app.defense.train), so there are no projections."
+      ? "Defense projections aren't available yet."
       : "Projected fantasy points from the DST matchup model, ranked against every defense playing that week.";
     if (!games.length) {
       els.upcoming.replaceChildren(el("li", "df-empty", "No upcoming games in this season's schedule."));
@@ -204,20 +201,31 @@
     }));
   }
 
+  // While another team loads, dim the one on screen and mark it busy for screen readers.
+  function setBusy(busy) {
+    els.team.setAttribute("aria-busy", String(busy));
+    els.team.classList.toggle("is-stale", busy);
+  }
+
   async function showTeam(team, { push = true } = {}) {
     const id = ++loading;
     els.select.value = team;
-    showError("");
+    showError(null);
+    setBusy(true);
     let data;
     try {
-      const response = await request(`/defenses/${encodeURIComponent(team)}`);
-      if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load that defense"));
-      data = await response.json();
+      data = await getJson(`/defenses/${encodeURIComponent(team)}`, "Couldn't load that defense");
     } catch (error) {
-      if (id === loading) showError(error.message);
+      if (id !== loading) return;
+      setBusy(false);
+      // Put the select back on the team still on screen, so its breakdown isn't read as this one.
+      if (shown) els.select.value = shown;
+      showError(error, () => showTeam(team, { push }));
       return;
     }
     if (id !== loading) return;
+    setBusy(false);
+    shown = team;
     renderHero(data);
     renderGroups(data.groups);
     renderUnits(data.units);
@@ -314,13 +322,12 @@
   // ---------- start ----------
 
   async function start() {
+    showError(null);
     try {
-      const response = await request("/defenses");
-      if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load defenses"));
-      league = await response.json();
+      league = await getJson("/defenses", "Couldn't load defenses");
     } catch (error) {
       els.select.replaceChildren(el("option", null, "No data"));
-      showError(error.message);
+      showError(error, start);
       return;
     }
     els.status.textContent = `${league.season} season through week ${league.through_week}.`;

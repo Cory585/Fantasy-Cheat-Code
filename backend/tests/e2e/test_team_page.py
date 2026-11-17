@@ -131,6 +131,14 @@ def test_lineup_follows_the_week_and_byes(page):
     expect(page.locator(".ss-bench-item", has_text="Sample WR One")).to_contain_text("Bye")
 
 
+def test_lineup_mentions_players_no_longer_in_the_pool(page):
+    seed(page, ROSTER + ["gone1", "gone2"])
+    page.goto("/start-sit/?mode=lineup&week=2")
+    expect(page.locator(".ss-missing")).to_have_text(
+        "2 players on this roster are no longer in the player pool, so they're left out of the lineup.")
+    expect(page.locator(".ss-spot")).to_have_count(9)
+
+
 def test_close_call_opens_a_comparison(page):
     seed(page)
     page.goto("/start-sit/?mode=lineup&week=2")

@@ -1,6 +1,7 @@
 "use strict";
 
-// Shared player helpers and a search combobox, used by the start/sit and team pages.
+// Shared helpers used across the site: requests and error messages, player avatars, and a
+// player search combobox.
 // Exposes `window.PlayerUI`. Player names come from outside providers, so everything
 // here inserts them as text, never as markup.
 
@@ -16,38 +17,189 @@ window.PlayerUI = (() => {
     return node;
   }
 
+  // ---------- Requests and errors ----------
+  // Every page turns a failed request into the same kind of plain-language message, and
+  // shows it in the same error block with a "Try again" button (errorBlock below).
+
+  const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection, then try again.";
+  const MAX_RETRY_WAIT = 120; // seconds; a longer Retry-After is capped
+
+  // An error whose message can be shown to the person as is. `retryAfter` is the number of
+  // seconds to wait before trying again (from a 429's Retry-After), or 0.
+  class RequestError extends Error {
+    constructor(message, { status = 0, retryAfter = 0 } = {}) {
+      super(message);
+      this.status = status;
+      this.retryAfter = retryAfter;
+    }
+  }
+
   // fetch() that turns network failures into a plain-language error.
   async function request(url, options) {
     try {
       return await fetch(url, options);
     } catch {
-      throw new Error("Couldn't reach the server.");
+      throw new RequestError(OFFLINE_MESSAGE);
     }
   }
 
-  async function errorMessage(response, fallback) {
+  // Retry-After is either seconds or an HTTP date.
+  function retryAfterSeconds(response) {
+    const value = response.headers.get("Retry-After");
+    if (!value) return 0;
+    let seconds = Number(value);
+    if (!Number.isFinite(seconds)) {
+      const date = Date.parse(value);
+      seconds = Number.isNaN(date) ? 0 : (date - Date.now()) / 1000;
+    }
+    return Math.min(Math.max(Math.ceil(seconds), 0), MAX_RETRY_WAIT);
+  }
+
+  // FastAPI's `detail`: a sentence, or (for invalid input) a list of {msg}.
+  function detailText(body) {
+    if (typeof body?.detail === "string") return body.detail;
+    if (Array.isArray(body?.detail)) {
+      const messages = body.detail.map((d) => d?.msg).filter((m) => typeof m === "string");
+      if (messages.length) return messages.join("; ");
+    }
+    return null;
+  }
+
+  // A response that wasn't ok, as a RequestError. `what` says what failed ("Couldn't load
+  // tiers") for when the server gives no reason of its own.
+  async function responseError(response, what = "Something went wrong") {
+    if (response.status === 429) {
+      const wait = retryAfterSeconds(response);
+      const when = wait ? `in ${wait} second${wait === 1 ? "" : "s"}` : "in a moment";
+      return new RequestError(`Too many requests just now. Try again ${when}.`, { status: 429, retryAfter: wait });
+    }
+    let body = null;
     try {
-      const body = await response.json();
-      if (typeof body.detail === "string") return body.detail;
+      body = await response.json();
     } catch {
       // not JSON
     }
-    return `${fallback} (the server returned HTTP ${response.status}).`;
+    const reason = detailText(body);
+    if (reason) return new RequestError(reason, { status: response.status });
+    const tail = response.status >= 500 ? "Something went wrong on our end. Try again in a moment." : "Try again in a moment.";
+    return new RequestError(`${what}. ${tail}`, { status: response.status });
+  }
+
+  async function errorMessage(response, what) {
+    return (await responseError(response, what)).message;
+  }
+
+  // GET (or `options`) a URL and return its JSON, or throw a RequestError to show the person.
+  async function getJson(url, what, options) {
+    const response = await request(url, options);
+    if (!response.ok) throw await responseError(response, what);
+    try {
+      return await response.json();
+    } catch {
+      throw new RequestError("The server sent a response this page couldn't read. Try again in a moment.");
+    }
+  }
+
+  // Any thrown value as a message for the person: RequestErrors (and our own Errors) are
+  // already worded for them; anything else is a bug, so say something generic.
+  function messageOf(error) {
+    if (error instanceof RequestError) return error.message;
+    if (error instanceof TypeError || !error?.message) return "Something went wrong. Try again in a moment.";
+    return error.message;
+  }
+
+  /**
+   * The error block every page uses: the message, and a "Try again" button that calls
+   * `retry` (left out when there's nothing to retry). After a 429 the button counts down
+   * the Retry-After wait before it can be pressed. `tag` is "li" inside a list.
+   */
+  function errorBlock(error, retry, { tag = "div" } = {}) {
+    const block = el(tag, "error-block");
+    const text = el("p", "error-block-text", typeof error === "string" ? error : messageOf(error));
+    // The message itself is the alert, so it's announced inside a list (tag "li") too, where
+    // the item can't take the role.
+    text.setAttribute("role", "alert");
+    block.append(text);
+    if (!retry) return block;
+    const button = el("button", "btn btn-quiet btn-small error-block-retry", "Try again");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      retry();
+    });
+    if (error?.retryAfter) countdown(button, error.retryAfter);
+    block.append(button);
+    return block;
+  }
+
+  /**
+   * Keep a "Try again" button disabled for `seconds`, counting down on its label (after a 429,
+   * so it can't outpace the server's limit). Returns a function that stops the countdown
+   * early; it also stops if the button is removed from the page.
+   */
+  function countdown(button, seconds) {
+    let wait = Math.ceil(seconds);
+    const tick = () => {
+      button.textContent = wait > 0 ? `Try again in ${wait}s` : "Try again";
+      button.disabled = wait > 0;
+      wait -= 1;
+    };
+    tick();
+    const timer = setInterval(() => {
+      if (wait < 0 || !button.isConnected) clearInterval(timer);
+      else tick();
+    }, 1000);
+    return () => clearInterval(timer);
   }
 
   async function loadPlayers() {
-    const response = await request("/players");
-    if (!response.ok) throw new Error(await errorMessage(response, "Couldn't load players"));
-    return new Map((await response.json()).map((p) => [p.id, p]));
+    const players = await getJson("/players", "Couldn't load players");
+    return new Map(players.map((p) => [p.id, p]));
   }
 
-  async function loadMeta() {
-    try {
-      const response = await request("/meta");
-      return response.ok ? await response.json() : null;
-    } catch {
-      return null;
+  // /meta (data source, weeks, current week), or null if it can't be loaded: it's never
+  // essential. One request per page, shared by every caller; a failure is retried next call.
+  let metaRequest = null;
+  function loadMeta() {
+    if (!metaRequest) {
+      metaRequest = (async () => {
+        try {
+          const response = await request("/meta");
+          return response.ok ? await response.json() : null;
+        } catch {
+          return null;
+        }
+      })();
+      metaRequest.then((meta) => {
+        if (!meta) metaRequest = null;
+      });
     }
+    return metaRequest;
+  }
+
+  // What's wrong with the data, if anything: the API serves its built-in sample players, or
+  // synced projections that have gone stale (`stale`, with the week they were synced in).
+  function dataWarning(meta) {
+    if (!meta) return null;
+    if (meta.source !== "synced") return "Showing sample players, not real projections.";
+    if (meta.stale) {
+      return Number.isInteger(meta.synced_week)
+        ? `Projections were last updated in week ${meta.synced_week}, so they may be out of date.`
+        : "Projections haven't been updated recently, so they may be out of date.";
+    }
+    return null;
+  }
+
+  // A note under the page title when dataWarning has something to say. Call it as the page
+  // starts: the empty live region goes in right away and the warning is filled in once /meta
+  // arrives (the page's own loadMeta shares the request), so screen readers announce it.
+  async function noteDataStatus() {
+    const title = document.querySelector(".masthead-title");
+    if (!title || title.querySelector(".data-notice")) return;
+    const note = el("p", "data-status data-notice");
+    note.setAttribute("role", "status");
+    (title.querySelector(".lede") || title.lastElementChild).after(note);
+    note.textContent = dataWarning(await loadMeta()) || "";
   }
 
   function teamLogoUrl(team) {
@@ -83,6 +235,41 @@ window.PlayerUI = (() => {
     return wrap;
   }
 
+  // Copy text to the clipboard and say whether it worked. The Clipboard API needs a secure
+  // context and permission, so fall back to the older copy command before giving up.
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // try the fallback below
+    }
+    const focused = document.activeElement;
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    area.remove();
+    focused?.focus?.();
+    return copied;
+  }
+
+  // 1st, 2nd, 3rd, 4th... 11th, 12th, 13th, 21st.
+  function ordinal(n) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
   const profileUrl = (id) => `/player/?id=${encodeURIComponent(id)}`;
 
   function normalize(text) {
@@ -96,8 +283,9 @@ window.PlayerUI = (() => {
    *   allowed(p):   whether a player can be picked (e.g. eligible and not already chosen)
    *   onPick(p):    called with the chosen player
    *   full():       optional; a message to show instead of results when nothing more can be added
+   *   limit:        optional; how many results to show at most
    */
-  function createSearch({ input, list, players, allowed = () => true, onPick, full = () => null }) {
+  function createSearch({ input, list, players, allowed = () => true, onPick, full = () => null, limit = MAX_RESULTS }) {
     const state = { active: -1, results: [], open: false };
     const idPrefix = `${list.id || "results"}-opt`;
 
@@ -107,7 +295,7 @@ window.PlayerUI = (() => {
         .filter(allowed)
         .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
         .sort((x, y) => y.ros_projection - x.ros_projection)
-        .slice(0, MAX_RESULTS);
+        .slice(0, limit);
     }
 
     function option(player, index) {
@@ -168,7 +356,8 @@ window.PlayerUI = (() => {
     }
 
     input.addEventListener("input", () => {
-      state.active = -1;
+      // Highlight the first match while typing, so Enter visibly picks it.
+      state.active = input.value.trim() ? 0 : -1;
       setOpen(true);
     });
     input.addEventListener("click", () => setOpen(true));
@@ -201,5 +390,8 @@ window.PlayerUI = (() => {
     return { render, setOpen };
   }
 
-  return { POSITIONS, el, request, errorMessage, loadPlayers, loadMeta, avatar, profileUrl, createSearch };
+  return {
+    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
+    loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
+  };
 })();

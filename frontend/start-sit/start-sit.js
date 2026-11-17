@@ -8,7 +8,7 @@
 //                    start, how confident the call is, each player's range, and the reasons.
 
 (() => {
-  const { el, request, errorMessage, loadPlayers, loadMeta, avatar, profileUrl, createSearch } = window.PlayerUI;
+  const { el, request, errorMessage, loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("data-status"),
@@ -52,7 +52,7 @@
   const state = {
     players: new Map(),
     meta: null,
-    weeks: [1, 17],
+    weeks: [1, 18], // replaced by /meta's weeks once it loads
     week: null, // null until the current week is known
     slot: "",
     starts: 1,
@@ -434,7 +434,7 @@
       return;
     }
     els.lineup.classList.toggle("is-stale", state.lineupLoading);
-    els.lineup.replaceChildren(lineupHead(a), ...closeCalls(a), lineupTable(a), benchList(a), ...warnings(a), lineupNote());
+    els.lineup.replaceChildren(lineupHead(a), ...missingNote(a), ...closeCalls(a), lineupTable(a), benchList(a), ...warnings(a), lineupNote());
   }
 
   function lineupHead(a) {
@@ -447,6 +447,15 @@
     edit.href = `/team/?league=${encodeURIComponent(state.team.id)}`;
     head.append(title, edit);
     return head;
+  }
+
+  // Saved players the pool no longer has (e.g. released) are left out; same wording as My team.
+  function missingNote(a) {
+    const n = a.missing_ids?.length || 0;
+    if (!n) return [];
+    return [el("p", "ss-missing player-meta",
+      `${n} player${n === 1 ? " on this roster is" : "s on this roster are"} no longer in the player pool, so `
+      + `${n === 1 ? "it's" : "they're"} left out of the lineup.`)];
   }
 
   function closeCalls(a) {
@@ -635,12 +644,7 @@
       els.search.focus();
     });
     els.share.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(location.href);
-        els.shareStatus.textContent = "Link copied";
-      } catch {
-        els.shareStatus.textContent = "Copy the address bar to share";
-      }
+      els.shareStatus.textContent = (await copyText(location.href)) ? "Link copied" : "Copy the address bar to share";
       setTimeout(() => { els.shareStatus.textContent = ""; }, 2500);
     });
     $("ss-setup").addEventListener("submit", (event) => event.preventDefault());
@@ -697,16 +701,14 @@
   function renderStatus() {
     const meta = state.meta;
     if (!meta) return;
-    if (meta.source !== "synced") {
-      els.status.textContent = "Using sample players. Run the data sync to load real weekly projections.";
-      return;
-    }
+    if (meta.source !== "synced") return;
     const parts = [`Week ${meta.current_week} is the current week`];
-    if (!meta.matchups) parts.push("matchups and recent form need the data collector");
+    if (!meta.matchups) parts.push("matchups and recent form aren't available yet");
     els.status.textContent = `${parts.join("; ")}.`;
   }
 
   async function init() {
+    noteDataStatus();
     readUrl();
     bind();
     createSearch({

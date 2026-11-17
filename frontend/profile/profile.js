@@ -20,15 +20,9 @@
     keyInput: $("key-input"),
   };
 
+  const { el } = window.PlayerUI;
   const state = { leagues: [], max: Store.MAX_LEAGUES, loaded: false, busy: false, renaming: null };
   let removeArmed = null; // { id, timer }
-
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
 
   function say(message, isError = false) {
     els.status.textContent = message;
@@ -237,10 +231,10 @@
       els.keyShow.setAttribute("aria-pressed", String(!showing));
     });
     els.keyCopy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(Store.profileKey());
+      if (await window.PlayerUI.copyText(Store.profileKey())) {
         say("Profile key copied. Paste it on this page on your other device.");
-      } catch {
+      } else {
+        // Show and select the key so it can be copied by hand.
         els.key.type = "text";
         els.key.select();
         say("Copy the selected key.");

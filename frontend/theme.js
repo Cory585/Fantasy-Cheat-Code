@@ -1,12 +1,20 @@
 "use strict";
 
-// Light/dark mode switch shared by every page. The saved choice is applied before
-// first paint by /theme-boot.js, loaded in each page's <head>.
+// Light/dark mode switch shared by every page. /theme-boot.js sets data-theme before first
+// paint (the saved choice, or else the system preference); styles.css keys dark mode on it.
 (() => {
+  const root = document.documentElement;
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  // Whether the person picked a theme with the switch; until they do, follow the system.
+  let chosen = false;
+  try {
+    chosen = ["light", "dark"].includes(localStorage.getItem("theme"));
+  } catch (e) {
+    // Storage blocked: follow the system until the switch is used.
+  }
 
   function currentTheme() {
-    return document.documentElement.dataset.theme || (darkQuery.matches ? "dark" : "light");
+    return root.dataset.theme || (darkQuery.matches ? "dark" : "light");
   }
 
   function render() {
@@ -22,7 +30,8 @@
 
   function toggle() {
     const next = currentTheme() === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
+    root.dataset.theme = next;
+    chosen = true;
     try {
       localStorage.setItem("theme", next);
     } catch (e) {
@@ -32,22 +41,18 @@
   }
 
   document.getElementById("theme-toggle")?.addEventListener("click", toggle);
-  darkQuery.addEventListener("change", render);
+  darkQuery.addEventListener("change", () => {
+    if (!chosen) root.dataset.theme = darkQuery.matches ? "dark" : "light";
+    render();
+  });
+  // The switch used in another tab: apply its choice here too, so a later system change
+  // doesn't override it in this tab.
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "theme" && event.key !== null) return; // null: storage was cleared
+    const saved = event.key === null ? null : event.newValue;
+    chosen = saved === "light" || saved === "dark";
+    root.dataset.theme = chosen ? saved : darkQuery.matches ? "dark" : "light";
+    render();
+  });
   render();
-
-  // On narrow screens the nav scrolls sideways: keep the current page's tab in view, and
-  // fade the edge only while there are more tabs to scroll to.
-  const nav = document.querySelector(".nav-links");
-  if (nav) {
-    const current = nav.querySelector("[aria-current=page]");
-    if (current && nav.scrollWidth > nav.clientWidth) {
-      nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
-    }
-    const update = () => {
-      nav.classList.toggle("has-more", nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2);
-    };
-    nav.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    update();
-  }
 })();
