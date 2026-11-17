@@ -29,6 +29,23 @@ def test_theme_toggle_persists_across_pages(page):
     assert page.evaluate("document.documentElement.dataset.theme") == "dark"
 
 
+def test_theme_choice_in_another_tab_wins_over_system_changes(page):
+    page.emulate_media(color_scheme="light")
+    page.goto("/")
+    other = page.context.new_page()
+    other.emulate_media(color_scheme="light")
+    other.goto("/tiers/")
+    assert other.evaluate("document.documentElement.dataset.theme") == "light"
+    page.click("#theme-toggle")  # chosen in the first tab
+    expect(other.locator("html")).to_have_attribute("data-theme", "dark")
+    expect(other.locator(".theme-label")).to_have_text("Light mode")
+    # The system flips to dark and back: the second tab keeps the saved choice.
+    other.emulate_media(color_scheme="dark")
+    other.emulate_media(color_scheme="light")
+    expect(other.locator("html")).to_have_attribute("data-theme", "dark")
+    other.close()
+
+
 def test_missing_page_shows_the_404_page(page):
     response = page.goto("/an/old/link")
     assert response.status == 404

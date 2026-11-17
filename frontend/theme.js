@@ -45,5 +45,14 @@
     if (!chosen) root.dataset.theme = darkQuery.matches ? "dark" : "light";
     render();
   });
+  // The switch used in another tab: apply its choice here too, so a later system change
+  // doesn't override it in this tab.
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "theme" && event.key !== null) return; // null: storage was cleared
+    const saved = event.key === null ? null : event.newValue;
+    chosen = saved === "light" || saved === "dark";
+    root.dataset.theme = chosen ? saved : darkQuery.matches ? "dark" : "light";
+    render();
+  });
   render();
 })();
