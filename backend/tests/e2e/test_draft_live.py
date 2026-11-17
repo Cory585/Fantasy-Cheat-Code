@@ -110,6 +110,21 @@ def test_new_picks_arrive_without_reloading(page, espn):
     assert page.problems.errors == []
 
 
+def test_the_draft_order_arriving_before_the_draft_moves_your_slot(page, espn):
+    unordered = espn_draft()
+    unordered.teams = [t.model_copy(update={"slot": None}) for t in unordered.teams]
+    espn.set(unordered)
+    connect(page)
+    expect(page.locator("#live-connected")).to_be_visible()
+    expect(page.locator("#live-team")).to_have_value("1")  # no order yet: the first team
+    ordered = espn_draft()
+    ordered.teams = [t.model_copy(update={"slot": TEAMS + 1 - t.id}) for t in ordered.teams]
+    espn.set(ordered)
+    expect(page.locator("#draft-slot")).to_have_value(str(TEAMS))  # team 1 drafts last
+    expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", str(TEAMS))
+    assert page.problems.errors == []
+
+
 def test_choosing_your_team_moves_your_slot(page, espn):
     connect(page)
     expect(page.locator("#live-connected")).to_be_visible()
