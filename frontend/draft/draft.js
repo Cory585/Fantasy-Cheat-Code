@@ -248,6 +248,8 @@ function renderTimeline() {
     const label = `${pick.label}: round ${pick.round}, ${ordinal(pick.overall)} overall. ` +
       (wait == null ? "Your last pick." : wait === 0 ? "You pick again right after." : `${plural(wait, "pick")} until your next.`);
     const past = pick.overall <= livePicksMade();
+    // An invisible 24px circle under the dot, so its tooltip is easy to hover or tap.
+    chart.append(svg("circle", { cx: x(pick.overall), cy: baseline, r: 12, class: "my-pick-hit", "aria-hidden": "true", "data-tip": label }));
     chart.append(svg("circle", {
       cx: x(pick.overall), cy: baseline, r: 6, class: past ? "my-pick-dot is-past" : "my-pick-dot",
       tabindex: 0, role: "img", "aria-label": label, "data-tip": label,
