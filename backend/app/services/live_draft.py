@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from app.data.sources.espn_draft import EspnCredentials, EspnDraft, EspnDraftSource
 from app.models.live_draft import LiveDraft, LivePick
@@ -109,6 +109,11 @@ class LiveDrafts:
         expired = [sid for sid, s in self._sessions.items() if now - s.last_used > self._ttl]
         for sid in expired:
             del self._sessions[sid]
+
+
+def default_season(today: date, first_month: int) -> int:
+    """The season a league id most likely belongs to: last year's before `first_month`."""
+    return today.year if today.month >= first_month else today.year - 1
 
 
 def to_live_draft(draft: EspnDraft, players: list[Player], updated_at: datetime | None = None) -> LiveDraft:

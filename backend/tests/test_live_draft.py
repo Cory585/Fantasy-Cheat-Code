@@ -16,7 +16,7 @@ from app.data.sources.espn_draft import (
     LeaguePrivate,
 )
 from app.main import app, limiter
-from app.services.live_draft import LiveDrafts, TooManySessions, to_live_draft
+from app.services.live_draft import LiveDrafts, TooManySessions, default_season, to_live_draft
 
 S2 = "AEBx" * 10
 SWID = "{ABCDEF12-3456-7890-ABCD-EF1234567890}"
@@ -188,12 +188,24 @@ def test_start_returns_a_session_and_the_draft(use_source):
     assert S2 not in resp.text
 
 
-def test_start_defaults_the_season_to_this_year(use_source):
+def test_start_defaults_the_season_by_the_date(use_source):
     from datetime import date
+
+    from app.config import settings
 
     source, _ = use_source(make_draft())
     assert client.post("/draft/live", json={"league_id": "777"}).status_code == 201
-    assert source.calls[0][0] == date.today().year
+    assert source.calls[0][0] == default_season(date.today(), settings.live_draft_season_month)
+
+
+def test_default_season_is_last_year_until_the_configured_month():
+    from datetime import date
+
+    assert default_season(date(2027, 1, 15), 8) == 2026  # the season that just ended
+    assert default_season(date(2027, 7, 31), 8) == 2026
+    assert default_season(date(2027, 8, 1), 8) == 2027
+    assert default_season(date(2027, 12, 31), 8) == 2027
+    assert default_season(date(2027, 1, 1), 1) == 2027
 
 
 @pytest.mark.parametrize("body", [

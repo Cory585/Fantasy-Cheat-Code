@@ -85,6 +85,10 @@ class Settings:
         default_factory=lambda: float(os.getenv("LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND", "20"))
     )
     live_draft_max_sessions: int = field(default_factory=lambda: int(os.getenv("LIVE_DRAFT_MAX_SESSIONS", "80")))
+    # Connecting without a season reads last year's league before this month (1-12): ESPN
+    # keeps a league under the season it started in, so in January to July a league id
+    # usually belongs to the season that just ended. From this month on, this year's.
+    live_draft_season_month: int = field(default_factory=lambda: int(os.getenv("LIVE_DRAFT_SEASON_MONTH", "8")))
     live_draft_stream_hours: float = field(
         default_factory=lambda: float(os.getenv("LIVE_DRAFT_STREAM_HOURS", "1"))
     )

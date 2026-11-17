@@ -27,7 +27,7 @@ from app.config import settings
 from app.data.repository import PlayerRepository
 from app.data.sources.espn_draft import EspnCredentials, EspnDraft, LeagueNotFound, LeaguePrivate
 from app.models.live_draft import LiveDraft, LiveDraftRequest, LiveDraftSession
-from app.services.live_draft import LiveDrafts, Session, TooManySessions, to_live_draft
+from app.services.live_draft import LiveDrafts, Session, TooManySessions, default_season, to_live_draft
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def _session(drafts: LiveDrafts, session_id: str) -> Session:
 async def start_live_draft(body: LiveDraftRequest, drafts: Drafts, players: Players) -> LiveDraftSession:
     """Start following a league's draft. Public leagues need only the league id."""
     credentials = EspnCredentials(espn_s2=body.espn_s2, swid=body.swid) if body.espn_s2 and body.swid else None
-    season = body.season or date.today().year
+    season = body.season or default_season(date.today(), settings.live_draft_season_month)
     try:
         session, draft = await asyncio.to_thread(drafts.create, body.league_id, season, credentials)
     except TooManySessions:
