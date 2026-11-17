@@ -310,11 +310,16 @@
     els.head.querySelector(`button[data-key="${col.key}"]`)?.focus();
   });
 
-  els.body.addEventListener("click", (event) => {
+  els.body.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-team]");
     if (!button) return;
-    showTeam(button.dataset.team);
+    const team = button.dataset.team;
+    const opened = showTeam(team);
     els.team.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    await opened;
+    // Showing the team re-renders this table, which drops focus from the clicked button:
+    // move it to the team's heading, where the page just scrolled.
+    if (shown === team && !els.body.contains(document.activeElement)) els.name.focus({ preventScroll: true });
   });
 
   els.select.addEventListener("change", () => showTeam(els.select.value));
