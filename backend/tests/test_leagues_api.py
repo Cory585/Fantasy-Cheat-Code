@@ -196,7 +196,7 @@ def test_saves_without_if_match_still_replace_the_league(key):
     assert put(key, league_id, {"name": "Weak"}, if_match='W/"4"').status_code == 200
 
 
-@pytest.mark.parametrize("if_match", ['"abc"', "1.5", '"-1"', '"' + "9" * 20 + '"'])
+@pytest.mark.parametrize("if_match", ['"abc"', "1.5", '"-1"', '"' + "9" * 20 + '"', '""'])
 def test_malformed_if_match_is_rejected(key, if_match):
     league_id = create(key).json()["id"]
     resp = put(key, league_id, {"name": "A"}, if_match=if_match)
@@ -221,3 +221,11 @@ def test_store_adds_versions_to_an_older_database(tmp_path):
     store = LeagueStore(path)
     assert store.get("me", "old-league").version == 1
     assert store.update("me", "old-league", "New", {}, [], expected_version=1).version == 2
+
+
+@pytest.mark.parametrize("raw", ["\u00b2".encode("latin-1"), "1\u00b3".encode("latin-1")])
+def test_non_ascii_digits_in_if_match_are_rejected(key, raw):
+    # str.isdigit() accepts superscript digits, which int() can't parse.
+    league_id = create(key).json()["id"]
+    resp = client.put(f"/leagues/{league_id}", json={"name": "A"}, headers={**headers(key), "If-Match": raw})
+    assert resp.status_code == 400 and resp.json()["code"] == "invalid_if_match"

@@ -79,7 +79,7 @@ def expected_version(
     if if_match is None or if_match.strip() == "*":
         return None
     value = if_match.strip().removeprefix("W/").strip('"')
-    if not value.isdigit() or len(value) > 12:
+    if not re.fullmatch(r"[0-9]{1,12}", value):  # ASCII digits only: str.isdigit() also accepts "²"
         raise ApiError(400, "invalid_if_match", 'If-Match must be a league version, e.g. "3".')
     return int(value)
 
