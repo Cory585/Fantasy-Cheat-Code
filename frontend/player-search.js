@@ -17,6 +17,15 @@ window.PlayerUI = (() => {
     return node;
   }
 
+  // An SVG element with attributes (and text, as text), for the hand-drawn charts.
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs = {}, text) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
   // ---------- Requests and errors ----------
   // Every page turns a failed request into the same kind of plain-language message, and
   // shows it in the same error block with a "Try again" button (errorBlock below).
@@ -270,6 +279,9 @@ window.PlayerUI = (() => {
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
+  // "1 player", "2 players".
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
   const profileUrl = (id) => `/player/?id=${encodeURIComponent(id)}`;
 
   function normalize(text) {
@@ -391,7 +403,7 @@ window.PlayerUI = (() => {
   }
 
   return {
-    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
+    POSITIONS, el, svg, ordinal, plural, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
     loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
   };
 })();

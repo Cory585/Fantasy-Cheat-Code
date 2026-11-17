@@ -20,7 +20,7 @@
     keyInput: $("key-input"),
   };
 
-  const { el } = window.PlayerUI;
+  const { el, plural } = window.PlayerUI;
   const state = { leagues: [], max: Store.MAX_LEAGUES, loaded: false, busy: false, renaming: null };
   let removeArmed = null; // { id, timer }
 
@@ -31,7 +31,6 @@
 
   const isFull = () => state.leagues.length >= state.max;
   const starters = (league) => Object.values(league.slots).reduce((a, b) => a + b, 0);
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   function updated(iso) {
     const date = new Date(iso);
