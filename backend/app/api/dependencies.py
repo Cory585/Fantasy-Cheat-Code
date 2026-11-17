@@ -130,7 +130,9 @@ class ReloadingPlayerData:
                     tuple(_mtime(p) for p in self._model_paths if p is not None))
         if self._repo is None or versions != self._versions:
             self._reload(versions)
-        elif self._players is not None and self._week_state() != self._as_of:
+        # Also after a failed reload, which keeps serving the previous players: they still need
+        # to move on with the weeks.
+        if self._players is not None and self._week_state() != self._as_of:
             self._derive()
 
     def _week_state(self) -> calendar.WeekState:

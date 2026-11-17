@@ -171,6 +171,30 @@ def test_players_and_outlooks_are_read_together_once_per_request(monkeypatch):
     assert len(calls) == 1
 
 
+def test_projections_move_with_the_weeks_while_a_broken_cache_is_ignored(tmp_path, monkeypatch):
+    import os
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    weekly = {10: {"sleeper": 10.0}, 11: {"sleeper": 20.0}}
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=30.0,
+                              projection_sources={"sleeper": 30.0}, weekly_projections=weekly)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    today = date(2026, 11, 11)  # week 10
+    monkeypatch.setattr("app.services.season.today", lambda: today)
+    data = ReloadingPlayerData(path)
+    assert data.current()[0].get("x1").ros_projection == 30.0
+    path.write_text("{not json", encoding="utf-8")
+    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+    today = date(2026, 11, 18)  # week 11: the old players are still served, without week 10
+    assert data.current()[0].get("x1").ros_projection == 20.0
+
+
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     from app.api.dependencies import ReloadingPlayerData
 
