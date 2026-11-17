@@ -40,6 +40,20 @@ def test_trade_page_retries_loading_players(page):
     expect(page.locator(".tr-why-side")).to_have_count(2)
 
 
+def test_trade_settings_keep_the_error_and_the_shared_link(page):
+    failing = Failing(page, "**/players", **SERVER_ERROR)
+    page.goto("/#a=rb1&b=wr2")
+    block = page.locator("#result .error-block")
+    expect(block).to_be_visible()
+    page.select_option("#league-size", "10")
+    page.fill('.side[data-side="a"] .team-name', "Aces")
+    expect(block).to_be_visible()
+    assert page.url.endswith("/#a=rb1&b=wr2")
+    failing.stop()
+    block.get_by_role("button", name="Try again").click()
+    expect(page.locator(".tr-why-side")).to_have_count(2)
+
+
 def test_trade_analysis_error_reads_the_validation_detail(page):
     page.route("**/trades/analyze", lambda route: route.fulfill(
         status=422, content_type="application/json",

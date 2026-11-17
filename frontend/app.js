@@ -11,6 +11,7 @@ const state = {
   numTeams: 12,
   values: new Map(), // player id -> valuation (value, projection, outlook) from the latest analysis
   position: { a: "", b: "" }, // each side's search filter ("" = all positions)
+  loaded: false, // whether the players have loaded
 };
 
 const MAX_RESULTS = 8;
@@ -286,6 +287,10 @@ async function copyShareLink(button) {
 }
 
 function onTradeChanged() {
+  // Until players load (or after loading fails) there's no trade to show: leave the URL alone,
+  // so a shared link survives (its settings are read once players arrive), and keep the
+  // loading message or error block on screen.
+  if (!state.loaded) return;
   writeUrl();
   clearTimeout(analysisTimer);
   analysisSeq++; // discard any in-flight response for the previous trade
@@ -801,6 +806,7 @@ async function loadData() {
     return;
   }
   setSearchesReady(true, "Search players or teams");
+  state.loaded = true;
   readUrl();
   renderLineupSettings();
   render();
