@@ -187,7 +187,7 @@
     if (state.slot) params.set("slot", state.slot);
     params.set("starts", Math.min(state.starts, state.chosen.length - 1));
     state.loading = true;
-    state.error = null; // an old error would hide "Comparing?" until this answer arrives
+    state.error = null; // an old error would hide "Comparing…" until this answer arrives
     els.result.setAttribute("aria-busy", "true");
     renderResult();
     // A newer request can start during any await below; only the latest one may render.
