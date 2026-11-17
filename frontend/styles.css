@@ -1540,6 +1540,7 @@ main {
 .timeline-svg .arc-group:hover .arc { stroke-width: 3; }
 .timeline-svg .arc-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
 .timeline-svg .my-pick-dot { fill: var(--turf); stroke: var(--bg); stroke-width: 2; }
+.timeline-svg .my-pick-hit { fill: transparent; pointer-events: all; }
 :root[data-theme="dark"] .timeline-svg .arc { stroke: var(--good); }
 :root[data-theme="dark"] .timeline-svg .my-pick-dot { fill: var(--good); }
 
