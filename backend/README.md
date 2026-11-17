@@ -525,7 +525,7 @@ stable for clients to branch on:
 Validation errors don't echo the submitted input back. Browsers that hit a missing page get
 `frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
 
-**Rate limits.** Per client IP, in memory (`app/api/ratelimit.py`):
+**Rate limits.** Per client IP (an IPv6 client by its /64 network), in memory (`app/api/ratelimit.py`):
 
 | Bucket | Applies to | Burst | Sustained |
 |---|---|---|---|
