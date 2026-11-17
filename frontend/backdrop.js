@@ -151,7 +151,9 @@
 
   const COLS = 180, ROWS = 131; // dither resolution (ESPN headshots are 350x254)
   const FADE_MS = 1600, HOLD_MS = 60000, GAP_MS = 800, FADE_STEPS = 16; // each star stays about a minute
-  const STAR_COUNT = 16;
+  // How many stars of each position rotate through (the top by rest-of-season points). Per
+  // position, since quarterbacks would otherwise take nearly half the spots and tight ends none.
+  const STAR_COUNTS = { QB: 10, RB: 12, WR: 13, TE: 5 };
   const BAYER = [
     [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
     [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
@@ -373,10 +375,11 @@
 
   async function stars() {
     const players = (await loadPool()).filter(
-      (p) => ["QB", "RB", "WR", "TE"].includes(p.position) && Number.isInteger(p.espn_id) && p.espn_id > 0,
+      (p) => p.position in STAR_COUNTS && Number.isInteger(p.espn_id) && p.espn_id > 0,
     );
     players.sort((a, b) => b.ros_projection - a.ros_projection);
-    const top = players.slice(0, STAR_COUNT);
+    const taken = {};
+    const top = players.filter((p) => (taken[p.position] = (taken[p.position] || 0) + 1) <= STAR_COUNTS[p.position]);
     for (let i = top.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [top[i], top[j]] = [top[j], top[i]];
