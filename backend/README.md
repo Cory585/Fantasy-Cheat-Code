@@ -222,7 +222,7 @@ The draft page can follow an ESPN league's draft as it happens (`app/api/live_dr
 |---|---|
 | `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
 | `GET /draft/live/{session_id}` | The draft now: status (`pre_draft`, `in_progress`, `complete`), teams in draft order, rounds, and every pick so far matched to the player pool by ESPN id. |
-| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever a pick comes in, until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
+| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever the draft changes (a pick, a corrected pick, the draft order, a team name), until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
 | `DELETE /draft/live/{session_id}` | Ends the session and forgets the cookies. |
 
 ESPN has no official API; this reads the league endpoint the ESPN draft room uses (views

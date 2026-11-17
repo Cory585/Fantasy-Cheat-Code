@@ -286,6 +286,24 @@ def test_event_stream_sends_each_change_until_the_draft_is_complete(use_source):
         ("pre_draft", 0), ("in_progress", 1), ("in_progress", 3), ("complete", 3)]
 
 
+def test_event_stream_sends_order_names_and_corrected_picks(use_source):
+    no_order = make_draft()
+    no_order.teams = [t.model_copy(update={"slot": None}) for t in no_order.teams]
+    renamed = make_draft()
+    renamed.teams[0] = renamed.teams[0].model_copy(update={"name": "Renamed"})
+    corrected = make_draft(2)
+    corrected.picks[0] = corrected.picks[0].model_copy(update={"espn_player_id": ESPN_IDS[5]})
+    use_source(no_order, no_order, make_draft(), renamed, make_draft(2), corrected,
+               corrected.model_copy(update={"status": "complete"}))
+    session_id = start().json()["session_id"]
+    events = read_events(session_id)
+    assert [name for name, _ in events] == ["draft"] * 6
+    assert [t["slot"] for t in events[0][1]["teams"]] == [None] * 4
+    assert [t["slot"] for t in events[1][1]["teams"]] == [1, 2, 3, 4]  # the order is set before the draft
+    assert events[2][1]["teams"][0]["name"] == "Renamed"
+    assert events[4][1]["picks"][0]["espn_player_id"] == ESPN_IDS[5]  # a commissioner's correction
+
+
 def test_event_stream_reports_a_blip_and_keeps_going(use_source):
     use_source(make_draft(), httpx.ReadTimeout("slow"), make_draft(1, status="complete"))
     session_id = start().json()["session_id"]

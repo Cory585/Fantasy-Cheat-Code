@@ -108,10 +108,10 @@ def _event(name: str, data: dict | str) -> str:
 @router.get("/{session_id}/events", response_class=StreamingResponse,
             responses={200: {"content": {"text/event-stream": {}}}})
 async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players) -> StreamingResponse:
-    """A `draft` event (the LiveDraft JSON) now and whenever a pick comes in or the status
-    changes; `problem` events ({code, detail}) when ESPN can't be read. The stream ends once
-    the draft is complete, the cookies stop working, the session ends, or it has run its
-    maximum length."""
+    """A `draft` event (the LiveDraft JSON) now and whenever the draft changes (a pick, a
+    corrected pick, the draft order, a team's name, the status); `problem` events ({code,
+    detail}) when ESPN can't be read. The stream ends once the draft is complete, the cookies
+    stop working, the session ends, or it has run its maximum length."""
     session = _session(drafts, session_id)
     pool = players.list()
     deadline = time.monotonic() + settings.live_draft_stream_hours * 3600
@@ -134,9 +134,9 @@ async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Play
                 api_error = _espn_error(error)
                 yield _event("problem", {"code": api_error.code, "detail": api_error.detail})
             else:
-                key = (draft.status, len(draft.picks), draft.picks[-1].overall if draft.picks else 0)
-                if key != last:
-                    last = key
+                # Any change counts: a new pick, a corrected one, the draft order being set, a renamed team.
+                if draft != last:
+                    last = draft
                     yield _event("draft", to_live_draft(draft, pool, session.updated_at).model_dump_json())
                 else:
                     yield ": waiting\n\n"  # keeps proxies from closing an idle stream
