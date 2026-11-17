@@ -49,6 +49,25 @@ def test_favored_by_is_the_spread_from_each_side(conn):
     assert home.features["team_favored_by"] == -away.features["team_favored_by"]
 
 
+def test_games_without_a_line_use_the_dst_models_line_estimate(tmp_path):
+    conn = build_league(tmp_path / "league.db", unplayed_from=5)
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= 5")
+    conn.commit()
+    builder = KickerFeatureBuilder(conn)
+    rows = rows_by_key(builder)
+    dst = {(r.season, r.week, r.defense): r for r in builder.dst_rows([2025], include_unplayed=True)}
+    # Week 5: BUF at NE. Without a line, BUF's kicker gets the same implied points the DST
+    # model gives the offense NE's defense faces, not raw points per game.
+    buf, ne = rows[(2025, 5, "BUF")], rows[(2025, 5, "NE")]
+    assert buf.context["line_estimated"] and not rows[(2025, 4, "BUF")].context["line_estimated"]
+    assert buf.features["team_implied_points"] == pytest.approx(dst[(2025, 5, "NE")].features["opp_implied_points"])
+    assert buf.features["team_implied_points"] == pytest.approx(builder.estimated_points(2025, 5, "BUF", "NE", False))
+    # The spread is estimated too, instead of a pick'em 0.
+    assert buf.features["team_favored_by"] > 0 > ne.features["team_favored_by"]
+    assert buf.features["team_favored_by"] == pytest.approx(-ne.features["team_favored_by"])
+    assert buf.features["team_favored_by"] == pytest.approx(dst[(2025, 5, "BUF")].features["def_favored_by"])
+
+
 def test_fg_pct_is_shrunk_toward_the_league_rate(conn):
     rows = rows_by_key(KickerFeatureBuilder(conn))
     # Every team misses 1 of (fg + 2) attempts a game, so the raw rate is below 85%... but the
