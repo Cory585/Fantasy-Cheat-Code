@@ -81,28 +81,45 @@ function adpPhrase(target, overall) {
 
 // ---------- Tooltip (any element with data-tip) ----------
 
-function showTip(text, x, y) {
-  const tip = els.tooltip;
-  tip.textContent = text;
-  tip.hidden = false;
-  const { width, height } = tip.getBoundingClientRect();
-  const left = Math.min(Math.max(8, x + 14), window.innerWidth - width - 8);
-  const top = y + 18 + height > window.innerHeight ? y - height - 12 : y + 18;
-  tip.style.transform = `translate(${left}px, ${top}px)`;
+// The tip's text is set and its size measured only when it moves to another element (or
+// that element's tip changes). Pointer moves just store the position, and the tip is
+// placed at most once a frame, so moving across the board doesn't force a layout each time.
+const tip = { target: null, text: "", width: 0, height: 0, x: 0, y: 0, frame: 0 };
+
+function placeTip() {
+  tip.frame = 0;
+  if (els.tooltip.hidden) return;
+  const left = Math.min(Math.max(8, tip.x + 14), window.innerWidth - tip.width - 8);
+  const top = tip.y + 18 + tip.height > window.innerHeight ? tip.y - tip.height - 12 : tip.y + 18;
+  els.tooltip.style.transform = `translate(${left}px, ${top}px)`;
+}
+
+function showTip(target, x, y) {
+  const text = target.dataset.tip;
+  if (target !== tip.target || text !== tip.text || els.tooltip.hidden) {
+    Object.assign(tip, { target, text });
+    els.tooltip.textContent = text;
+    els.tooltip.hidden = false;
+    const { width, height } = els.tooltip.getBoundingClientRect();
+    Object.assign(tip, { width, height });
+  }
+  Object.assign(tip, { x, y });
+  if (!tip.frame) tip.frame = requestAnimationFrame(placeTip);
 }
 
 function hideTip() {
-  els.tooltip.hidden = true;
+  if (!els.tooltip.hidden) els.tooltip.hidden = true;
+  tip.target = null;
 }
 
 document.addEventListener("pointermove", (event) => {
   const target = event.target.closest?.("[data-tip]");
-  if (target) showTip(target.dataset.tip, event.clientX, event.clientY);
+  if (target) showTip(target, event.clientX, event.clientY);
   else hideTip();
 });
 function tipFor(target) {
   const box = target.getBoundingClientRect();
-  showTip(target.dataset.tip, box.left, box.bottom);
+  showTip(target, box.left, box.bottom);
 }
 document.addEventListener("focusin", (event) => {
   const target = event.target.closest?.("[data-tip]");

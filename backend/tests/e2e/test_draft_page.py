@@ -112,6 +112,36 @@ def test_hovering_a_board_cell_shows_a_tooltip(page):
     expect(page.locator("#viz-tooltip")).to_contain_text("QB")
 
 
+def test_tooltip_text_changes_only_when_the_target_does(page):
+    open_draft(page)
+    cells = page.locator(".pick.pos-QB")
+    tooltip = page.locator("#viz-tooltip")
+    cells.nth(0).scroll_into_view_if_needed()
+    page.wait_for_timeout(300)  # scrolling hides the tip, so let it settle first
+    cells.nth(0).hover()
+    expect(tooltip).to_be_visible()
+    page.evaluate("""() => {
+        window.__tipWrites = 0;
+        new MutationObserver((records) => { window.__tipWrites += records.length; })
+            .observe(document.getElementById('viz-tooltip'), { childList: true, characterData: true, subtree: true });
+    }""")
+    box = cells.nth(0).bounding_box()
+    middle = box["y"] + box["height"] / 2
+    for step in range(10):  # wander around inside one cell
+        page.mouse.move(box["x"] + 5 + step * 3, middle)
+    # It still follows the pointer, without rewriting its text.
+    before = tooltip.get_attribute("style")
+    page.mouse.move(box["x"] + box["width"] - 4, middle)
+    expect(tooltip).not_to_have_attribute("style", before)
+    assert page.evaluate("window.__tipWrites") == 0
+
+    second = cells.nth(1)
+    expected = second.get_attribute("data-tip")
+    second.hover()
+    expect(tooltip).to_have_text(expected)
+    assert page.evaluate("window.__tipWrites") >= 1
+
+
 def test_names_with_markup_render_as_text(page):
     open_draft(page, "teams=4&slot=1&rounds=18")
     assert page.evaluate("window.__pwned") is None
