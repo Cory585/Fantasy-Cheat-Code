@@ -100,13 +100,22 @@ document.addEventListener("pointermove", (event) => {
   if (target) showTip(target.dataset.tip, event.clientX, event.clientY);
   else hideTip();
 });
-document.addEventListener("focusin", (event) => {
-  const target = event.target.closest?.("[data-tip]");
-  if (!target) return hideTip();
+function tipFor(target) {
   const box = target.getBoundingClientRect();
   showTip(target.dataset.tip, box.left, box.bottom);
+}
+document.addEventListener("focusin", (event) => {
+  const target = event.target.closest?.("[data-tip]");
+  if (target) tipFor(target);
+  else hideTip();
 });
-document.addEventListener("scroll", hideTip, { passive: true });
+// Scrolling hides a hover tip, but a focused element's tip follows it: focusing can itself
+// scroll the element into view, which used to hide the tip it had just opened.
+document.addEventListener("scroll", () => {
+  const focused = document.activeElement?.closest?.("[data-tip]");
+  if (focused && !els.tooltip.hidden) tipFor(focused);
+  else hideTip();
+}, { passive: true });
 document.addEventListener("keydown", (event) => event.key === "Escape" && hideTip());
 
 // ---------- Settings (kept in the URL so a plan can be shared or bookmarked) ----------
