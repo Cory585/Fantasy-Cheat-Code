@@ -1118,7 +1118,13 @@ main {
   font-size: 0.8125rem;
 }
 
-.tier-actions a { color: var(--muted); }
+/* Padding makes each link at least 24px tall to tap; the negative margin keeps the card's layout. */
+.tier-actions a {
+  display: inline-block;
+  padding: 0.25rem;
+  margin: -0.25rem;
+  color: var(--muted);
+}
 .tier-actions a:hover, .tier-actions a:focus-visible { color: var(--ink); }
 
 /* The point drop to the next tier, on the line between them. */
