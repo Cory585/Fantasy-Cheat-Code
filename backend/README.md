@@ -241,7 +241,10 @@ and light:
 - **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 80) sessions at once, and connecting
   has its own rate limit bucket (below). All sessions share one ESPN rate,
   `LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND` (default 20), so keep the session cap at or below that
-  rate times the poll interval; a failed read is reused until the interval passes too.
+  rate times the poll interval; a failed read is reused until the interval passes too. A session
+  can have at most `LIVE_DRAFT_STREAMS_PER_SESSION` (default 6) event streams open and a client
+  `LIVE_DRAFT_STREAMS_PER_CLIENT` (default 30); a stream over either cap gets a
+  `live_draft_too_many_streams` problem and ends, and the browser tries again later.
 
 The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
 page says the plan may not match.

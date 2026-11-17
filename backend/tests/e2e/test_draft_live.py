@@ -187,6 +187,19 @@ def test_disconnect_forgets_the_session(page, espn):
     assert len(espn.drafts) == 0
 
 
+def test_leaving_the_page_releases_its_stream(page, espn):
+    connect(page)
+    expect(page.locator("#live-connected")).to_be_visible()
+    page.wait_for_timeout(300)
+    assert sum(espn.drafts._session_streams.values()) == 1
+    page.goto("about:blank")
+    for _ in range(50):
+        if not espn.drafts._session_streams and not espn.drafts._client_streams:
+            break
+        page.wait_for_timeout(100)
+    assert espn.drafts._session_streams == {} and espn.drafts._client_streams == {}
+
+
 def test_reloading_picks_the_draft_back_up(page, espn):
     espn.set(espn_draft(GIBBS))
     connect(page)

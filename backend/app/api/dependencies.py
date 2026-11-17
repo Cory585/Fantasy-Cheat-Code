@@ -415,5 +415,7 @@ def get_live_drafts() -> LiveDrafts:
                 poll_seconds=settings.live_draft_poll_seconds,
                 ttl_seconds=settings.live_draft_session_hours * 3600,
                 max_sessions=settings.live_draft_max_sessions,
+                max_streams_per_session=settings.live_draft_streams_per_session,
+                max_streams_per_client=settings.live_draft_streams_per_client,
             )
         return _live_drafts

@@ -18,11 +18,12 @@ from datetime import date
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_live_drafts, get_player_repository
 from app.api.errors import ApiError
+from app.api.ratelimit import client_address
 from app.config import settings
 from app.data.repository import PlayerRepository
 from app.data.sources.espn_draft import EspnCredentials, EspnDraft, LeagueNotFound, LeaguePrivate
@@ -42,6 +43,8 @@ PRIVATE = ("espn_private_league",
 NOT_FOUND = ("espn_league_not_found", "ESPN has no league with that id for that season.")
 UPSTREAM = ("espn_unavailable", "Couldn't read the draft from ESPN. Try again in a moment.")
 ENDED = ("live_draft_not_found", "That live draft session has ended. Connect the league again.")
+TOO_MANY_STREAMS = ("live_draft_too_many_streams",
+                    "This draft is open in too many tabs. Close one and this one will pick up.")
 
 # Reads of a session's draft wait on ESPN (and on the shared ESPN rate), so they get their
 # own threads: a backlog of them can't hold up connecting a league or anything else that
@@ -107,17 +110,34 @@ def _event(name: str, data: dict | str) -> str:
 
 @router.get("/{session_id}/events", response_class=StreamingResponse,
             responses={200: {"content": {"text/event-stream": {}}}})
-async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players) -> StreamingResponse:
+async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players,
+                            request: Request) -> StreamingResponse:
     """A `draft` event (the LiveDraft JSON) now and whenever the draft changes (a pick, a
     corrected pick, the draft order, a team's name, the status); `problem` events ({code,
     detail}) when ESPN can't be read. The stream ends once the draft is complete, the cookies
-    stop working, the session ends, or it has run its maximum length."""
+    stop working, the session ends, or it has run its maximum length.
+
+    A session, and a client, can only have so many streams open at once; one over the cap
+    gets a `live_draft_too_many_streams` problem and ends, and the browser retries later."""
     session = _session(drafts, session_id)
     pool = players.list()
     deadline = time.monotonic() + settings.live_draft_stream_hours * 3600
+    client = client_address(request, settings.trust_proxy, settings.trusted_proxy_hops)
 
     async def stream():
         yield f"retry: {int(drafts.poll_seconds * 1000)}\n\n"
+        # Counted here rather than before responding, so the count is always released: the
+        # finally runs however the stream ends, including the browser going away.
+        if not drafts.open_stream(session, client):
+            yield _event("problem", {"code": TOO_MANY_STREAMS[0], "detail": TOO_MANY_STREAMS[1]})
+            return
+        try:
+            async for chunk in follow():
+                yield chunk
+        finally:
+            drafts.close_stream(session, client)
+
+    async def follow():
         last = None
         while True:
             # Disconnecting (or expiry) ends the stream too, so ESPN stops being read with the cookies.

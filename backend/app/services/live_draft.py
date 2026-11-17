@@ -38,7 +38,8 @@ class Session:
 
 class LiveDrafts:
     def __init__(self, source: EspnDraftSource, poll_seconds: float = 4.0, ttl_seconds: float = 6 * 3600,
-                 max_sessions: int = 500, clock: Callable[[], float] = time.monotonic):
+                 max_sessions: int = 500, clock: Callable[[], float] = time.monotonic,
+                 max_streams_per_session: int = 6, max_streams_per_client: int = 30):
         self._source = source
         self.poll_seconds = poll_seconds
         self._ttl = ttl_seconds
@@ -46,6 +47,10 @@ class LiveDrafts:
         self._clock = clock
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
+        self._max_streams_per_session = max_streams_per_session
+        self._max_streams_per_client = max_streams_per_client
+        self._session_streams: dict[str, int] = {}
+        self._client_streams: dict[str, int] = {}
 
     def create(self, league_id: str, season: int, credentials: EspnCredentials | None) -> tuple[Session, EspnDraft]:
         """Read the draft once (so a wrong id or cookie fails now), then keep a session for it."""
@@ -78,6 +83,25 @@ class LiveDrafts:
     def remove(self, session_id: str) -> bool:
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
+
+    def open_stream(self, session: Session, client: str) -> bool:
+        """Count an event stream for the session and client, unless either is at its cap."""
+        with self._lock:
+            if (self._session_streams.get(session.id, 0) >= self._max_streams_per_session
+                    or self._client_streams.get(client, 0) >= self._max_streams_per_client):
+                return False
+            self._session_streams[session.id] = self._session_streams.get(session.id, 0) + 1
+            self._client_streams[client] = self._client_streams.get(client, 0) + 1
+            return True
+
+    def close_stream(self, session: Session, client: str) -> None:
+        with self._lock:
+            for counts, key in ((self._session_streams, session.id), (self._client_streams, client)):
+                left = counts.get(key, 0) - 1
+                if left > 0:
+                    counts[key] = left
+                else:
+                    counts.pop(key, None)
 
     def __len__(self) -> int:
         with self._lock:

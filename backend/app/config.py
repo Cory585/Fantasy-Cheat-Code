@@ -92,6 +92,13 @@ class Settings:
     live_draft_stream_hours: float = field(
         default_factory=lambda: float(os.getenv("LIVE_DRAFT_STREAM_HOURS", "1"))
     )
+    # Most event streams open at once for one session (tabs following it) and for one client.
+    live_draft_streams_per_session: int = field(
+        default_factory=lambda: int(os.getenv("LIVE_DRAFT_STREAMS_PER_SESSION", "6"))
+    )
+    live_draft_streams_per_client: int = field(
+        default_factory=lambda: int(os.getenv("LIVE_DRAFT_STREAMS_PER_CLIENT", "30"))
+    )
 
 
 settings = Settings()

@@ -346,6 +346,34 @@ def test_event_stream_stops_when_access_is_lost(use_source):
     assert events == [("problem", {"code": "espn_private_league", "detail": events[0][1]["detail"]})]
 
 
+def test_streams_are_capped_per_session_and_per_client():
+    drafts = LiveDrafts(FakeSource(make_draft()), max_streams_per_session=2, max_streams_per_client=3)
+    one, two, three = (drafts.create(league, 2026, None)[0] for league in ("777", "778", "779"))
+    assert drafts.open_stream(one, "a") and drafts.open_stream(one, "b")
+    assert not drafts.open_stream(one, "c")  # session one is full
+    assert drafts.open_stream(two, "a") and drafts.open_stream(two, "a")
+    assert not drafts.open_stream(three, "a")  # client "a" is full
+    assert drafts.open_stream(three, "c")
+    drafts.close_stream(one, "a")
+    assert drafts.open_stream(one, "c")  # closing frees a place in the session and for the client
+    assert drafts.open_stream(three, "a")
+    for session, client in ((one, "b"), (one, "c"), (two, "a"), (two, "a"), (three, "c"), (three, "a")):
+        drafts.close_stream(session, client)
+    assert drafts._session_streams == {} and drafts._client_streams == {}
+
+
+def test_event_stream_over_the_cap_is_refused_and_released_after(use_source):
+    _, drafts = use_source(make_draft(), make_draft(1, status="complete"), max_streams_per_session=1)
+    session_id = start().json()["session_id"]
+    session = drafts.get(session_id)
+    assert drafts.open_stream(session, "elsewhere")  # another tab holds the only place
+    events = read_events(session_id)
+    assert [(name, data["code"]) for name, data in events] == [("problem", "live_draft_too_many_streams")]
+    drafts.close_stream(session, "elsewhere")
+    assert [name for name, _ in read_events(session_id)] == ["draft"]
+    assert drafts._session_streams == {} and drafts._client_streams == {}  # the stream let go of its place
+
+
 def test_is_active_does_not_extend_a_session():
     clock = Clock()
     drafts = LiveDrafts(FakeSource(make_draft()), ttl_seconds=60, clock=clock)
