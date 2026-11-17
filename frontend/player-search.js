@@ -150,13 +150,24 @@ window.PlayerUI = (() => {
     return new Map(players.map((p) => [p.id, p]));
   }
 
-  async function loadMeta() {
-    try {
-      const response = await request("/meta");
-      return response.ok ? await response.json() : null;
-    } catch {
-      return null;
+  // /meta (data source, weeks, current week), or null if it can't be loaded: it's never
+  // essential. One request per page, shared by every caller; a failure is retried next call.
+  let metaRequest = null;
+  function loadMeta() {
+    if (!metaRequest) {
+      metaRequest = (async () => {
+        try {
+          const response = await request("/meta");
+          return response.ok ? await response.json() : null;
+        } catch {
+          return null;
+        }
+      })();
+      metaRequest.then((meta) => {
+        if (!meta) metaRequest = null;
+      });
     }
+    return metaRequest;
   }
 
   // What's wrong with the data, if anything: the API serves its built-in sample players, or

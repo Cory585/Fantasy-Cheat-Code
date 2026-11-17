@@ -5,7 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
-  const { el, getJson, errorBlock, noteDataStatus } = window.PlayerUI;
+  const { el, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -173,14 +173,9 @@
 
   // In season, open on this week; before week 2, on the rest of the season.
   async function defaultHorizon() {
-    try {
-      const meta = await getJson("/meta", "Couldn't load the current week");
-      noteDataStatus(meta);
-      state.currentWeek = meta.current_week ?? null;
-      return state.currentWeek > 1 ? "week" : "ros";
-    } catch {
-      return "ros";
-    }
+    const meta = await loadMeta();
+    state.currentWeek = meta?.current_week ?? null;
+    return state.currentWeek > 1 ? "week" : "ros";
   }
 
   async function init() {
@@ -206,8 +201,8 @@
     $("tier-controls").addEventListener("submit", (event) => event.preventDefault());
 
     renderControls();
-    if (!state.horizon) state.horizon = await defaultHorizon(); // also notes sample data
-    else noteDataStatus();
+    noteDataStatus(); // shares the /meta request with defaultHorizon
+    if (!state.horizon) state.horizon = await defaultHorizon();
     load();
   }
 

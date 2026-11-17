@@ -131,3 +131,12 @@ def test_every_nav_tab_is_visible_without_scrolling(page, width):
     boxes = [links.nth(i).bounding_box() for i in range(8)]
     assert all(b["x"] >= 0 and b["x"] + b["width"] <= width for b in boxes), boxes
     assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+@pytest.mark.parametrize("path", ["/", "/start-sit/", "/tiers/", "/tiers/?h=ros", "/finder/", "/draft/"])
+def test_pages_ask_for_meta_once(page, path):
+    asked = []
+    page.on("request", lambda request: request.url.endswith("/meta") and asked.append(request.url))
+    page.goto(path)
+    page.wait_for_load_state("networkidle")
+    assert len(asked) == 1
