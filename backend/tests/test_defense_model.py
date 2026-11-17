@@ -13,6 +13,7 @@ from app.defense.features import (
 )
 from app.defense.model import RidgeModel
 from app.defense.scoring import dst_points, points_allowed_score
+from app.defense.train import backtest_rows, played_rows, train
 from app.services.special_teams import DST_LABELS
 from tests.league_fixture import build_league
 
@@ -181,6 +182,33 @@ def test_line_estimate_is_fit_to_the_loaded_lines(tmp_path, monkeypatch):
             expected = implied_points(True, g["spread"], g["total"])
             estimate = builder.estimated_points(2025, g["week"], g["home"], g["away"], True)
             assert estimate == pytest.approx(expected, abs=0.5)
+
+
+def test_backtest_rows_fit_the_line_estimate_on_earlier_seasons_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(defense_features, "MIN_LINE_FIT_ROWS", 10)
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    _remove_lines(conn, 6)  # week 6 of 2025 is played but has no line, so it uses the estimate
+
+    def week6(rows):
+        return {r.defense: r.features for r in rows if r.season == 2025 and r.week == 6}
+
+    builder = DefenseFeatureBuilder(conn)
+    before_full = week6(played_rows(builder, [2024, 2025]))
+    before_split = week6(backtest_rows(builder, [2024, 2025], 2025))
+    assert builder.line_fit_seasons is None  # back to fitting on everything afterwards
+    # Moving 2025's own lines moves the full-history estimate, but not the backtest's.
+    conn.execute("UPDATE games SET total_line = total_line + 20 WHERE season = 2025 AND week < 6")
+    conn.commit()
+    builder = DefenseFeatureBuilder(conn)
+    assert week6(played_rows(builder, [2024, 2025])) != before_full
+    assert week6(backtest_rows(builder, [2024, 2025], 2025)) == before_split
+
+
+def test_training_saves_the_line_estimate_it_used(tmp_path):
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    model, backtests = train(conn, [2024, 2025])
+    assert model.metadata["line_coefs"] == list(DefenseFeatureBuilder(conn).line_coefs())
+    assert [bt["test_season"] for bt in backtests] == [2025]
 
 
 def test_line_estimate_falls_back_to_defaults_with_few_games(builder):

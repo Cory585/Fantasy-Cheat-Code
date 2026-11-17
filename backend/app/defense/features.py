@@ -205,6 +205,7 @@ class DefenseFeatureBuilder:
 
         self._league_cache = {}
         self._line_coefs = None
+        self.line_fit_seasons = None  # seasons the line estimate is fit on (None: all loaded)
 
     # ---------- helpers ----------
 
@@ -263,9 +264,22 @@ class DefenseFeatureBuilder:
         return (intercept + a * self._scoring(season, team, week)[0]
                 + b * self._scoring(season, opponent, week)[1] + c * (1.0 if team_is_home else 0.0))
 
+    def fit_lines_on(self, seasons) -> None:
+        """Fit the line estimate only on games in `seasons` (None: every loaded season), e.g. a
+        backtest's training seasons, so the test season's own lines don't shape its features."""
+        self.line_fit_seasons = None if seasons is None else set(seasons)
+        self._line_coefs = None
+
+    def use_line_coefs(self, coefs) -> None:
+        """Use fixed line-estimate coefficients (e.g. the ones a saved model was trained with)
+        instead of fitting them on the loaded games. None goes back to fitting."""
+        self._line_coefs = None if coefs is None else tuple(float(v) for v in coefs)
+
     def line_coefs(self) -> tuple[float, float, float, float]:
         if self._line_coefs is None:
             seasons_with_prior = {s for (s, team) in self.scored if (s - 1, team) in self.scored}
+            if self.line_fit_seasons is not None:
+                seasons_with_prior &= self.line_fit_seasons
             X, y = [], []
             for g in self.games:
                 if g["season"] not in seasons_with_prior:

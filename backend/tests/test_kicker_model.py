@@ -5,7 +5,7 @@ import pytest
 
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 from app.defense.features import FeatureRow
-from app.kicker.train import backtest, season_weights, trend_intercept
+from app.kicker.train import backtest, season_weights, train, trend_intercept
 from app.services.outlook import kicker_points
 from app.services.special_teams import KICKER_LABELS
 from tests.league_fixture import build_league
@@ -118,6 +118,13 @@ def test_backtest_reports_the_model_and_baselines(tmp_path):
     assert result["train_seasons"] == [2024]
     assert set(result["baselines"]) == {"league_average", "team_season_average", "ppg_times_matchup", "vegas_only"}
     assert result["model"]["n"] == len([r for r in rows if r.season == 2025])
+
+
+def test_training_saves_the_line_estimate_it_used(tmp_path):
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    model, backtests = train(conn, [2024, 2025])
+    assert model.metadata["line_coefs"] == list(KickerFeatureBuilder(conn).line_coefs())
+    assert [bt["train_seasons"] for bt in backtests] == [[2024]]
 
 
 def _season_rows(means: dict[int, float]) -> list[FeatureRow]:
