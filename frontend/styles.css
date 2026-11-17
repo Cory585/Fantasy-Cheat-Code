@@ -2298,6 +2298,39 @@ body[data-mode="compare"] .lineup-only { display: none; }
 }
 
 .ss-spot.is-empty .ss-spot-empty { grid-column: 2 / -1; color: var(--bad); }
+
+/* FLEX and SUPERFLEX: the head-to-head behind the pick, under the spot's row. */
+.ss-why {
+  grid-column: 1 / -1;
+  min-width: 0; /* the contenders table scrolls inside it instead of widening the row */
+  padding: 0.75rem 0 0.25rem;
+  border-top: 1px dashed var(--line);
+}
+
+.ss-why > * { margin: 0; }
+.ss-why > * + * { margin-top: 0.625rem; }
+.ss-why .ss-why-label + .ss-reasons { margin-top: 0.25rem; }
+
+.ss-why summary {
+  width: fit-content;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ss-why-summary { max-width: 70ch; }
+.ss-why-label { color: var(--muted); font-size: 0.8125rem; font-weight: 600; }
+.ss-why-table .stat-table th[scope="row"] { font-weight: 400; }
+.ss-why-table .stat-table tbody th { border-left: 4px solid var(--pos, var(--line)); }
+
+.ss-why-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.ss-why-foot .section-note { margin: 0; }
 .ss-muted { color: var(--muted); }
 
 .ss-bench { margin-top: 1.5rem; }

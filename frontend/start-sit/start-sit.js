@@ -354,8 +354,13 @@
       }
     }
 
+    card.append(head, stats, reasonList(pw.reasons));
+    return card;
+  }
+
+  function reasonList(list) {
     const reasons = el("ul", "ss-reasons");
-    for (const reason of pw.reasons) {
+    for (const reason of list) {
       const item = el("li", `ss-reason effect-${reason.effect}`);
       const icon = el("span", "ss-reason-icon", { plus: "+", minus: "−", neutral: "•" }[reason.effect]);
       icon.setAttribute("aria-hidden", "true");
@@ -363,8 +368,7 @@
       item.append(icon, sr, el("span", null, reason.text));
       reasons.append(item);
     }
-    card.append(head, stats, reasons);
-    return card;
+    return reasons;
   }
 
   function warnings(a) {
@@ -383,9 +387,9 @@
 
   const fmt = (n) => Number(n).toFixed(1);
 
-  function listNames(names) {
-    if (names.length <= 2) return names.join(" and ");
-    return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  function listNames(names, word = "and") {
+    if (names.length <= 2) return names.join(` ${word} `);
+    return `${names.slice(0, -1).join(", ")}, ${word} ${names[names.length - 1]}`;
   }
 
   // ---------- My lineup (from the saved team) ----------
@@ -545,9 +549,68 @@
         alt.append(el("span", "ss-muted", "no one to swap in"));
       }
       item.append(avatar(pw.player, "sm"), who, points, range, alt);
+      if (spot.summary) item.append(flexWhy(spot));
       list.append(item);
     }
     return list;
+  }
+
+  // FLEX and SUPERFLEX: why the starter beat the best benched player at each position that fits.
+  function flexWhy(spot) {
+    const pw = spot.starter;
+    const name = SLOT_NAMES[spot.slot];
+    const box = el("details", "ss-why");
+    box.open = true;
+    box.append(el("summary", null, `Why ${pw.player.name} at ${name}?`), el("p", "ss-why-summary", spot.summary));
+    if (spot.edges.length) {
+      box.append(el("p", "ss-why-label", `${pw.player.name} vs ${spot.alternative.player.name}`), reasonList(spot.edges));
+    }
+    if (spot.contenders.length) box.append(contenderTable(spot));
+    const foot = el("div", "ss-why-foot");
+    const positions = SLOT_POSITIONS[spot.slot];
+    foot.append(el("p", "section-note",
+      `The ${name} spot takes the best ${listNames(positions, "or")} left after the position spots are filled.`),
+    compareButton(spot));
+    box.append(foot);
+    return box;
+  }
+
+  function contenderTable(spot) {
+    const wrap = el("div", "stat-table-wrap ss-why-table");
+    const table = el("table", "stat-table");
+    table.append(el("caption", "visually-hidden", `Bench players considered for the ${SLOT_NAMES[spot.slot]} spot`));
+    const head = el("tr");
+    for (const [text, cls] of [["Also considered", null], ["Expected", "num"], ["Range", "num"], ["Matchup", null],
+      [`${spot.starter.player.name} wins`, "num"]]) {
+      const th = el("th", cls, text);
+      th.scope = "col";
+      head.append(th);
+    }
+    const thead = el("thead");
+    thead.append(head);
+    const body = el("tbody");
+    for (const c of spot.contenders) {
+      const pw = c.player;
+      const row = el("tr", `pos-${pw.player.position}`);
+      const who = el("th");
+      who.scope = "row";
+      const link = el("a", "ss-chip-name", pw.player.name);
+      link.href = profileUrl(pw.player.id);
+      who.append(link, el("span", "player-meta", ` ${pw.player.position}, ${pw.player.team}`));
+      const upcoming = pw.status === "upcoming";
+      const matchup = pw.status === "bye" ? "Bye"
+        : [pw.matchup && `${pw.matchup.home ? "vs" : "at"} ${pw.matchup.opponent}`,
+          pw.player.injury_status].filter(Boolean).join(" · ") || "—";
+      row.append(who,
+        el("td", "num", pw.status === "bye" ? "—" : fmt(pw.projection)),
+        el("td", "num", upcoming ? `${fmt(pw.floor)}–${fmt(pw.ceiling)}` : "—"),
+        el("td", null, matchup),
+        el("td", "num", `${Math.round(c.probability * 100)}%`));
+      body.append(row);
+    }
+    table.append(thead, body);
+    wrap.append(table);
+    return wrap;
   }
 
   function weekLine(pw) {
@@ -583,7 +646,8 @@
     return el("p", "value-note",
       "Each spot goes to the player with the most expected points who fits it, filling position spots before "
       + "FLEX and SUPERFLEX. The percentage is how often the starter outscores the best benched option in "
-      + "simulated weeks. Pick Compare on a close call to see the reasons.");
+      + "simulated weeks. FLEX and SUPERFLEX spots show who else was in the running and why the starter won out. "
+      + "Pick Compare on a close call to see the full reasons.");
   }
 
   // Players from the saved team who could join the current comparison.
