@@ -5,7 +5,7 @@ import pytest
 
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 from app.defense.features import FeatureRow
-from app.kicker.train import backtest, season_weights, trend_intercept
+from app.kicker.train import backtest, season_weights, train, trend_intercept
 from app.services.outlook import kicker_points
 from app.services.special_teams import KICKER_LABELS
 from tests.league_fixture import build_league
@@ -47,6 +47,25 @@ def test_favored_by_is_the_spread_from_each_side(conn):
     home = next(r for r in rows.values() if r.home and r.week == 4)
     away = rows[(2025, 4, home.opponent)]
     assert home.features["team_favored_by"] == -away.features["team_favored_by"]
+
+
+def test_games_without_a_line_use_the_dst_models_line_estimate(tmp_path):
+    conn = build_league(tmp_path / "league.db", unplayed_from=5)
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= 5")
+    conn.commit()
+    builder = KickerFeatureBuilder(conn)
+    rows = rows_by_key(builder)
+    dst = {(r.season, r.week, r.defense): r for r in builder.dst_rows([2025], include_unplayed=True)}
+    # Week 5: BUF at NE. Without a line, BUF's kicker gets the same implied points the DST
+    # model gives the offense NE's defense faces, not raw points per game.
+    buf, ne = rows[(2025, 5, "BUF")], rows[(2025, 5, "NE")]
+    assert buf.context["line_estimated"] and not rows[(2025, 4, "BUF")].context["line_estimated"]
+    assert buf.features["team_implied_points"] == pytest.approx(dst[(2025, 5, "NE")].features["opp_implied_points"])
+    assert buf.features["team_implied_points"] == pytest.approx(builder.estimated_points(2025, 5, "BUF", "NE", False))
+    # The spread is estimated too, instead of a pick'em 0.
+    assert buf.features["team_favored_by"] > 0 > ne.features["team_favored_by"]
+    assert buf.features["team_favored_by"] == pytest.approx(-ne.features["team_favored_by"])
+    assert buf.features["team_favored_by"] == pytest.approx(dst[(2025, 5, "BUF")].features["def_favored_by"])
 
 
 def test_fg_pct_is_shrunk_toward_the_league_rate(conn):
@@ -99,6 +118,13 @@ def test_backtest_reports_the_model_and_baselines(tmp_path):
     assert result["train_seasons"] == [2024]
     assert set(result["baselines"]) == {"league_average", "team_season_average", "ppg_times_matchup", "vegas_only"}
     assert result["model"]["n"] == len([r for r in rows if r.season == 2025])
+
+
+def test_training_saves_the_line_estimate_it_used(tmp_path):
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    model, backtests = train(conn, [2024, 2025])
+    assert model.metadata["line_coefs"] == list(KickerFeatureBuilder(conn).line_coefs())
+    assert [bt["train_seasons"] for bt in backtests] == [[2024]]
 
 
 def _season_rows(means: dict[int, float]) -> list[FeatureRow]:

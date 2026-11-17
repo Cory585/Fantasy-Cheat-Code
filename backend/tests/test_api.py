@@ -16,6 +16,43 @@ def test_list_players_by_position():
     assert players and all(p["position"] == "RB" for p in players)
 
 
+def test_players_are_gzipped_when_the_client_accepts_it():
+    resp = client.get("/players", headers={"Accept-Encoding": "gzip"})
+    assert resp.status_code == 200
+    assert resp.headers["content-encoding"] == "gzip"
+    assert "Accept-Encoding" in resp.headers["vary"]
+    assert len(resp.json()) == 12  # httpx decodes it
+
+
+def test_players_are_not_gzipped_for_clients_that_dont_ask():
+    resp = client.get("/players", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in resp.headers
+    assert len(resp.json()) == 12
+
+
+def test_players_carry_an_etag_and_answer_a_matching_request_with_304():
+    first = client.get("/players")
+    etag = first.headers["etag"]
+    assert etag.startswith('W/"')
+    assert first.headers["cache-control"] == "no-cache"
+
+    again = client.get("/players", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["etag"] == etag
+    # Several tags, or the tag without its weak prefix, still match.
+    assert client.get("/players", headers={"If-None-Match": f'"other", {etag[2:]}'}).status_code == 304
+
+    assert client.get("/players", headers={"If-None-Match": '"stale"'}).status_code == 200
+
+
+def test_players_etag_follows_the_content():
+    every = client.get("/players").headers["etag"]
+    backs = client.get("/players", params={"position": "RB"})
+    assert backs.headers["etag"] != every
+    assert client.get("/players", params={"position": "RB"}, headers={"If-None-Match": every}).status_code == 200
+
+
 def test_get_unknown_player_404():
     assert client.get("/players/nope").status_code == 404
 
@@ -97,6 +134,28 @@ def test_player_repository_reloads_when_cache_changes(tmp_path):
     os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))  # filesystems with coarse mtimes
     assert data.current()[0].get("x2") is not None
     assert data.current()[0].get("x1") is None
+
+
+def test_an_empty_player_cache_keeps_the_previous_players(tmp_path):
+    import json
+    import os
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    one = Player(id="x1", name="First", position=Position.QB, team="KC", ros_projection=100.0)
+    write_cache(path, [one], 2026, range(10, 18), ScoringFormat.PPR)
+    data = ReloadingPlayerData(path)
+    assert data.current()[0].get("x1") is not None
+
+    # A cache from an older sync that wrote no players (e.g. a sync past the last week).
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**payload, "weeks": [19, 18], "players": []}), encoding="utf-8")
+    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+    assert data.current()[0].get("x1") is not None
 
 
 def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path, monkeypatch):
@@ -203,6 +262,143 @@ def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     sample = data.current()[0]
     path.write_text("{not json", encoding="utf-8")
     assert data.current()[0] is sample
+
+
+def test_a_broken_cache_is_read_once_not_on_every_request(tmp_path, monkeypatch):
+    from app.api import dependencies
+
+    path = tmp_path / "players.json"
+    data = dependencies.ReloadingPlayerData(path)
+    data.current()
+    path.write_text("{not json", encoding="utf-8")
+    reads = []
+    real = dependencies.load_player_cache
+    monkeypatch.setattr(dependencies, "load_player_cache", lambda p: (reads.append(1), real(p))[1])
+    for _ in range(3):
+        data.current()
+    assert len(reads) == 1
+
+
+def _bump(path, seconds=5):
+    import os
+
+    stat = path.stat()
+    os.utime(path, (stat.st_atime, stat.st_mtime + seconds))  # filesystems with coarse mtimes
+
+
+def _collected_data(tmp_path, monkeypatch):
+    """A cache and a collected database, loaded once, with player cache reads counted."""
+    from app.api import dependencies
+    from app.data import db
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    cache, database = tmp_path / "players.json", tmp_path / "fantasy.db"
+    write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
+                2026, range(10, 18), ScoringFormat.PPR)
+    conn = db.connect(database)
+    db.record_completed_run(conn, 0)
+    data = dependencies.ReloadingPlayerData(cache, database)
+    data.current()
+    reads = []
+    real = dependencies.load_player_cache
+    monkeypatch.setattr(dependencies, "load_player_cache", lambda p: (reads.append(1), real(p))[1])
+    return data, conn, database, reads
+
+
+TEAM = {"abbrev": "DET", "espn_id": 8, "location": None, "name": None, "display_name": "Detroit Lions",
+        "color": None, "logo_url": None}
+
+
+def test_a_running_collection_does_not_reload_the_data_until_it_finishes(tmp_path, monkeypatch):
+    from app.data import db
+
+    data, conn, database, reads = _collected_data(tmp_path, monkeypatch)
+    for espn_id in range(3):  # commits from a collection still in progress
+        db.upsert(conn, "teams", [{**TEAM, "espn_id": espn_id}])
+        _bump(database, 5 * (espn_id + 1))
+        data.current()
+    assert reads == []
+    db.record_completed_run(conn, 3)
+    _bump(database, 30)
+    data.current()
+    data.current()
+    assert len(reads) == 1
+
+
+def test_a_database_without_a_finished_collection_reloads_when_the_file_changes(tmp_path, monkeypatch):
+    from app.data import db
+
+    data, conn, database, reads = _collected_data(tmp_path, monkeypatch)
+    conn.execute("DELETE FROM collection_runs")
+    conn.commit()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    _bump(database)
+    data.current()
+    data.current()
+    assert len(reads) == 1
+    assert db.last_completed_run(conn) is None
+
+
+def test_requests_are_served_the_current_data_while_new_data_is_built(tmp_path, monkeypatch):
+    import threading
+
+    from app.api import dependencies
+
+    data, conn, database, _ = _collected_data(tmp_path, monkeypatch)
+    old = data.current()[0]
+    started, release = threading.Event(), threading.Event()
+    real = dependencies.load_player_cache
+
+    def slow_load(path):
+        started.set()
+        release.wait(10)
+        return real(path)
+
+    monkeypatch.setattr(dependencies, "load_player_cache", slow_load)
+    _bump(tmp_path / "players.json")
+    builder = threading.Thread(target=data.current)
+    builder.start()
+    try:
+        assert started.wait(10)
+        assert data.current()[0] is old  # doesn't wait for the build
+    finally:
+        release.set()
+        builder.join(10)
+    assert data.current()[0] is not old
+
+
+def test_the_draft_planner_is_built_once_per_version_of_the_data():
+    from app.api.dependencies import get_draft_planner
+    from app.data.repository import InMemoryPlayerRepository
+    from app.data.sample_players import SAMPLE_PLAYERS
+
+    repo, adp = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
+    planner = get_draft_planner(repo, adp)
+    assert get_draft_planner(repo, adp) is planner
+    assert get_draft_planner(InMemoryPlayerRepository(SAMPLE_PLAYERS), adp) is not planner
+    assert get_draft_planner(repo, {1: 2.0}) is not planner
+
+
+def test_a_file_deleted_while_checking_for_changes_is_treated_as_missing(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from app.api.dependencies import _mtime
+
+    kept, wal = tmp_path / "fantasy.db", tmp_path / "fantasy.db-wal"
+    kept.write_bytes(b"x")
+    wal.write_bytes(b"x")
+    real_stat = Path.stat
+
+    def stat(self, *args, **kwargs):
+        if self == wal:  # SQLite removed the -wal file after it was seen to exist
+            raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    assert _mtime(kept, wal) == real_stat(kept).st_mtime
+    assert _mtime(wal) is None
 
 
 def test_meta_reports_data_source():

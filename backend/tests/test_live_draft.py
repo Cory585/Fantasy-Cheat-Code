@@ -16,7 +16,7 @@ from app.data.sources.espn_draft import (
     LeaguePrivate,
 )
 from app.main import app, limiter
-from app.services.live_draft import LiveDrafts, TooManySessions, to_live_draft
+from app.services.live_draft import LiveDrafts, TooManySessions, default_season, to_live_draft
 
 S2 = "AEBx" * 10
 SWID = "{ABCDEF12-3456-7890-ABCD-EF1234567890}"
@@ -96,6 +96,23 @@ def test_snapshot_reads_espn_at_most_once_per_interval():
     assert len(source.calls) == 2
 
 
+def test_a_failed_read_is_reused_until_the_interval_passes():
+    clock = Clock()
+    source = FakeSource(make_draft(), httpx.ConnectError("down"), make_draft(1))
+    drafts = LiveDrafts(source, poll_seconds=4, clock=clock)
+    session, _ = drafts.create("777", 2026, None)
+    clock.now += 4
+    for _ in range(3):  # several streams or tabs within one interval: one ESPN read
+        with pytest.raises(httpx.ConnectError):
+            drafts.snapshot(session)
+        clock.now += 1
+    assert len(source.calls) == 2
+    clock.now += 1  # 4 seconds after the failed read
+    assert len(drafts.snapshot(session).picks) == 1
+    assert len(source.calls) == 3
+    assert len(drafts.snapshot(session).picks) == 1  # success clears the error
+
+
 def test_unused_sessions_expire():
     clock = Clock()
     drafts = LiveDrafts(FakeSource(make_draft()), ttl_seconds=60, clock=clock)
@@ -171,12 +188,24 @@ def test_start_returns_a_session_and_the_draft(use_source):
     assert S2 not in resp.text
 
 
-def test_start_defaults_the_season_to_this_year(use_source):
+def test_start_defaults_the_season_by_the_date(use_source):
     from datetime import date
+
+    from app.config import settings
 
     source, _ = use_source(make_draft())
     assert client.post("/draft/live", json={"league_id": "777"}).status_code == 201
-    assert source.calls[0][0] == date.today().year
+    assert source.calls[0][0] == default_season(date.today(), settings.live_draft_season_month)
+
+
+def test_default_season_is_last_year_until_the_configured_month():
+    from datetime import date
+
+    assert default_season(date(2027, 1, 15), 8) == 2026  # the season that just ended
+    assert default_season(date(2027, 7, 31), 8) == 2026
+    assert default_season(date(2027, 8, 1), 8) == 2027
+    assert default_season(date(2027, 12, 31), 8) == 2027
+    assert default_season(date(2027, 1, 1), 1) == 2027
 
 
 @pytest.mark.parametrize("body", [
@@ -237,6 +266,21 @@ def test_get_and_delete(use_source):
     assert (resp.status_code, resp.json()["code"]) == (404, "live_draft_not_found")
 
 
+def test_an_unexpected_espn_response_is_a_502_not_a_crash():
+    from app.data.sources.espn_draft import EspnDraftSource
+    from app.data.sources.http import RateLimitedClient
+
+    bodies = [{"teams": []}, {"draftDetail": "drafting"}]
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=bodies.pop(0)))
+    drafts = LiveDrafts(EspnDraftSource(RateLimitedClient(min_interval=0, max_retries=0, transport=transport)),
+                        poll_seconds=0)
+    app.dependency_overrides[get_live_drafts] = lambda: drafts
+    app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(POOL)
+    session_id = start().json()["session_id"]
+    resp = client.get(f"/draft/live/{session_id}")
+    assert (resp.status_code, resp.json()["code"]) == (502, "espn_unavailable")
+
+
 def test_unknown_or_malformed_session_ids(use_source):
     use_source(make_draft())
     assert client.get("/draft/live/" + "a" * 32).status_code == 404
@@ -246,9 +290,11 @@ def test_unknown_or_malformed_session_ids(use_source):
 
 def read_events(session_id):
     events = []
-    with client.stream("GET", f"/draft/live/{session_id}/events") as resp:
+    with client.stream("GET", f"/draft/live/{session_id}/events", headers={"Accept-Encoding": "gzip"}) as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
+        # GZip would buffer the events, so the stream goes out uncompressed.
+        assert "content-encoding" not in resp.headers
         assert resp.headers["cache-control"] == "no-store"
         name = None
         for line in resp.iter_lines():
@@ -269,6 +315,24 @@ def test_event_stream_sends_each_change_until_the_draft_is_complete(use_source):
         ("pre_draft", 0), ("in_progress", 1), ("in_progress", 3), ("complete", 3)]
 
 
+def test_event_stream_sends_order_names_and_corrected_picks(use_source):
+    no_order = make_draft()
+    no_order.teams = [t.model_copy(update={"slot": None}) for t in no_order.teams]
+    renamed = make_draft()
+    renamed.teams[0] = renamed.teams[0].model_copy(update={"name": "Renamed"})
+    corrected = make_draft(2)
+    corrected.picks[0] = corrected.picks[0].model_copy(update={"espn_player_id": ESPN_IDS[5]})
+    use_source(no_order, no_order, make_draft(), renamed, make_draft(2), corrected,
+               corrected.model_copy(update={"status": "complete"}))
+    session_id = start().json()["session_id"]
+    events = read_events(session_id)
+    assert [name for name, _ in events] == ["draft"] * 6
+    assert [t["slot"] for t in events[0][1]["teams"]] == [None] * 4
+    assert [t["slot"] for t in events[1][1]["teams"]] == [1, 2, 3, 4]  # the order is set before the draft
+    assert events[2][1]["teams"][0]["name"] == "Renamed"
+    assert events[4][1]["picks"][0]["espn_player_id"] == ESPN_IDS[5]  # a commissioner's correction
+
+
 def test_event_stream_reports_a_blip_and_keeps_going(use_source):
     use_source(make_draft(), httpx.ReadTimeout("slow"), make_draft(1, status="complete"))
     session_id = start().json()["session_id"]
@@ -282,6 +346,34 @@ def test_event_stream_stops_when_access_is_lost(use_source):
     session_id = start().json()["session_id"]
     events = read_events(session_id)
     assert events == [("problem", {"code": "espn_private_league", "detail": events[0][1]["detail"]})]
+
+
+def test_streams_are_capped_per_session_and_per_client():
+    drafts = LiveDrafts(FakeSource(make_draft()), max_streams_per_session=2, max_streams_per_client=3)
+    one, two, three = (drafts.create(league, 2026, None)[0] for league in ("777", "778", "779"))
+    assert drafts.open_stream(one, "a") and drafts.open_stream(one, "b")
+    assert not drafts.open_stream(one, "c")  # session one is full
+    assert drafts.open_stream(two, "a") and drafts.open_stream(two, "a")
+    assert not drafts.open_stream(three, "a")  # client "a" is full
+    assert drafts.open_stream(three, "c")
+    drafts.close_stream(one, "a")
+    assert drafts.open_stream(one, "c")  # closing frees a place in the session and for the client
+    assert drafts.open_stream(three, "a")
+    for session, client in ((one, "b"), (one, "c"), (two, "a"), (two, "a"), (three, "c"), (three, "a")):
+        drafts.close_stream(session, client)
+    assert drafts._session_streams == {} and drafts._client_streams == {}
+
+
+def test_event_stream_over_the_cap_is_refused_and_released_after(use_source):
+    _, drafts = use_source(make_draft(), make_draft(1, status="complete"), max_streams_per_session=1)
+    session_id = start().json()["session_id"]
+    session = drafts.get(session_id)
+    assert drafts.open_stream(session, "elsewhere")  # another tab holds the only place
+    events = read_events(session_id)
+    assert [(name, data["code"]) for name, data in events] == [("problem", "live_draft_too_many_streams")]
+    drafts.close_stream(session, "elsewhere")
+    assert [name for name, _ in read_events(session_id)] == ["draft"]
+    assert drafts._session_streams == {} and drafts._client_streams == {}  # the stream let go of its place
 
 
 def test_is_active_does_not_extend_a_session():

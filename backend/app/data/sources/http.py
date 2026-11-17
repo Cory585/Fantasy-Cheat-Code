@@ -26,7 +26,12 @@ class ResponseTooLarge(httpx.HTTPError):
 
 
 class RateLimiter:
-    """Enforces a minimum delay between consecutive calls (thread-safe)."""
+    """Enforces a minimum delay between consecutive calls (thread-safe).
+
+    Each caller reserves the next free slot under the lock and sleeps outside it, so
+    concurrent callers wait side by side (each for its own slot) instead of one at a time
+    behind whoever is sleeping. Call starts stay at least `min_interval` apart.
+    """
 
     def __init__(
         self,
@@ -43,12 +48,10 @@ class RateLimiter:
     def wait(self) -> None:
         with self._lock:
             now = self._clock()
-            if self._last is not None:
-                remaining = self.min_interval - (now - self._last)
-                if remaining > 0:
-                    self._sleep(remaining)
-                    now = self._clock()
-            self._last = now
+            slot = now if self._last is None else max(now, self._last + self.min_interval)
+            self._last = slot
+        if slot > now:
+            self._sleep(slot - now)
 
 
 class RateLimitedClient:

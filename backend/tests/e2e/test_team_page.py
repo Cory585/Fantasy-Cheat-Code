@@ -1,5 +1,6 @@
 import json
 import re
+import secrets
 
 import pytest
 from playwright.sync_api import expect
@@ -231,3 +232,103 @@ def test_search_waits_for_the_player_list(page):
     search.press("Enter")
     expect(page.locator(".team-item")).to_have_count(1)
     expect(search).to_have_attribute("placeholder", "Search players or teams to add")
+
+
+def test_enter_in_an_empty_search_adds_nobody(page):
+    page.goto("/team/")
+    search = page.locator("#team-search")
+    expect(search).to_be_enabled()
+    search.click()
+    search.press("Enter")
+    page.wait_for_timeout(800)  # longer than the save delay
+    expect(page.locator(".roster-empty")).to_be_visible()
+    assert saved(page) is None  # nothing was saved, so no league was made
+
+
+# ---------- Leagues that fail to load, and saves that must reach the right league ----------
+
+
+@pytest.fixture
+def key(page):
+    """A known profile key for the page, so tests can set up leagues through the API."""
+    value = secrets.token_urlsafe(32)
+    page.add_init_script(f"localStorage.setItem('fcc.profile.v1', '{value}')")
+    return value
+
+
+def add_league(page, key, name, roster=()):
+    resp = page.request.post("/leagues", data={"name": name, "roster": list(roster)}, headers={"X-Profile-Key": key})
+    assert resp.status == 201, resp.text()
+    return resp.json()
+
+
+def leagues_of(page, key):
+    return page.request.get("/leagues", headers={"X-Profile-Key": key}).json()["leagues"]
+
+
+def test_failed_leagues_load_turns_editing_off_until_a_retry_works(page, key):
+    add_league(page, key, "Real league", ["qb1"])
+    posts = []
+    page.on("request", lambda r: r.method == "POST" and r.url.endswith("/leagues") and posts.append(r.url))
+    page.route("**/leagues", lambda route: route.fulfill(status=503, content_type="application/json",
+                                                         body='{"detail": "Leagues are down for a moment."}'))
+    page.goto("/team/")
+    expect(page.locator("#league-picker .result-error")).to_contain_text("Leagues are down for a moment.")
+    expect(page.locator("#team-search")).to_have_attribute("placeholder", "Search players or teams to add")
+    for control in ("#team-name-input", "#team-search", "#slots-reset", 'button[aria-label="More QB spots"]'):
+        expect(page.locator(control)).to_be_disabled()
+    page.wait_for_timeout(800)  # longer than the save delay
+    assert posts == []
+
+    page.unroute("**/leagues")
+    page.click("#leagues-retry")
+    expect(page.locator("#team-name-input")).to_have_value("Real league")
+    expect(page.locator("#team-name-input")).to_be_enabled()
+    page.fill("#team-name-input", "Real league, renamed")
+    expect(page.locator("#save-status")).to_have_text("Saved.")
+    assert [lg["name"] for lg in leagues_of(page, key)] == ["Real league, renamed"]
+    assert posts == []
+
+
+def test_nothing_can_be_edited_while_the_leagues_load(page, key):
+    add_league(page, key, "Real league", ["qb1"])
+    held = []
+    page.route("**/leagues", lambda route: held.append(route))
+    page.goto("/team/")
+    while not held:
+        page.wait_for_timeout(50)
+    expect(page.locator("#league-picker")).to_have_text("Loading your leagues…")
+    for control in ("#team-name-input", "#team-search", 'button[aria-label="More QB spots"]'):
+        expect(page.locator(control)).to_be_disabled()
+    held[0].continue_()
+    page.unroute("**/leagues")
+    expect(page.locator("#team-name-input")).to_have_value("Real league")
+    expect(page.locator("#team-search")).to_be_enabled()
+    assert len(leagues_of(page, key)) == 1
+
+
+def test_first_edit_made_just_before_leaving_is_kept(page, key):
+    page.goto("/team/")
+    expect(page.locator("#team-name-input")).to_be_enabled()
+    page.click('button[aria-label="More SUPERFLEX spots"]')
+    page.goto("/profile/")  # well inside the save delay
+    expect(page.locator(".league-card")).to_have_count(1)
+    (league,) = leagues_of(page, key)
+    assert league["slots"]["SUPERFLEX"] == 1
+
+
+def test_edits_stay_with_the_profile_they_were_made_in(page, key):
+    add_league(page, key, "Mine", ["qb1"])
+    other = secrets.token_urlsafe(32)
+    add_league(page, other, "Theirs", ["wr1"])
+    page.goto("/team/")
+    expect(page.locator("#team-name-input")).to_have_value("Mine")
+    # Another tab switches this browser to another profile; this tab hasn't heard yet.
+    page.evaluate(f"localStorage.setItem('fcc.profile.v1', '{other}')")
+    page.click('button[aria-label="More SUPERFLEX spots"]')
+    expect(page.locator("#save-status")).to_have_text("Saved.")
+    assert leagues_of(page, key)[0]["slots"]["SUPERFLEX"] == 1
+    assert leagues_of(page, other)[0]["slots"]["SUPERFLEX"] == 0
+    # Once it hears, it shows the other profile's league.
+    page.evaluate("window.dispatchEvent(new StorageEvent('storage', {key: 'fcc.profile.v1'}))")
+    expect(page.locator("#team-name-input")).to_have_value("Theirs")

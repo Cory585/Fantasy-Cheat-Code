@@ -86,13 +86,29 @@ def backtest(rows: list[FeatureRow], test_season: int) -> dict:
     }
 
 
+def played_rows(builder: DefenseFeatureBuilder, seasons: list[int]) -> list[FeatureRow]:
+    """The builder's rows (DST or kicker) for played games with a target."""
+    return [r for r in builder.rows(seasons) if r.target is not None]
+
+
+def backtest_rows(builder: DefenseFeatureBuilder, seasons: list[int], test_season: int) -> list[FeatureRow]:
+    """Rows for a backtest on `test_season`: that season and the ones before it, with the line
+    estimate (used for games without a Vegas line) fit only on the earlier seasons, so nothing
+    from the test season leaks into its own features."""
+    builder.fit_lines_on({g["season"] for g in builder.games if g["season"] < test_season})
+    try:
+        return played_rows(builder, [s for s in seasons if s <= test_season])
+    finally:
+        builder.fit_lines_on(None)
+
+
 def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, list[dict]]:
     builder = DefenseFeatureBuilder(conn)
-    rows = [r for r in builder.rows(seasons) if r.target is not None]
+    rows = played_rows(builder, seasons)
     if not rows:
         raise RuntimeError("No played games with data. Run `python -m app.data.collect --seasons 2022-2026` first.")
     played_seasons = sorted({r.season for r in rows})
-    backtests = [backtest(rows, s) for s in played_seasons[1:]]
+    backtests = [backtest(backtest_rows(builder, seasons, s), s) for s in played_seasons[1:]]
 
     alpha = choose_alpha(rows)
     X, y, _ = to_arrays(rows)
@@ -100,6 +116,8 @@ def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, lis
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "seasons": played_seasons,
         "games": len(rows),
+        # The line estimate the training rows used, so predictions use the same one.
+        "line_coefs": list(builder.line_coefs()),
         "backtests": backtests,
     })
     return model, backtests

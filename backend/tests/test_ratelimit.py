@@ -76,6 +76,29 @@ def test_client_supplied_forwarded_entries_are_ignored():
     assert make(trust_proxy=True, proxy_hops=3)[0].client_key(request) == "10.0.0.1"
 
 
+def test_ipv6_clients_are_keyed_by_their_64_network():
+    rl = make()[0]
+    a = rl.client_key(_request(host="2001:db8:1:2:aaaa::1"))
+    b = rl.client_key(_request(host="2001:db8:1:2:ffff:ffff:ffff:ffff"))
+    other = rl.client_key(_request(host="2001:db8:1:3::1"))
+    assert a == b == "2001:db8:1:2::/64"
+    assert other != a
+    assert rl.client_key(_request(host="fe80::1%eth0")) == "fe80::/64"
+    assert rl.client_key(_request(host="::ffff:10.0.0.9")) == "10.0.0.9"
+    assert rl.client_key(_request(host="10.0.0.9")) == "10.0.0.9"
+    assert rl.client_key(_request(host="testclient")) == "testclient"
+    # Forwarded addresses are grouped the same way.
+    forwarded = _request({"x-forwarded-for": "2001:db8:9:9::5"})
+    assert make(trust_proxy=True)[0].client_key(forwarded) == "2001:db8:9:9::/64"
+
+
+def test_rotating_ipv6_addresses_share_a_bucket():
+    rl, _ = make(burst=2, per_second=0.01)
+    keys = [rl.client_key(_request(host=f"2001:db8::{i:x}")) for i in range(1, 4)]
+    assert [rl.check(key, "/") for key in keys][:2] == [None, None]
+    assert rl.check(keys[2], "/") is not None
+
+
 def test_api_returns_429_with_retry_after():
     client = TestClient(app)
     original = limiter.rules

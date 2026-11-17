@@ -30,6 +30,22 @@ def test_record_run(tmp_path):
     assert row["rows"] == 300
 
 
+def test_last_completed_run(tmp_path):
+    conn = db.connect(tmp_path / "test.db")
+    assert db.last_completed_run(conn) is None
+    db.record_run(conn, "games", 2026, 285)
+    assert db.last_completed_run(conn) is None  # one dataset isn't a finished collection
+    db.record_completed_run(conn, 285)
+    assert db.last_completed_run(conn) is not None
+
+
+def test_last_completed_run_on_a_database_without_the_table(tmp_path):
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "old.db")
+    assert db.last_completed_run(conn) is None
+
+
 def test_connect_adds_new_columns_to_old_databases(tmp_path):
     import sqlite3
 

@@ -20,7 +20,8 @@ Recent form
     form-based estimate, never on top of the provider projection, to avoid counting the
     schedule twice. The form estimate is capped at +/-FORM_CAP of the provider projection:
     recent form can't see role changes (a backup who started while the starter was hurt),
-    which the providers already account for.
+    which the providers already account for. Players without weekly projections get no form
+    estimate: their provider total couldn't be cut to the remaining weeks, so it's no fair cap.
 """
 
 import json
@@ -82,7 +83,11 @@ class OutlookBuilder:
 
             form_projection = None
             if (
-                player.position != Position.DST
+                # Without weekly projections the rest-of-season total couldn't be rebuilt for the
+                # remaining weeks (a cache from before they were stored), so it may still count
+                # played games; clamping form to it would cut the player's value.
+                player.weekly_projections
+                and player.position != Position.DST
                 and ppg is not None
                 and n_games >= MIN_FORM_GAMES
                 and player.injury_status not in FORM_EXCLUDED_INJURIES
