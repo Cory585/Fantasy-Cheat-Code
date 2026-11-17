@@ -176,9 +176,11 @@ class LeagueDefenses:
                 offense_against[(opponent, week)] = (dropbacks or 0, sacks or 0, ints or 0, epa or 0.0)
 
         self.teams: dict[str, _TeamSeason] = defaultdict(_TeamSeason)
+        counted: set[tuple[str, int]] = set()  # (team, week) games behind each team's game count
         for (team, week), line in lines.items():
             if (team, week) not in allowed:
                 continue
+            counted.add((team, week))
             t = self.teams[team]
             # Play-by-play sacks include team sacks the stat line (players' credited sacks) misses.
             against = offense_against.get((team, week))
@@ -218,13 +220,15 @@ class LeagueDefenses:
             for key, (_, fn) in PLAYER_STATS.items():
                 entry["stats"][key] += fn(line)
 
+        # Only weeks counted in the defense's games: player stats can arrive before the game's
+        # score does, and those points over too few games would inflate the per-game numbers.
         self.fantasy_allowed: dict[str, dict[str, float]] = {pos: defaultdict(float) for pos in FANTASY_POSITIONS}
-        for opponent, position, points in conn.execute(
-                "SELECT opponent, position, SUM(fantasy_points_ppr) FROM player_week_stats "
+        for opponent, week, position, points in conn.execute(
+                "SELECT opponent, week, position, SUM(fantasy_points_ppr) FROM player_week_stats "
                 "WHERE season = ? AND season_type = 'REG' AND position IN ('QB', 'RB', 'WR', 'TE') "
-                "GROUP BY opponent, position", (s,)):
-            if opponent in self.teams:
-                self.fantasy_allowed[position][opponent] = float(points or 0.0)
+                "GROUP BY opponent, week, position", (s,)):
+            if (opponent, week) in counted:
+                self.fantasy_allowed[position][opponent] += float(points or 0.0)
 
         self.info: dict[str, tuple] = {}
         try:
