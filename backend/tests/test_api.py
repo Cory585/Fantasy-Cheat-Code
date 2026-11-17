@@ -30,6 +30,29 @@ def test_players_are_not_gzipped_for_clients_that_dont_ask():
     assert len(resp.json()) == 12
 
 
+def test_players_carry_an_etag_and_answer_a_matching_request_with_304():
+    first = client.get("/players")
+    etag = first.headers["etag"]
+    assert etag.startswith('W/"')
+    assert first.headers["cache-control"] == "no-cache"
+
+    again = client.get("/players", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["etag"] == etag
+    # Several tags, or the tag without its weak prefix, still match.
+    assert client.get("/players", headers={"If-None-Match": f'"other", {etag[2:]}'}).status_code == 304
+
+    assert client.get("/players", headers={"If-None-Match": '"stale"'}).status_code == 200
+
+
+def test_players_etag_follows_the_content():
+    every = client.get("/players").headers["etag"]
+    backs = client.get("/players", params={"position": "RB"})
+    assert backs.headers["etag"] != every
+    assert client.get("/players", params={"position": "RB"}, headers={"If-None-Match": every}).status_code == 200
+
+
 def test_get_unknown_player_404():
     assert client.get("/players/nope").status_code == 404
 
