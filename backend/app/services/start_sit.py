@@ -31,6 +31,7 @@ from app.models.player import Player, Position
 from app.models.start_sit import (
     SLOT_POSITIONS,
     Confidence,
+    Contender,
     Effect,
     GameStatus,
     LineupAnalysis,
@@ -53,6 +54,7 @@ FORM_CAP = 0.25
 MODEL_CAP = 0.5  # a kicker/DST model estimate is limited to the provider projection +/- 50%
 # Chance a player plays this week, by injury designation.
 PLAY_PROBABILITY = {"Q": 0.85, "D": 0.3, "O": 0.0, "IR": 0.0}
+INJURY_LABELS = {"Q": "Questionable", "D": "Doubtful", "O": "Out", "IR": "On injured reserve"}
 # Typical week-to-week standard deviation as a share of projection, by position.
 POSITION_CV = {
     Position.QB: 0.38, Position.RB: 0.5, Position.WR: 0.55,
@@ -71,6 +73,14 @@ FILL_ORDER = (LineupSlot.QB, LineupSlot.RB, LineupSlot.WR, LineupSlot.TE, Lineup
               LineupSlot.FLEX, LineupSlot.SUPERFLEX)
 DISPLAY_ORDER = (LineupSlot.QB, LineupSlot.RB, LineupSlot.WR, LineupSlot.TE, LineupSlot.FLEX,
                  LineupSlot.SUPERFLEX, LineupSlot.K, LineupSlot.DST)
+# Spots open to several positions, which get a head-to-head explanation (see StartSitAdvisor._explain).
+EXPLAINED_SLOTS = (LineupSlot.FLEX, LineupSlot.SUPERFLEX)
+MAX_CONTENDERS = 3
+# Smallest differences worth calling out in a head-to-head.
+EDGE_RANGE = 1.0  # floor or ceiling points
+EDGE_FORM = 2.0  # recent points per game
+EDGE_IMPLIED = 3.0  # Vegas team total
+EDGE_RANK = 4  # places in the matchup ranking
 
 
 class StartSitError(ValueError):
@@ -180,7 +190,7 @@ class StartSitAdvisor:
 
         play = PLAY_PROBABILITY.get(injury, 1.0) if injury else 1.0
         if injury:
-            label = {"Q": "Questionable", "D": "Doubtful", "O": "Out", "IR": "On injured reserve"}.get(injury, injury)
+            label = INJURY_LABELS.get(injury, injury)
             reasons.append(Reason(kind="injury", effect=Effect.MINUS,
                                   text=f"{label}: about {play:.0%} likely to play."))
 
@@ -268,6 +278,8 @@ class StartSitAdvisor:
                         _, prob = self._simulate([starter, alt], 1, seed=f"{week}:{starter.player.id}:{alt.player.id}")
                         spot.alternative, spot.probability = alt, round(prob, 3)
                         spot.confidence = _confidence(prob)
+                        if slot in EXPLAINED_SLOTS:
+                            self._explain(spot, bench, week)
                     if starter.status == GameStatus.BYE or (
                         starter.status == GameStatus.UPCOMING and starter.play_probability == 0
                     ):
@@ -286,6 +298,25 @@ class StartSitAdvisor:
         )
 
     # ---------- internals ----------
+
+    def _explain(self, spot: LineupSpot, bench: list[PlayerWeek], week: int) -> None:
+        """Justify a FLEX or SUPERFLEX starter: the best benched player at each position that
+        fits (so a WR in the flex is weighed against the best RB and TE left, not just the
+        next WR), how often the starter beats each, and what separates the starter from the
+        closest one."""
+        starter, alt = spot.starter, spot.alternative
+        best: dict[Position, PlayerWeek] = {}
+        for pw in bench:  # bench is best first
+            # Players who won't play aren't real options, unless one is the only alternative.
+            out = pw.status == GameStatus.BYE or (pw.status == GameStatus.UPCOMING and pw.play_probability == 0)
+            if pw.player.position in SLOT_POSITIONS[spot.slot] and (pw is alt or not out):
+                best.setdefault(pw.player.position, pw)
+        for pw in list(best.values())[:MAX_CONTENDERS]:
+            prob = spot.probability if pw is alt else self._simulate(
+                [starter, pw], 1, seed=f"{week}:{starter.player.id}:{pw.player.id}")[1]
+            spot.contenders.append(Contender(player=pw, probability=round(prob, 3)))
+        spot.edges = _edges(starter, alt)
+        spot.summary = _flex_summary(spot)
 
     def _matchup(self, player: Player, game, week: int) -> Matchup:
         factor = (self.matchups.defense_factors.get(player.position) or {}).get(game.opponent)
@@ -446,6 +477,126 @@ def _summary(ranked: list[PlayerWeek], starts: int, probability: float) -> str:
     if probability < LEAN_AT:
         return f"{head} {why}, but it's close: {tail}"
     return f"{head} {why}. {tail}"
+
+
+def _edges(a: PlayerWeek, b: PlayerWeek) -> list[Reason]:
+    """What separates starter `a` from benched `b`, each phrased from the starter's side:
+    PLUS where the starter is better, MINUS where `b` is. Small differences are left out."""
+    an, bn = a.player.name, b.player.name
+    if b.status == GameStatus.BYE:
+        return [Reason(kind="bye", effect=Effect.PLUS, text=f"{bn} is on bye.")]
+    if a.status == GameStatus.PLAYED or b.status == GameStatus.PLAYED:
+        return [Reason(kind="played", text=f"{an}: {_points(a)}; {bn}: {_points(b)}.")]
+    if b.play_probability == 0:
+        return [Reason(kind="injury", effect=Effect.PLUS, text=f"{bn} isn't expected to play.")]
+
+    gap = a.projection - b.projection
+    edges = [Reason(kind="projection", effect=Effect.PLUS if gap >= 0.05 else Effect.NEUTRAL,
+                    text=f"Expected points: {a.projection:.1f} to {b.projection:.1f} ({gap:+.1f}).")]
+
+    floor = a.floor - b.floor
+    if floor >= EDGE_RANGE:
+        edges.append(Reason(kind="floor", effect=Effect.PLUS,
+                            text=f"Safer: {a.floor:.1f} points in a bad week (1 in 10), vs {b.floor:.1f} for {bn}."))
+    elif floor <= -EDGE_RANGE:
+        edges.append(Reason(kind="floor", effect=Effect.MINUS,
+                            text=f"Lower floor: {a.floor:.1f} points in a bad week (1 in 10), "
+                                 f"vs {b.floor:.1f} for {bn}."))
+    ceiling = a.ceiling - b.ceiling
+    if ceiling >= EDGE_RANGE:
+        edges.append(Reason(kind="ceiling", effect=Effect.PLUS,
+                            text=f"More upside: {a.ceiling:.1f} points in a big week (1 in 10), "
+                                 f"vs {b.ceiling:.1f} for {bn}."))
+    elif ceiling <= -EDGE_RANGE:
+        edges.append(Reason(kind="ceiling", effect=Effect.MINUS,
+                            text=f"Less upside: {a.ceiling:.1f} points in a big week (1 in 10), "
+                                 f"vs {b.ceiling:.1f} for {bn}."))
+
+    am, bm = a.matchup, b.matchup
+    if am and bm and am.rank and bm.rank:
+        # Ranks are within each player's own position, so a WR's and an RB's compare fairly.
+        detail = (f"{_vs(am)} is {_easiest(am.rank, am.teams)} defense for {a.player.position.value}s; "
+                  f"{bn}'s {_vs(bm)} is {_easiest(bm.rank, bm.teams)} for {b.player.position.value}s.")
+        if bm.rank - am.rank >= EDGE_RANK:
+            edges.append(Reason(kind="matchup", effect=Effect.PLUS, text=f"Better matchup: {detail}"))
+        elif am.rank - bm.rank >= EDGE_RANK:
+            edges.append(Reason(kind="matchup", effect=Effect.MINUS, text=f"Tougher matchup: {detail}"))
+
+    if a.recent_ppg is not None and b.recent_ppg is not None and min(a.recent_games, b.recent_games) >= MIN_FORM_GAMES:
+        form = a.recent_ppg - b.recent_ppg
+        detail = f"{a.recent_ppg:.1f} points per game lately, vs {b.recent_ppg:.1f} for {bn}."
+        if form >= EDGE_FORM:
+            edges.append(Reason(kind="form", effect=Effect.PLUS, text=f"In better form: {detail}"))
+        elif form <= -EDGE_FORM:
+            edges.append(Reason(kind="form", effect=Effect.MINUS, text=f"Colder lately: {detail}"))
+
+    if am and bm and am.implied_total is not None and bm.implied_total is not None:
+        implied = am.implied_total - bm.implied_total
+        detail = (f"Vegas has {a.player.team} scoring {am.implied_total:.1f}, "
+                  f"{b.player.team} {bm.implied_total:.1f}.")
+        if implied >= EDGE_IMPLIED:
+            edges.append(Reason(kind="vegas", effect=Effect.PLUS, text=f"Better offense this week: {detail}"))
+        elif implied <= -EDGE_IMPLIED:
+            edges.append(Reason(kind="vegas", effect=Effect.MINUS, text=f"Weaker offense this week: {detail}"))
+
+    if a.play_probability < 1:
+        edges.append(Reason(kind="injury", effect=Effect.MINUS,
+                            text=f"{an} is {_injury(a)}; the expected points already allow for that."))
+    if b.play_probability < 1:
+        edges.append(Reason(kind="injury", effect=Effect.PLUS, text=f"{bn} is {_injury(b)}."))
+    return edges
+
+
+def _flex_summary(spot: LineupSpot) -> str:
+    a, b = spot.starter, spot.alternative
+    word = "superflex" if spot.slot == LineupSlot.SUPERFLEX else "flex"
+    head = f"{a.player.name} ({a.player.position.value}) gets the {word} over {b.player.name} ({b.player.position.value})"
+    if b.status == GameStatus.BYE:
+        return f"{head}: {b.player.name} is on bye."
+    if b.status == GameStatus.UPCOMING and b.play_probability == 0:
+        return f"{head}: {b.player.name} isn't expected to play."
+    if GameStatus.PLAYED in (a.status, b.status):
+        return f"{head}. {a.player.name}: {_points(a)}; {b.player.name}: {_points(b)}."
+    gap = a.projection - b.projection
+    if gap < 0.05:
+        why = f"{head}: they project about the same ({a.projection:.1f})"
+        why += f", and {a.player.name} has the safer floor." if a.floor > b.floor else "."
+    else:
+        why = f"{head}, projecting {gap:.1f} more points ({a.projection:.1f} to {b.projection:.1f})."
+    pct = round(spot.probability * 100)
+    if spot.probability < LEAN_AT:
+        why += (f" It's close: {a.player.name} outscores {b.player.name} in only {pct}% of simulated weeks, "
+                "so either is a fair start.")
+    else:
+        why += f" {a.player.name} outscores {b.player.name} in {pct}% of simulated weeks."
+    if spot.probability < CONFIDENT_AT and b.ceiling - a.ceiling >= EDGE_RANGE:
+        why += f" If you need a big week to win, {b.player.name} has the higher ceiling ({b.ceiling:.1f})."
+    return why
+
+
+def _points(pw: PlayerWeek) -> str:
+    if pw.status == GameStatus.PLAYED:
+        return f"scored {pw.projection:.1f}"
+    if pw.status == GameStatus.BYE:
+        return "on bye"
+    return f"{pw.projection:.1f} expected"
+
+
+def _vs(m: Matchup) -> str:
+    return f"{'vs' if m.home else 'at'} {m.opponent}"
+
+
+def _easiest(rank: int, teams: int) -> str:
+    if rank == 1:
+        return "the easiest"
+    if rank == teams:
+        return "the toughest"
+    return f"the {_ordinal(rank)} easiest"
+
+
+def _injury(pw: PlayerWeek) -> str:
+    label = INJURY_LABELS.get(pw.player.injury_status or "", "hurt").lower()
+    return f"{label} (about {pw.play_probability:.0%} likely to play)"
 
 
 def _join(names: list[str]) -> str:

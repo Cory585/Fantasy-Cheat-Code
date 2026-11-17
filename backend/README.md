@@ -485,7 +485,12 @@ roster and spots to `POST /start-sit/lineup`:
 points and fits; because each wider spot accepts everything a narrower one does, this gives the
 best total (`tests/test_properties.py` checks it against brute force). Each spot names the best
 benched `alternative` and how often the starter outscores them (`probability`, `confidence`);
-`close_calls` lists the closest spots. Roster ids no longer in the player pool are skipped and
+`close_calls` lists the closest spots. FLEX and SUPERFLEX spots also explain the pick:
+`contenders` is the best benched player at each position that fits (up to 3, leaving out anyone on
+bye or ruled out) with how often the starter beats each, `edges` lists what separates the starter
+from the `alternative` (expected points, floor, ceiling, matchup rank within each position, recent
+form, Vegas team total, injury), each marked `plus` or `minus` from the starter's side, and
+`summary` puts the call in a sentence. Roster ids no longer in the player pool are skipped and
 returned in `missing_ids`, so a saved team keeps working. Errors: `422 invalid_lineup` (no spots),
 `422 invalid_week`, `404 player_not_found` (none of the roster is in the pool).
 

@@ -229,6 +229,52 @@ def test_each_spot_names_the_best_alternative_and_close_calls():
     assert all(result.lineup[i].probability < 0.7 for i in result.close_calls)
 
 
+def test_flex_spot_explains_the_pick_against_each_position():
+    result = advisor().lineup(roster(), SLOTS, week=WEEK)
+    flex = next(s for s in result.lineup if s.slot == LineupSlot.FLEX)
+    # The best benched WR and TE, best first (no QB: they can't play FLEX).
+    assert [c.player.player.id for c in flex.contenders] == ["wr3", "te2"]
+    assert flex.contenders[0].probability == flex.probability
+    assert flex.contenders[1].probability > flex.contenders[0].probability  # te2 projects even less
+    assert flex.summary.startswith("Player rb3 (RB) gets the flex over Player wr3 (WR), projecting 2.5 more points")
+    assert f"{round(flex.probability * 100)}% of simulated weeks" in flex.summary
+    assert flex.edges[0].kind == "projection" and flex.edges[0].effect == "plus"
+    # Spots open to one position aren't explained.
+    qb = result.lineup[0]
+    assert qb.summary is None and qb.edges == [] and qb.contenders == []
+
+
+def test_flex_edges_cover_range_matchup_vegas_and_injury():
+    team = roster()
+    # rb3 on the easy, high-scoring side; wr3 on the hard, low-scoring one and questionable.
+    team[4] = player("rb3", Position.RB, week_points=11.5)
+    team[7] = player("wr3", team="BBB", week_points=11.0, injury="Q")
+    data = matchups()
+    for factors in data.defense_factors.values():  # enough defenses that SOFT and HARD rank far apart
+        factors.update({f"MID{i}": 1.0 for i in range(6)})
+    result = advisor(data).lineup(team, SLOTS, week=WEEK)
+    flex = next(s for s in result.lineup if s.slot == LineupSlot.FLEX)
+    edges = {e.kind: e for e in flex.edges}
+    assert edges["matchup"].effect == "plus" and "Better matchup" in edges["matchup"].text
+    assert edges["vegas"].effect == "plus" and "AAA scoring 27.0, BBB 18.0" in edges["vegas"].text
+    assert edges["injury"].effect == "plus" and "questionable (about 85% likely to play)" in edges["injury"].text
+
+
+def test_flex_skips_players_who_wont_play_unless_theyre_the_only_option():
+    team = roster()
+    team[7] = player("wr3", week_points=9.0, team="BYE")
+    result = advisor().lineup(team, SLOTS, week=WEEK)
+    flex = next(s for s in result.lineup if s.slot == LineupSlot.FLEX)
+    assert [c.player.player.id for c in flex.contenders] == ["te2"]
+
+    only = advisor().lineup([player("rb1", Position.RB, week_points=10.0), player("wr1", week_points=9.0, team="BYE")],
+                            {LineupSlot.FLEX: 1}, week=WEEK)
+    flex = only.lineup[0]
+    assert [c.player.player.id for c in flex.contenders] == ["wr1"]
+    assert flex.summary.endswith("Player wr1 is on bye.")
+    assert flex.edges[0].kind == "bye"
+
+
 def test_superflex_takes_the_second_quarterback():
     slots = {**SLOTS, LineupSlot.SUPERFLEX: 1}
     result = advisor().lineup(roster(), slots, week=WEEK)

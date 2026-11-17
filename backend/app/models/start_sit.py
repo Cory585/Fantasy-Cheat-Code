@@ -130,6 +130,11 @@ class LineupRequest(BaseModel):
     week: int | None = Field(default=None, ge=1, le=18)
 
 
+class Contender(BaseModel):
+    player: PlayerWeek
+    probability: float = Field(description="How often the starter outscores this player in simulated weeks")
+
+
 class LineupSpot(BaseModel):
     slot: LineupSlot
     starter: PlayerWeek | None = Field(description="None when the roster has nobody left who fits")
@@ -140,6 +145,17 @@ class LineupSpot(BaseModel):
         default=None, description="How often the starter outscores the alternative in simulated weeks"
     )
     confidence: Confidence | None = None
+    summary: str | None = Field(
+        default=None, description="Why the starter gets a FLEX or SUPERFLEX spot over the alternative"
+    )
+    edges: list[Reason] = Field(
+        default_factory=list,
+        description="Head-to-head differences between the starter and the alternative (FLEX and SUPERFLEX)",
+    )
+    contenders: list[Contender] = Field(
+        default_factory=list,
+        description="The best benched players who could take a FLEX or SUPERFLEX spot, best first",
+    )
 
 
 class LineupAnalysis(BaseModel):
