@@ -142,16 +142,29 @@
   // Collect what page scripts add during a frame, then animate only the outermost new
   // elements (a new card animates as one, not each of its children separately). Pages
   // often re-render a whole container when one thing changes, so anything that comes
-  // back identical to what was just removed stays still.
+  // back identical to what was just removed stays still. Containers marked
+  // data-no-appear (e.g. the draft board, rebuilt on every live pick) are left alone
+  // entirely: nothing inside them is tracked, compared, or animated.
+  const STILL = "[data-no-appear]";
   let pending = new Set();
-  let removed = new Set();
+  let removed = new Map(); // tag and class -> elements removed this frame with them
   let scheduled = false;
+  const shapeOf = (el) => `${el.tagName}.${el.className}`;
+  // Only elements of the same shape are compared, and isEqualNode stops at the first
+  // difference, so nothing is serialized.
+  const cameBack = (el) => removed.get(shapeOf(el))?.some((old) => old.isEqualNode(el)) ?? false;
+  function outermost(el) {
+    for (let parent = el.parentElement; parent && parent !== main; parent = parent.parentElement) {
+      if (pending.has(parent)) return false;
+    }
+    return true;
+  }
   function flush() {
     scheduled = false;
-    const added = [...pending].filter((el) => !removed.has(el.outerHTML));
+    const added = [...pending].filter((el) => el.isConnected && outermost(el) && !cameBack(el));
     pending = new Set();
-    removed = new Set();
-    appear(added.filter((el) => !added.some((other) => other !== el && other.contains(el))));
+    removed = new Map();
+    appear(added);
   }
 
   const main = document.querySelector("main");
@@ -163,8 +176,16 @@
           if (el.getAttribute("role") === "listbox" && !el.hidden && record.oldValue !== null) openListbox(el);
           continue;
         }
-        for (const node of record.addedNodes) if (node instanceof HTMLElement) pending.add(node);
-        for (const node of record.removedNodes) if (node instanceof HTMLElement) removed.add(node.outerHTML);
+        if (record.target.closest?.(STILL)) continue;
+        for (const node of record.addedNodes) {
+          if (node instanceof HTMLElement && !node.matches(STILL)) pending.add(node);
+        }
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement) || node.matches(STILL)) continue;
+          const shape = shapeOf(node);
+          if (removed.has(shape)) removed.get(shape).push(node);
+          else removed.set(shape, [node]);
+        }
       }
       if (pending.size && !scheduled) {
         scheduled = true;
