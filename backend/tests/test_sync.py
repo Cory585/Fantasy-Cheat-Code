@@ -1,9 +1,12 @@
+import pytest
+
 from app.data.repository import load_player_cache
 from app.data.sources import espn, sleeper
 from app.data.sources.espn import ProTeam
 from app.data.sync import (
     EspnIndex,
     EspnProjection,
+    SyncError,
     build_players,
     espn_projections,
     normalize_name,
@@ -204,9 +207,9 @@ def test_cache_keeps_the_season_start_when_given(tmp_path):
     from app.data.repository import load_cache_metadata
 
     path = tmp_path / "players.json"
-    write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR, season_start="2026-09-10")
+    write_cache(path, _players(), SEASON, WEEKS, ScoringFormat.PPR, season_start="2026-09-10")
     assert load_cache_metadata(path)["season_start"] == "2026-09-10"
-    write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR)
+    write_cache(path, _players(), SEASON, WEEKS, ScoringFormat.PPR)
     assert "season_start" not in load_cache_metadata(path)
 
 
@@ -217,3 +220,70 @@ def test_season_start_is_only_kept_for_sleepers_current_season():
     assert season_start(state, 2026) == "2026-09-10"
     assert season_start(state, 2025) is None  # --season 2025: Sleeper's date is for 2026
     assert season_start({"season_start_date": "2026-09-10"}, 2026) is None
+
+
+class _FakeClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _players(count: int = 1) -> list:
+    raw = {str(i): {"full_name": f"Player {i}", "position": "QB", "team": "KC"} for i in range(count)}
+    return build_players(raw, {pid: 100.0 + int(pid) for pid in raw}, EspnIndex([]), {})
+
+
+def test_sync_past_the_last_week_fails_without_touching_the_cache(tmp_path, monkeypatch):
+    from app.data import sync as sync_module
+
+    class PlayoffSleeper:
+        def __init__(self, client):
+            pass
+
+        def nfl_state(self):
+            return {"season": "2026", "week": "19"}
+
+        def players(self):  # pragma: no cover - must not be reached
+            raise AssertionError("sync should stop before fetching players")
+
+    monkeypatch.setattr(sync_module, "RateLimitedClient", _FakeClient)
+    monkeypatch.setattr(sync_module, "SleeperSource", PlayoffSleeper)
+    path = tmp_path / "players.json"
+    write_cache(path, _players(), SEASON, WEEKS, ScoringFormat.PPR)
+    before = path.read_text(encoding="utf-8")
+
+    with pytest.raises(SyncError, match="past end week 18"):
+        sync_module.sync(path, ScoringFormat.PPR, end_week=18)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_write_cache_refuses_an_empty_player_list(tmp_path):
+    path = tmp_path / "players.json"
+    with pytest.raises(SyncError):
+        write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR)
+    assert not path.exists()
+
+    write_cache(path, _players(), SEASON, WEEKS, ScoringFormat.PPR)
+    with pytest.raises(SyncError):
+        write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR, force=True)
+    assert len(load_player_cache(path)) == 1
+
+
+def test_write_cache_refuses_a_much_smaller_cache_unless_forced(tmp_path):
+    path = tmp_path / "players.json"
+    many = _players(10)
+    write_cache(path, many, SEASON, WEEKS, ScoringFormat.PPR)
+
+    with pytest.raises(SyncError, match="down from 10"):
+        write_cache(path, many[:4], SEASON, WEEKS, ScoringFormat.PPR)
+    assert len(load_player_cache(path)) == 10
+
+    write_cache(path, many[:5], SEASON, WEEKS, ScoringFormat.PPR)  # half is still fine
+    assert len(load_player_cache(path)) == 5
+    write_cache(path, many[:1], SEASON, WEEKS, ScoringFormat.PPR, force=True)
+    assert len(load_player_cache(path)) == 1
