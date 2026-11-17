@@ -81,7 +81,8 @@ def fake_meta(page, source, **extra):
     page.route("**/meta", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(meta)))
 
 
-SAMPLE_PAGES = ["/", "/start-sit/", "/draft/", "/tiers/", "/tiers/?h=ros", "/finder/", "/defense/"]
+# Not /defense/: its data is collected separately from the player pool.
+SAMPLE_PAGES = ["/", "/start-sit/", "/draft/", "/tiers/", "/tiers/?h=ros", "/finder/"]
 
 
 @pytest.mark.parametrize("path", SAMPLE_PAGES)
@@ -89,6 +90,13 @@ def test_sample_data_is_flagged(page, path):
     fake_meta(page, "sample")
     page.goto(path)
     expect(page.locator(".masthead-title .data-notice")).to_have_text("Showing sample players, not real projections.")
+
+
+def test_defense_page_has_no_player_data_notice(page):
+    fake_meta(page, "sample")
+    page.goto("/defense/")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".data-notice")).to_have_count(0)
 
 
 @pytest.mark.parametrize("path", ["/", "/start-sit/", "/draft/"])
