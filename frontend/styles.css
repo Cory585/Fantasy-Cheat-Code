@@ -2035,8 +2035,11 @@ main {
   .summary { grid-template-columns: minmax(0, 1fr); }
   .field { height: 6rem; grid-template-columns: 11% minmax(0, 1fr) 11%; }
   .yard-line:nth-of-type(even) span { display: none; }
-  .masthead-controls { flex-wrap: wrap; }
-  .lineup-panel { right: auto; left: 0; width: min(17rem, calc(100vw - 2rem)); }
+  /* The lineup button sits partway along the controls row, so open its panel from the
+     row's left edge instead of the button's: it stays inside the page on a phone. */
+  .masthead-controls { flex-wrap: wrap; position: relative; }
+  .lineup-settings { position: static; }
+  .lineup-panel { right: auto; left: 0; width: min(17rem, 100%); }
   .value-row { grid-template-columns: minmax(0, 1fr) 3.5rem; }
   .value-row-label { grid-column: 1 / -1; }
   .tier-row { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
