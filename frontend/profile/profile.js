@@ -201,9 +201,15 @@
     });
   }
 
+  // Loads can overlap (a key switch here plus a change in another tab); only the latest one
+  // may show its leagues, or an older profile's list could replace the current one.
+  let loadId = 0;
+
   async function load() {
+    const id = ++loadId;
     try {
       const { leagues, max } = await Store.list();
+      if (id !== loadId) return;
       state.leagues = leagues;
       state.max = max;
       state.loaded = true;
@@ -211,6 +217,7 @@
         say("This browser isn't letting the page keep your profile key, so these leagues are only reachable until you leave.", true);
       }
     } catch (error) {
+      if (id !== loadId) return;
       els.list.replaceChildren(el("li", "result-error", error.message));
       els.count.textContent = "";
       return;
