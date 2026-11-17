@@ -1694,6 +1694,42 @@ main {
 
 /* Pick cards */
 
+/* Links to each pick card, stuck to the top of the screen while the cards scroll past. */
+.plan-jump {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 0.375rem;
+  margin: 0 0 0.875rem;
+  padding: 0.5rem 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  background: var(--bg);
+}
+
+.plan-jump[hidden] { display: none; }
+
+.plan-jump-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.plan-jump-chip:hover { border-color: var(--turf); }
+/* The row clips its overflow, so draw the focus ring inside the chip. */
+.plan-jump-chip:focus-visible { outline-offset: -3px; }
+
 .plan-list {
   list-style: none;
   margin: 0;
@@ -1704,6 +1740,7 @@ main {
 }
 
 .plan-pick {
+  scroll-margin-top: 4rem; /* clear of the sticky pick links */
   display: grid;
   align-content: start;
   gap: 0.75rem;

@@ -18,6 +18,7 @@ const els = {
   legend: $("position-legend"),
   filter: $("position-filter"),
   planList: $("plan-list"),
+  planJump: $("plan-jump"),
   status: $("data-status"),
   tooltip: $("viz-tooltip"),
   liveForm: $("live-form"),
@@ -81,28 +82,45 @@ function adpPhrase(target, overall) {
 
 // ---------- Tooltip (any element with data-tip) ----------
 
-function showTip(text, x, y) {
-  const tip = els.tooltip;
-  tip.textContent = text;
-  tip.hidden = false;
-  const { width, height } = tip.getBoundingClientRect();
-  const left = Math.min(Math.max(8, x + 14), window.innerWidth - width - 8);
-  const top = y + 18 + height > window.innerHeight ? y - height - 12 : y + 18;
-  tip.style.transform = `translate(${left}px, ${top}px)`;
+// The tip's text is set and its size measured only when it moves to another element (or
+// that element's tip changes). Pointer moves just store the position, and the tip is
+// placed at most once a frame, so moving across the board doesn't force a layout each time.
+const tip = { target: null, text: "", width: 0, height: 0, x: 0, y: 0, frame: 0 };
+
+function placeTip() {
+  tip.frame = 0;
+  if (els.tooltip.hidden) return;
+  const left = Math.min(Math.max(8, tip.x + 14), window.innerWidth - tip.width - 8);
+  const top = tip.y + 18 + tip.height > window.innerHeight ? tip.y - tip.height - 12 : tip.y + 18;
+  els.tooltip.style.transform = `translate(${left}px, ${top}px)`;
+}
+
+function showTip(target, x, y) {
+  const text = target.dataset.tip;
+  if (target !== tip.target || text !== tip.text || els.tooltip.hidden) {
+    Object.assign(tip, { target, text });
+    els.tooltip.textContent = text;
+    els.tooltip.hidden = false;
+    const { width, height } = els.tooltip.getBoundingClientRect();
+    Object.assign(tip, { width, height });
+  }
+  Object.assign(tip, { x, y });
+  if (!tip.frame) tip.frame = requestAnimationFrame(placeTip);
 }
 
 function hideTip() {
-  els.tooltip.hidden = true;
+  if (!els.tooltip.hidden) els.tooltip.hidden = true;
+  tip.target = null;
 }
 
 document.addEventListener("pointermove", (event) => {
   const target = event.target.closest?.("[data-tip]");
-  if (target) showTip(target.dataset.tip, event.clientX, event.clientY);
+  if (target) showTip(target, event.clientX, event.clientY);
   else hideTip();
 });
 function tipFor(target) {
   const box = target.getBoundingClientRect();
-  showTip(target.dataset.tip, box.left, box.bottom);
+  showTip(target, box.left, box.bottom);
 }
 document.addEventListener("focusin", (event) => {
   const target = event.target.closest?.("[data-tip]");
@@ -467,12 +485,26 @@ function targetItem(target, overall, dry = new Set()) {
   return item;
 }
 
+// A sticky row of links, one per pick card, so a long plan (15+ cards, very tall on a
+// phone) can be crossed in one tap.
+function renderPlanJump(picks) {
+  els.planJump.hidden = picks.length < 2;
+  els.planJump.replaceChildren(...picks.map(({ pick }) => {
+    const link = el("a", "plan-jump-chip", pick.label);
+    link.href = `#pick-${pick.overall}`;
+    link.setAttribute("aria-label", `Pick ${pick.label}, round ${pick.round}`);
+    return link;
+  }));
+}
+
 function renderPlan() {
   const plan = state.plan;
   if (!plan) {
+    renderPlanJump([]);
     if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks…"));
     return;
   }
+  renderPlanJump(plan.picks);
   if (!plan.picks.length && state.live) {
     els.planList.replaceChildren(el("li", "player-meta", "You've made all your picks."));
     return;
@@ -480,6 +512,8 @@ function renderPlan() {
   els.planList.replaceChildren(
     ...plan.picks.map(({ pick, targets, position_mix, picks_until_next, tier_alerts }, i) => {
       const card = el("li", "plan-pick");
+      card.id = `pick-${pick.overall}`;
+      card.tabIndex = -1; // the pick links move focus here
       const head = el("div", "plan-pick-head");
       head.append(el("strong", null, pick.label), el("span", null, `Round ${pick.round}, ${ordinal(pick.overall)} overall`));
       card.append(head, mixBar(position_mix, picks_until_next));
@@ -516,6 +550,7 @@ function renderPlan() {
 
 function renderError(error) {
   state.error = error;
+  renderPlanJump([]);
   els.planList.replaceChildren(errorBlock(error, () => update(), { tag: "li" }));
   els.status.textContent = ""; // the error block announces itself
 }
@@ -873,6 +908,18 @@ function init() {
     state.teams = Number(button.dataset.teams);
     state.slot = Math.min(state.slot, state.teams);
     update();
+  });
+  els.planJump.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href^='#pick-']");
+    const card = link && document.getElementById(link.hash.slice(1));
+    if (!card) return;
+    // Scroll here rather than leave it to the smooth-scroll library's anchor handling, which
+    // can aim from a stale position. Focus moves to the card so the keyboard follows.
+    event.preventDefault();
+    event.stopPropagation();
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    card.focus({ preventScroll: true });
   });
   els.slot.addEventListener("change", () => setSlot(Number(els.slot.value)));
   els.slotPrev.addEventListener("click", () => setSlot(state.slot - 1));
