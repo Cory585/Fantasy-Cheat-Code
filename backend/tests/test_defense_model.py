@@ -13,6 +13,7 @@ from app.defense.features import (
 )
 from app.defense.model import RidgeModel
 from app.defense.scoring import dst_points, points_allowed_score
+from app.defense.train import backtest_rows, played_rows, train
 from app.services.special_teams import DST_LABELS
 from tests.league_fixture import build_league
 
@@ -95,6 +96,33 @@ def test_features_only_use_earlier_weeks(tmp_path):
     assert after[(2025, 5, "BUF")].features != before[(2025, 5, "BUF")].features
 
 
+def test_play_calling_prior_uses_the_coach_of_that_week(tmp_path):
+    """MIA fires its coach after week 3 of 2025: the early weeks keep the first coach's prior."""
+    conn = build_league(tmp_path / "league.db")
+    coach = {(2024, "BUF"): "Pass Coach", (2024, "NE"): "Run Coach", (2024, "MIA"): "Old", (2024, "NYJ"): "Jets"}
+    for (season, team), name in coach.items():
+        for side in ("home", "away"):
+            conn.execute(f"UPDATE games SET {side}_coach = ? WHERE season = ? AND {side}_team = ?",  # noqa: S608
+                         (name, season, team))
+    for side in ("home", "away"):
+        conn.execute(f"UPDATE games SET {side}_coach = CASE WHEN week <= 3 THEN 'Pass Coach' "  # noqa: S608
+                     f"ELSE 'Run Coach' END WHERE season = 2025 AND {side}_team = 'MIA'")
+    # BUF passed far more than expected in 2024, NE far less.
+    conn.execute("UPDATE team_game_offense SET pass_oe_sum = 6.0 WHERE season = 2024 AND team = 'BUF'")
+    conn.execute("UPDATE team_game_offense SET pass_oe_sum = -6.0 WHERE season = 2024 AND team = 'NE'")
+    conn.commit()
+    builder = DefenseFeatureBuilder(conn)
+    assert builder.coach(2025, "MIA", 2) == "Pass Coach" and builder.coach(2025, "MIA", 5) == "Run Coach"
+    assert builder.coach(2025, "MIA", 9) == "Run Coach"  # a week with no game: the latest coach
+    rows = rows_by_key(builder)
+    # Week 1: MIA at BUF, so BUF's defense faces MIA with nothing from 2025 to go on yet.
+    assert rows[(2025, 1, "BUF")].context["opp_coach"] == "Pass Coach"
+    assert rows[(2025, 1, "BUF")].features["opp_proe"] > 0
+    # After the firing the prior is the new coach's (still blended with MIA's neutral 2025 weeks).
+    assert rows[(2025, 4, "BUF")].context["opp_coach"] == "Run Coach"
+    assert rows[(2025, 4, "BUF")].features["opp_proe"] < 0
+
+
 def test_unplayed_games_have_features_but_no_target(tmp_path):
     builder = DefenseFeatureBuilder(build_league(tmp_path / "league.db", unplayed_from=5))
     rows = rows_by_key(builder)
@@ -154,6 +182,33 @@ def test_line_estimate_is_fit_to_the_loaded_lines(tmp_path, monkeypatch):
             expected = implied_points(True, g["spread"], g["total"])
             estimate = builder.estimated_points(2025, g["week"], g["home"], g["away"], True)
             assert estimate == pytest.approx(expected, abs=0.5)
+
+
+def test_backtest_rows_fit_the_line_estimate_on_earlier_seasons_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(defense_features, "MIN_LINE_FIT_ROWS", 10)
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    _remove_lines(conn, 6)  # week 6 of 2025 is played but has no line, so it uses the estimate
+
+    def week6(rows):
+        return {r.defense: r.features for r in rows if r.season == 2025 and r.week == 6}
+
+    builder = DefenseFeatureBuilder(conn)
+    before_full = week6(played_rows(builder, [2024, 2025]))
+    before_split = week6(backtest_rows(builder, [2024, 2025], 2025))
+    assert builder.line_fit_seasons is None  # back to fitting on everything afterwards
+    # Moving 2025's own lines moves the full-history estimate, but not the backtest's.
+    conn.execute("UPDATE games SET total_line = total_line + 20 WHERE season = 2025 AND week < 6")
+    conn.commit()
+    builder = DefenseFeatureBuilder(conn)
+    assert week6(played_rows(builder, [2024, 2025])) != before_full
+    assert week6(backtest_rows(builder, [2024, 2025], 2025)) == before_split
+
+
+def test_training_saves_the_line_estimate_it_used(tmp_path):
+    conn = build_league(tmp_path / "league.db", seasons=(2023, 2024, 2025))
+    model, backtests = train(conn, [2024, 2025])
+    assert model.metadata["line_coefs"] == list(DefenseFeatureBuilder(conn).line_coefs())
+    assert [bt["test_season"] for bt in backtests] == [2025]
 
 
 def test_line_estimate_falls_back_to_defaults_with_few_games(builder):

@@ -23,7 +23,27 @@ def test_collect_continues_after_a_failed_dataset(tmp_path, monkeypatch):
     assert isinstance(results["games:2026"], RuntimeError)
     assert results["teams:2026"] == 1
     runs = {r["dataset"] for r in conn.execute("SELECT dataset FROM collection_runs")}
-    assert runs == {"teams"}  # failed datasets aren't recorded as collected
+    assert runs == {"teams", db.COMPLETED_RUN[0]}  # failed datasets aren't recorded as collected
+    assert db.last_completed_run(conn) is not None  # but the run as a whole is marked finished
+
+
+def test_a_collection_is_marked_finished_only_once_it_ends(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "test.db")
+    marks = []
+
+    def fake_collect_dataset(client, dataset, season):
+        marks.append(db.last_completed_run(conn))
+        return "teams", [{"abbrev": dataset, "espn_id": len(marks), "location": None, "name": None,
+                          "display_name": dataset, "color": None, "logo_url": None}]
+
+    monkeypatch.setattr(collect, "collect_dataset", fake_collect_dataset)
+    assert db.last_completed_run(conn) is None
+    collect.collect(["teams", "games"], [2026], conn)
+    assert marks == [None, None]  # not marked while datasets were still being written
+    first = db.last_completed_run(conn)
+    assert first is not None
+    collect.collect(["teams"], [2026], conn)
+    assert db.last_completed_run(conn) > first
 
 
 def test_every_dataset_is_handled():

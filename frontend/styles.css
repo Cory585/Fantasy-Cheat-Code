@@ -9,7 +9,7 @@
   --ridge-2: hsl(var(--land-hue) var(--land-sat) 83.5%);
   --ridge-3: hsl(var(--land-hue) var(--land-sat) 81%);
   --ridge-4: hsl(var(--land-hue) var(--land-sat) 78.5%);
-  --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 68%);
+  --land-portrait-light: 68%; /* the star portrait's lightness; its hue is set on the canvas */
 
   --bg: hsl(var(--land-hue) 16% 93%);
   --surface: #ffffff;
@@ -41,7 +41,7 @@
   --ridge-2: hsl(var(--land-hue) var(--land-sat) 7.5%);
   --ridge-3: hsl(var(--land-hue) var(--land-sat) 6%);
   --ridge-4: hsl(var(--land-hue) var(--land-sat) 4.5%);
-  --land-portrait: hsl(var(--land-hue) calc(var(--land-sat) + 12%) 24%);
+  --land-portrait-light: 24%;
   --bg: hsl(var(--land-hue) 27% 8%);
   --surface: hsl(var(--land-hue) 22% 12%);
   --ink: #e4ece7;
@@ -2786,9 +2786,10 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 .ridge-3 { fill: var(--ridge-3); }
 .ridge-4 { fill: var(--ridge-4); }
 
-/* A star's headshot, dithered in the page's hue, in the open sky beside the page title.
-   The masthead title stops short of it (see .masthead-title), and the masthead controls
-   sit on their own row under the title, so nothing on the page overlaps it. */
+/* A star's headshot, dithered in their jersey's hue (backdrop.js sets --portrait-hue and
+   --portrait-sat), in the open sky beside the page title. The masthead title stops short of
+   it (see .masthead-title), and the masthead controls sit on their own row under the title,
+   so nothing on the page overlaps it. */
 :root {
   --portrait-width: min(44vw, 330px);
   --portrait-right: max(0.5rem, calc(50vw - 600px));
@@ -2803,7 +2804,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   width: var(--portrait-width);
   height: auto;
   image-rendering: pixelated;
-  color: var(--land-portrait);
+  color: hsl(var(--portrait-hue, var(--land-hue)) calc(var(--portrait-sat, var(--land-sat)) + 12%) var(--land-portrait-light));
 }
 
 .masthead-title {

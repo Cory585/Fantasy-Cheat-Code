@@ -51,7 +51,7 @@ class TradeSide(BaseModel):
 
     team_name: str | None = Field(default=None, max_length=MAX_TEAM_NAME)
     player_ids: list[PlayerId] = Field(min_length=1, max_length=MAX_PLAYERS_PER_SIDE)
-    # Optional full roster, used for roster-fit / lineup-impact analysis.
+    # Optional full roster; balance suggestions for this side come from it.
     roster_ids: list[PlayerId] = Field(default_factory=list, max_length=MAX_ROSTER_SIZE)
 
 
@@ -103,8 +103,6 @@ class SideAnalysis(BaseModel):
     total_value_given: float
     total_value_received: float
     net_value: float
-    # Change in projected weekly starting-lineup points (requires roster_ids).
-    lineup_impact: float | None = None
     reasons: list[Reason] = Field(default_factory=list,
                                   description="Why this side comes out ahead or behind, most important first")
 

@@ -43,8 +43,14 @@ def load_cache_metadata(path: Path) -> dict:
 
 
 def load_player_cache(path: Path) -> list[Player] | None:
-    """Players from the JSON cache written by `app.data.sync`, or None if there is no cache."""
+    """Players from the JSON cache written by `app.data.sync`, or None if there is no cache.
+
+    Raises ValueError for a cache with no players, so the API keeps serving what it had
+    instead of showing empty pages."""
     if not path.exists():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return [Player.model_validate(p) for p in payload["players"]]
+    players = payload.get("players") if isinstance(payload, dict) else None
+    if not isinstance(players, list) or not players:
+        raise ValueError(f"Player cache {path} has no players")
+    return [Player.model_validate(p) for p in players]

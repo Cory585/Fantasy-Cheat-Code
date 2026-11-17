@@ -7,7 +7,8 @@ kicker points that game (`kicker_points`: FG 0-39 = 3, 40-49 = 4, 50+ = 5, PAT =
 missed FG = -1), so a kicker who changes teams mid-season doesn't break the history.
 
 Model features (team = the kicking team, opponent = the defense it faces):
-    team_implied_points    Vegas implied points for the team
+    team_implied_points    Vegas implied points for the team (estimated from both teams' scoring
+                           when there's no line yet, the same estimate the DST model uses)
     team_favored_by        points the team is favored by (favorites kick more: they take the
                            points late and run out the clock instead of chasing touchdowns)
     fg_pct                 FG accuracy, blended with the league rate over FG_PRIOR_ATTEMPTS
@@ -20,8 +21,8 @@ Model features (team = the kicking team, opponent = the defense it faces):
     altitude               1 at Denver
     home                   1 if the team is at home
 
-Rows also carry team_points_pg (the fallback when there's no Vegas line) and team_k_ppg
-(kicker points per game, a training baseline), which aren't model features.
+Rows also carry team_k_ppg (kicker points per game, a training baseline), which isn't a
+model feature.
 
 Tried and left out because they add nothing out of sample once the Vegas line is in (the
 sign constraint dropped most of them anyway): team points, pace, passing efficiency, FG and
@@ -119,12 +120,17 @@ class KickerFeatureBuilder(DefenseFeatureBuilder):
         s, w = g["season"], g["week"]
         f: dict[str, float] = {}
 
-        f["team_points_pg"] = self._blend(s, team, w, lambda s_, t, w_: self._per_game(
-            self.scored, s_, t, w_, lambda x: x), "ppg")
+        # Vegas, or the DST rows' estimate of the line when there isn't one yet. Training rows
+        # almost all have closing lines, so raw points per game or a pick'em spread would put
+        # later weeks on a different scale from what the model learned.
         implied = implied_points(is_home, g["spread"], g["total"])
-        f["team_implied_points"] = implied if implied is not None else f["team_points_pg"]
-        spread = float(g["spread"] or 0.0)  # nflverse spread_line: the expected home margin
-        f["team_favored_by"] = spread if is_home else -spread
+        team_points = implied if implied is not None else self.estimated_points(s, w, team, opponent, is_home)
+        if g["spread"] is not None:  # nflverse spread_line: the expected home margin
+            favored = g["spread"] if is_home else -g["spread"]
+        else:
+            favored = team_points - self.estimated_points(s, w, opponent, team, not is_home)
+        f["team_implied_points"] = team_points
+        f["team_favored_by"] = float(favored)
         f["team_k_ppg"] = self._blend(s, team, w, self._stat_rate(kicker_points), "k_ppg")
         f["long_fg_share"] = self._blend(s, team, w, self._stat_rate(long_attempts, fg_attempts), "long_share")
         f["fg_pct"] = self._accuracy(s, team, w, fg_attempts, lambda r: fg_attempts(r) - _g(r, "fg_missed"),
@@ -145,7 +151,7 @@ class KickerFeatureBuilder(DefenseFeatureBuilder):
             if stats is not None:
                 target = kicker_points(stats)
         return FeatureRow(s, w, g["game_id"], g["espn_id"], team, opponent, is_home, f, target,
-                          {"weather": weather, "team_implied_points": implied})
+                          {"weather": weather, "team_implied_points": implied, "line_estimated": implied is None})
 
     def _accuracy(self, season, team, week, attempts, made, league_rate, prior_attempts) -> float:
         """Make rate this season and last (attempts before `week`), shrunk toward the league rate."""

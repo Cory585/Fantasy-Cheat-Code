@@ -5,7 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
-  const { el, profileUrl, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
+  const { el, plural, profileUrl, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -26,7 +26,6 @@
   const state = { position: "RB", horizon: null, horizonChosen: false, teams: 12, currentWeek: null, fellBack: false };
   let requestId = 0;
 
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const fmt = (n) => (Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   // ---------- URL ----------

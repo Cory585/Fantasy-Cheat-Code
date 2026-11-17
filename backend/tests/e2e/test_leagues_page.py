@@ -231,6 +231,51 @@ def test_profile_key_moves_leagues_to_another_browser(page, key, browser, base_u
         other.close()
 
 
+def test_switching_keys_asks_first_and_shows_the_current_key(page, key):
+    add_league(page, key, "Keep me")
+    other = secrets.token_urlsafe(32)
+    add_league(page, other, "Over there")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name")).to_have_text("Keep me")
+    page.fill("#key-input", other)
+    page.click("text=Switch profile")
+    # Nothing switched yet: the current key is shown so it can be copied first.
+    expect(page.locator("#profile-status")).to_contain_text("Copy its key")
+    expect(page.locator("#profile-key")).to_have_attribute("type", "text")
+    expect(page.locator("#profile-key")).to_have_value(key)
+    expect(page.locator(".league-card-name")).to_have_text("Keep me")
+    assert page.evaluate("localStorage.getItem('fcc.profile.v1')") == key
+    page.click("#key-form button:has-text('Confirm switch')")
+    expect(page.locator(".league-card-name")).to_have_text("Over there")
+    expect(page.locator("#profile-key")).to_have_value(other)
+    expect(page.locator("#profile-key")).to_have_attribute("type", "password")
+
+
+def test_older_profile_load_does_not_replace_a_newer_one(page, key):
+    add_league(page, key, "Old profile")
+    other = secrets.token_urlsafe(32)
+    add_league(page, other, "New profile")
+    held = []
+
+    def handle(route):
+        if route.request.headers.get("x-profile-key") == key and not held:
+            held.append(route)  # the first load, for the old key, answers late
+            return
+        route.continue_()
+
+    page.route("**/leagues", handle)
+    page.goto("/profile/")
+    while not held:
+        page.wait_for_timeout(50)
+    page.fill("#key-input", other)
+    page.click("text=Switch profile")
+    page.click("#key-form button:has-text('Confirm switch')")
+    expect(page.locator(".league-card-name")).to_have_text("New profile")
+    held[0].continue_()
+    page.wait_for_timeout(300)
+    expect(page.locator(".league-card-name")).to_have_text("New profile")
+
+
 def test_profile_page_fits_a_phone(page, key):
     add_league(page, key, "A league with a fairly long name")
     page.set_viewport_size({"width": 375, "height": 800})
