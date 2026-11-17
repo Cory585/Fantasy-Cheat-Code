@@ -162,6 +162,11 @@
   canvas.width = COLS;
   canvas.height = ROWS;
   backdrop.insertBefore(canvas, near);
+  // Keep the portrait clear of the nav, which wraps onto more rows as the window narrows.
+  const nav = document.querySelector(".site-nav");
+  if (nav) {
+    new ResizeObserver(() => canvas.style.setProperty("--nav-height", `${nav.offsetTop + nav.offsetHeight}px`)).observe(nav);
+  }
   const ctx = canvas.getContext("2d");
   const frame = ctx.createImageData(COLS, ROWS);
 

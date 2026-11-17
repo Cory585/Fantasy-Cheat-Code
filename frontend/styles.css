@@ -214,7 +214,9 @@ button, input, select { font: inherit; color: inherit; }
   max-width: 46ch;
 }
 
+/* Always on its own row under the title, clear of the star portrait on the right. */
 .masthead-controls {
+  flex-basis: 100%;
   display: flex;
   gap: 0.75rem;
   align-items: center;
@@ -2775,20 +2777,41 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 .ridge-3 { fill: var(--ridge-3); }
 .ridge-4 { fill: var(--ridge-4); }
 
-/* A star's headshot, dithered in the page's hue, in the open sky beside the page title. */
+/* A star's headshot, dithered in the page's hue, in the open sky beside the page title.
+   The masthead title stops short of it (see .masthead-title), and the masthead controls
+   sit on their own row under the title, so nothing on the page overlaps it. */
+:root {
+  --portrait-width: min(44vw, 330px);
+  --portrait-right: max(0.5rem, calc(50vw - 600px));
+}
+
 .star-portrait {
   position: absolute;
-  right: max(0.5rem, calc(50vw - 600px));
-  top: 4.25rem;
-  width: min(44vw, 330px);
+  right: var(--portrait-right);
+  /* backdrop.js sets --nav-height, since the nav wraps onto more rows as the window narrows.
+     The head peeks out from just under it. */
+  top: calc(var(--nav-height, 7.25rem) - 3rem);
+  width: var(--portrait-width);
   height: auto;
   image-rendering: pixelated;
   color: var(--land-portrait);
 }
 
-/* The nav wraps onto two rows on phones: keep the portrait below it. */
-@media (max-width: 640px) {
-  .star-portrait { top: 7rem; width: 40vw; }
+.masthead-title {
+  max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - max(1.5rem, calc(50vw - 536px)) - 1rem);
+}
+
+/* Smaller on tablets and phones, wholly below the nav, which wraps onto two or more rows. */
+@media (max-width: 760px) {
+  :root { --portrait-width: 34vw; }
+  .star-portrait { top: calc(var(--nav-height, 11rem) + 0.5rem); }
+  .masthead-title { max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - 2rem); }
+}
+
+/* No room beside the title on a small phone: leave the portrait out. */
+@media (max-width: 480px) {
+  .star-portrait { display: none; }
+  .masthead-title { max-width: none; }
 }
 
 /* ---------- Motion (motion.js) ---------- */
