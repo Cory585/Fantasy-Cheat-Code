@@ -62,12 +62,70 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-@app.middleware("http")
-async def limit_body_size(request: Request, call_next):
-    length = request.headers.get("content-length")
-    if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
-        return error_response(413, f"Request body is larger than {MAX_BODY_BYTES // 1024} KB.")
-    return await call_next(request)
+class _BodyTooLarge(Exception):
+    pass
+
+
+class LimitBodySize:
+    """Rejects request bodies over `max_bytes` with a 413.
+
+    A Content-Length header over the limit is refused before anything is read. Bodies
+    without one (Transfer-Encoding: chunked) are counted as they arrive, and the read is
+    cut off as soon as the count passes the limit, so no route buffers more than that.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    def _too_large(self):
+        return error_response(413, f"Request body is larger than {self.max_bytes // 1024} KB.")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        for name, value in scope["headers"]:
+            if name == b"content-length":
+                if value.isdigit() and int(value) > self.max_bytes:
+                    return await self._too_large()(scope, receive, send)
+                break
+
+        received = 0
+        rejected = False
+        started = False
+
+        async def counting_receive():
+            nonlocal received, rejected
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    rejected = True
+                    raise _BodyTooLarge
+            return message
+
+        async def guarded_send(message):
+            nonlocal started
+            # Once the body is refused, whatever the route makes of the aborted read (FastAPI
+            # turns it into a 400) is dropped in favour of the 413.
+            if rejected:
+                return
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, guarded_send)
+        except Exception:
+            if not rejected:
+                raise
+        if rejected and not started:
+            await self._too_large()(scope, receive, send)
+
+
+# Added here, before the security headers middleware below, so it runs inside it and its 413s
+# get the headers too.
+app.add_middleware(LimitBodySize, max_bytes=MAX_BODY_BYTES)
 
 
 @app.exception_handler(RecursionError)
