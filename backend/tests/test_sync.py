@@ -208,3 +208,12 @@ def test_cache_keeps_the_season_start_when_given(tmp_path):
     assert load_cache_metadata(path)["season_start"] == "2026-09-10"
     write_cache(path, [], SEASON, WEEKS, ScoringFormat.PPR)
     assert "season_start" not in load_cache_metadata(path)
+
+
+def test_season_start_is_only_kept_for_sleepers_current_season():
+    from app.data.sync import season_start
+
+    state = {"season": "2026", "week": 11, "season_start_date": "2026-09-10"}
+    assert season_start(state, 2026) == "2026-09-10"
+    assert season_start(state, 2025) is None  # --season 2025: Sleeper's date is for 2026
+    assert season_start({"season_start_date": "2026-09-10"}, 2026) is None

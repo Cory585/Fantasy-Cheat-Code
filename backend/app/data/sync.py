@@ -237,9 +237,19 @@ def sync(
 
     players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks, sleeper_weekly)
     write_cache(output, players, season=season, weeks=weeks, scoring=scoring,
-                season_start=state.get("season_start_date"))
+                season_start=season_start(state, season))
     log.info("Wrote %d players to %s", len(players), output)
     return players
+
+
+def season_start(state: dict, season: int) -> str | None:
+    """Sleeper's `season_start_date`, if its state is for `season` (it only describes the
+    current season, so a sync of another season with --season doesn't get it)."""
+    try:
+        current = int(state.get("season"))
+    except (TypeError, ValueError):
+        return None
+    return state.get("season_start_date") if current == season else None
 
 
 def write_cache(
