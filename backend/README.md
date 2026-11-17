@@ -10,7 +10,13 @@ python -m app.data.sync                         # current week -> week 18, PPR
 python -m app.data.sync --scoring half_ppr      # standard | half_ppr | ppr
 python -m app.data.sync --start-week 10 --end-week 18
 python -m app.data.sync --no-espn               # Sleeper projections only
+python -m app.data.sync --force                 # write even if far fewer players than the current cache
 ```
+
+The sync never replaces the cache with an empty one. It stops with an error when the start
+week is past the end week (for example, when Sleeper's current week is a playoff week). It also
+won't write a cache with under half the current cache's players unless you pass `--force`.
+Provider records that don't parse are logged and skipped.
 
 The running API picks up a new cache without a restart. If no cache exists (or it can't be
 read), the API falls back to the fictional sample players in `app/data/sample_players.py`, and

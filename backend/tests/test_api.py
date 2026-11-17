@@ -99,6 +99,28 @@ def test_player_repository_reloads_when_cache_changes(tmp_path):
     assert data.current()[0].get("x1") is None
 
 
+def test_an_empty_player_cache_keeps_the_previous_players(tmp_path):
+    import json
+    import os
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    path = tmp_path / "players.json"
+    one = Player(id="x1", name="First", position=Position.QB, team="KC", ros_projection=100.0)
+    write_cache(path, [one], 2026, range(10, 18), ScoringFormat.PPR)
+    data = ReloadingPlayerData(path)
+    assert data.current()[0].get("x1") is not None
+
+    # A cache from an older sync that wrote no players (e.g. a sync past the last week).
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**payload, "weeks": [19, 18], "players": []}), encoding="utf-8")
+    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+    assert data.current()[0].get("x1") is not None
+
+
 def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path, monkeypatch):
     from datetime import date
 

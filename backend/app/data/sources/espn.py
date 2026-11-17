@@ -8,6 +8,7 @@ Responses are large (~25 MB for the full player pool), so this is sync-job only.
 """
 
 import json
+import logging
 from typing import NamedTuple
 
 from app.data.sources.http import RateLimitedClient
@@ -34,6 +35,8 @@ LEAGUE_DEFAULTS = {ScoringFormat.STANDARD: 1, ScoringFormat.HALF_PPR: 3, Scoring
 STAT_RECEPTIONS = "53"
 STAT_SOURCE_PROJECTED = 1
 STAT_SPLIT_WEEKLY = 1
+
+log = logging.getLogger(__name__)
 
 # ESPN abbreviations that differ from Sleeper's.
 TEAM_ALIASES = {"WSH": "WAS"}
@@ -108,14 +111,39 @@ def teams_with_completed_games(client: RateLimitedClient, season: int, week: int
     return parse_completed_teams(data)
 
 
+def scoreboard_competition(event) -> dict | None:
+    """An ESPN scoreboard event's game, or None (logged) if the event is malformed."""
+    competitions = event.get("competitions") if isinstance(event, dict) else None
+    competition = competitions[0] if isinstance(competitions, list) and competitions else None
+    if not isinstance(competition, dict):
+        log.warning("Skipping malformed ESPN scoreboard event: %r", event)
+        return None
+    return competition
+
+
+def is_completed(competition: dict) -> bool:
+    status = competition.get("status")
+    status_type = status.get("type") if isinstance(status, dict) else None
+    return isinstance(status_type, dict) and bool(status_type.get("completed"))
+
+
+def competitor_abbrev(competitor) -> str | None:
+    """A scoreboard competitor's team abbreviation (Sleeper style), or None if it's missing."""
+    team = competitor.get("team") if isinstance(competitor, dict) else None
+    abbrev = team.get("abbreviation") if isinstance(team, dict) else None
+    return TEAM_ALIASES.get(abbrev, abbrev) if isinstance(abbrev, str) and abbrev else None
+
+
 def parse_completed_teams(data: dict) -> frozenset[str]:
     teams = set()
-    for event in data.get("events", []):
-        competition = event["competitions"][0]
-        if competition["status"]["type"].get("completed"):
-            for competitor in competition["competitors"]:
-                abbrev = competitor["team"]["abbreviation"]
-                teams.add(TEAM_ALIASES.get(abbrev, abbrev))
+    for event in data.get("events") or []:
+        competition = scoreboard_competition(event)
+        if competition is None or not is_completed(competition):
+            continue
+        for competitor in competition.get("competitors") or []:
+            abbrev = competitor_abbrev(competitor)
+            if abbrev:
+                teams.add(abbrev)
     return frozenset(teams)
 
 
