@@ -340,7 +340,7 @@ change. Without them, kickers and defenses use the plain matchup factor above.
 | Model | Features (`app/defense/features.py`, `app/kicker/features.py`) |
 |---|---|
 | DST | Opponent Vegas total (estimated when there's no line yet) and expected points-allowed score; point spread; opponent sack rate, pass-heavy play-calling, and pace; the expected opposing QB's sack and interception rates (with injuries); the defense's takeaways, QB hits, and passes defended; expected takeaways (both sides of the matchup combined); defenders out; wind |
-| Kicker | Team Vegas total; point spread (favorites kick more); FG accuracy (shrunk toward 85%) and PAT accuracy (toward 95%); share of 50+ yard attempts; kicker points the opponent allows; dome, wind, cold, altitude, home |
+| Kicker | Team Vegas total and point spread (both estimated the same way as for DST when there's no line yet; favorites kick more); FG accuracy (shrunk toward 85%) and PAT accuracy (toward 95%); share of 50+ yard attempts; kicker points the opponent allows; dome, wind, cold, altitude, home |
 
 Each training run prints out-of-sample backtests: fit on earlier seasons, score on the next.
 Mean absolute error per game (lower is better) and average weekly rank correlation (how well it
