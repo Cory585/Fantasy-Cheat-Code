@@ -113,6 +113,10 @@ def test_fantasy_points_allowed_skip_weeks_without_a_game_score(league_db):
     assert buf.summary.games == 5
     wr = next(f for f in buf.fantasy_allowed if f.position == "WR")
     assert wr.points_per_game == 13.0  # 5 games of 13 points, not 6 games' points over 5
+    # Position groups too: BUF's line gets 3 sacks a game.
+    dl = groups_of(buf)["DL"]
+    assert next(s for s in dl.stats if s.key == "sacks").value == 3.0
+    assert dl.players[0].games == 5 and dl.players[0].stats["sacks"] == 15
 
 
 def test_league_lists_every_team_best_first(league_db):

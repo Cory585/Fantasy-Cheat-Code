@@ -207,12 +207,12 @@ class LeagueDefenses:
         self.players: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
         group_of = {pos: g.key for g in GROUPS for pos in g.positions}
         placeholders = ",".join("?" * len(DEFENSIVE_POSITIONS))
-        for gsis, team, name, position, stats in conn.execute(
-                f"SELECT gsis_id, team, name, position, stats FROM player_week_stats "  # noqa: S608 - only "?" placeholders
+        for gsis, team, week, name, position, stats in conn.execute(
+                f"SELECT gsis_id, team, week, name, position, stats FROM player_week_stats "  # noqa: S608 - only "?" placeholders
                 f"WHERE season = ? AND season_type = 'REG' AND position IN ({placeholders})",
                 (s, *sorted(DEFENSIVE_POSITIONS))):
-            if team not in self.teams:
-                continue
+            if (team, week) not in counted:
+                continue  # like the fantasy points below: only weeks in the team's game count
             line = json.loads(stats)
             entry = self.players[(team, group_of[position])].setdefault(
                 gsis, {"name": name, "position": position, "games": 0, "stats": dict.fromkeys(PLAYER_STATS, 0.0)})
