@@ -294,3 +294,27 @@ def test_write_cache_refuses_a_much_smaller_cache_unless_forced(tmp_path):
     assert len(load_player_cache(path)) == 5
     write_cache(path, many[:1], SEASON, WEEKS, ScoringFormat.PPR, force=True)
     assert len(load_player_cache(path)) == 1
+
+
+def test_build_players_ignores_a_non_numeric_sleeper_espn_id():
+    sleeper_players = {
+        "10": {"full_name": "Bad Id", "position": "QB", "team": "KC", "espn_id": "not-a-number"},
+        "11": {"full_name": "Good Id", "position": "QB", "team": "BUF", "espn_id": "4242"},
+    }
+    players = build_players(sleeper_players, {"10": 100.0, "11": 90.0}, EspnIndex([]), {})
+    by_id = {p.id: p for p in players}
+    assert by_id["10"].espn_id is None
+    assert by_id["11"].espn_id == 4242
+
+
+def test_espn_projections_skips_malformed_players():
+    teams = {12: ProTeam("KC", 10)}
+    good = {"id": 1, "fullName": "Good", "defaultPositionId": 1, "proTeamId": 12, "stats": [espn_stat(10, 20.0)]}
+    players = [
+        "not a dict",
+        {"fullName": "No Id", "defaultPositionId": 1, "proTeamId": 12},
+        {"id": "abc", "fullName": "Bad Id", "defaultPositionId": 1, "proTeamId": 12},
+        good,
+    ]
+    [projection] = espn_projections(players, teams, SEASON, WEEKS, ScoringFormat.PPR)
+    assert projection.espn_id == 1 and projection.points == 20.0

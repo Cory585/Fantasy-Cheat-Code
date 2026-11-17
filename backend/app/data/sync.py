@@ -100,6 +100,17 @@ class EspnIndex:
         return fallback
 
 
+def _int_id(value, source: str, name: str) -> int | None:
+    """`value` as an int, or None (logged) when a provider sends something that isn't a number."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        log.warning("Ignoring non-numeric %s id %r for %s", source, value, name or "an unnamed player")
+        return None
+
+
 def _full_name(raw: dict) -> str:
     return raw.get("full_name") or f"{raw.get('first_name', '')} {raw.get('last_name', '')}".strip()
 
@@ -126,7 +137,7 @@ def build_players(
         position = sleeper.POSITION_MAP[raw["position"]]
         team = raw["team"]
         name = _full_name(raw)
-        espn_id = int(raw["espn_id"]) if raw.get("espn_id") else None
+        espn_id = _int_id(raw.get("espn_id"), "Sleeper espn_id", name)
 
         sources: dict[str, float] = {}
         weekly: dict[int, dict[str, float]] = {}
@@ -177,8 +188,15 @@ def espn_projections(
 ) -> list[EspnProjection]:
     projections = []
     for p in espn_players:
+        if not isinstance(p, dict):
+            log.warning("Skipping malformed ESPN player entry: %r", p)
+            continue
         position = espn.POSITION_MAP.get(p.get("defaultPositionId"))
         if position is None:
+            continue
+        espn_id = _int_id(p.get("id"), "ESPN player", p.get("fullName", ""))
+        if espn_id is None:
+            log.warning("Skipping ESPN player with no usable id: %s", p.get("fullName") or "unnamed")
             continue
         team = teams.get(p.get("proTeamId"))
         weekly = espn.weekly_points(
@@ -187,7 +205,7 @@ def espn_projections(
         )
         projections.append(
             EspnProjection(
-                espn_id=p["id"],
+                espn_id=espn_id,
                 name=p.get("fullName", ""),
                 position=position,
                 team=team.abbrev if team else None,
