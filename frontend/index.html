@@ -105,7 +105,7 @@
             <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
         </div>
-        <ul class="roster" aria-live="polite"></ul>
+        <ul class="roster"></ul>
         <p class="side-total"></p>
       </article>
 
@@ -136,14 +136,17 @@
             <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
         </div>
-        <ul class="roster" aria-live="polite"></ul>
+        <ul class="roster"></ul>
         <p class="side-total"></p>
       </article>
     </section>
 
-    <section class="result" id="result" aria-live="polite">
+    <section class="result" id="result">
       <p class="result-empty">Add at least one player to each side to see who wins the trade.</p>
     </section>
+
+    <!-- One line for screen readers when the trade changes; the result itself isn't a live region. -->
+    <p class="visually-hidden" id="trade-announce" role="status"></p>
 
     <div class="actions">
       <span id="share-status" class="share-status" role="status"></span>

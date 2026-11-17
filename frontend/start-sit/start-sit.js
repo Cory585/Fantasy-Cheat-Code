@@ -28,6 +28,8 @@
     fromTeam: $("ss-from-team"),
     quick: $("ss-quick"),
     lineup: $("ss-lineup"),
+    resultAnnounce: $("ss-result-announce"),
+    lineupAnnounce: $("ss-lineup-announce"),
     league: $("ss-league"),
     fromTeamLabel: $("from-team-label"),
   };
@@ -205,7 +207,21 @@
     renderResult();
   }
 
+  // A one-line summary for screen readers, read from what a section just rendered: its
+  // heading and the line under it, or its message. Runs after the render finishes.
+  function announceAfterRender(section, region) {
+    queueMicrotask(() => {
+      const heading = section.querySelector("h2");
+      const line = heading
+        ? [heading.textContent, heading.parentElement.querySelector(".ss-badge, .section-note")?.textContent]
+        : [section.querySelector("p")?.textContent];
+      const text = line.filter(Boolean).join(". ");
+      if (region.textContent !== text) region.textContent = text;
+    });
+  }
+
   function renderResult() {
+    announceAfterRender(els.result, els.resultAnnounce);
     const a = state.analysis;
     if (state.error) {
       els.result.replaceChildren(el("p", "result-error", state.error));
@@ -405,6 +421,7 @@
   }
 
   function renderLineup() {
+    announceAfterRender(els.lineup, els.lineupAnnounce);
     if (!state.leaguesLoaded) {
       els.lineup.replaceChildren(el("p", "result-empty", "Loading your leagues…"));
       return;

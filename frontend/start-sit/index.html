@@ -121,7 +121,7 @@
             aria-label="Search players to compare" autocomplete="off" spellcheck="false">
           <ul class="search-results" id="ss-results" role="listbox" aria-label="Matching players" hidden></ul>
         </div>
-        <ul class="ss-chosen" id="ss-chosen" aria-label="Players being compared" aria-live="polite"></ul>
+        <ul class="ss-chosen" id="ss-chosen" aria-label="Players being compared"></ul>
         <div class="ss-from-team" id="ss-from-team" hidden>
           <p class="ss-from-team-label" id="from-team-label">From your team</p>
           <ul class="ss-quick" id="ss-quick" aria-labelledby="from-team-label"></ul>
@@ -129,8 +129,11 @@
       </div>
     </section>
 
-    <section class="result compare-only" id="ss-result" aria-live="polite" aria-busy="false"></section>
-    <section class="result lineup-only" id="ss-lineup" aria-live="polite" aria-busy="false"></section>
+    <section class="result compare-only" id="ss-result" aria-busy="false"></section>
+    <section class="result lineup-only" id="ss-lineup" aria-busy="false"></section>
+    <!-- One line for screen readers when a result changes; the result sections aren't live regions. -->
+    <p class="visually-hidden compare-only" id="ss-result-announce" role="status"></p>
+    <p class="visually-hidden lineup-only" id="ss-lineup-announce" role="status"></p>
   </main>
 
   <script src="/theme.js"></script>

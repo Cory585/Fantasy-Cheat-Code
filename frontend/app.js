@@ -236,6 +236,11 @@ function teamName(side) {
   return sideEl(side).querySelector(".team-name").value.trim() || `Team ${side.toUpperCase()}`;
 }
 
+// A one-line summary for screen readers (this element is the live region, not the result).
+function announce(text) {
+  document.getElementById("trade-announce").textContent = text;
+}
+
 // ---------- Shareable links ----------
 // The trade lives in the URL hash, e.g. #a=9221,7564&b=6794&an=Aces&teams=10&slots=QB1.RB2...
 
@@ -621,6 +626,7 @@ function renderAnalysis(analysis) {
       for each player's remaining opponents.</p>`;
   result.querySelector(".verdict h2").textContent = headline;
   result.querySelector(".verdict p").textContent = detail;
+  announce(`${headline}. ${detail}`);
   result.querySelector(".endzone-a span").textContent = teamName("a");
   result.querySelector(".endzone-b span").textContent = teamName("b");
   result.querySelector(".field").setAttribute("role", "img");
@@ -719,6 +725,7 @@ function addPlayer(side, id) {
   sideEl(side).querySelector(".player-search").value = "";
   searches[side].setOpen(false);
   render();
+  announce(`Added ${state.players.get(id).name} to ${teamName(side)}.`);
 }
 
 function removePlayer(side, id) {
@@ -726,6 +733,7 @@ function removePlayer(side, id) {
   // Keep keyboard focus in the side the player was removed from.
   sideEl(side).querySelector(".player-search").focus();
   render();
+  announce(`Removed ${state.players.get(id)?.name || "player"} from ${teamName(side)}.`);
 }
 
 function swapSides() {
@@ -733,11 +741,13 @@ function swapSides() {
   const [nameA, nameB] = SIDES.map((s) => sideEl(s).querySelector(".team-name"));
   [nameA.value, nameB.value] = [nameB.value, nameA.value];
   render();
+  announce("Swapped sides.");
 }
 
 function clearTrade() {
   state.sides = { a: [], b: [] };
   render();
+  announce("Cleared the trade.");
 }
 
 // ---------- Wiring ----------
