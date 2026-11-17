@@ -123,7 +123,7 @@ uvicorn app.main:app --reload
 Open http://localhost:8000 for the site and http://localhost:8000/docs for the interactive API
 docs. Without a sync the API uses fictional sample players; without a collect, values use
 provider projections only (no schedule, form, or ADP), and the defense breakdown page
-explains how to collect the data it needs.
+says its stats aren't available yet.
 
 ## API
 

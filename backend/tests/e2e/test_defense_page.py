@@ -38,7 +38,8 @@ def test_team_breakdown_and_league_table(page, defenses):
     assert not page.problems.errors
 
 
-def test_without_data_explains_how_to_collect(page):
+def test_without_data_says_stats_are_not_available_yet(page):
     page.goto("/defense/")
-    expect(page.locator("#df-error")).to_contain_text("python -m app.data.collect")
+    expect(page.locator("#df-error")).to_contain_text("Defense stats aren't available yet")
+    expect(page.locator("#df-error")).not_to_contain_text("python -m")
     expect(page.locator("#df-team")).to_be_hidden()
