@@ -527,6 +527,7 @@ def test_small_chunked_body_is_accepted():
 
 def test_chunked_body_stops_being_read_at_the_limit():
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor
 
     from app.main import LimitBodySize
 
@@ -546,7 +547,10 @@ def test_chunked_body_stops_being_read_at_the_limit():
         sent.append(message)
 
     scope = {"type": "http", "method": "POST", "path": "/", "headers": []}
-    asyncio.run(LimitBodySize(endpoint, max_bytes=10_000)(scope, receive, send))
+    # On a thread of its own: after the browser tests, Playwright's sync API leaves an event
+    # loop running on the main thread, and asyncio.run refuses to start inside it.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(asyncio.run, LimitBodySize(endpoint, max_bytes=10_000)(scope, receive, send)).result()
     assert reads == 11
     assert sent[0]["status"] == 413
 
