@@ -199,7 +199,7 @@
     }
     const fromHue = hue, fromSat = sat, start = performance.now();
     const tick = (now) => {
-      const t = clamp01((now - start) / ms);
+      const t = reduceMotion.matches ? 1 : clamp01((now - start) / ms);
       const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
       setTint(fromHue + (toHue - fromHue) * e, fromSat + (jersey[1] - fromSat) * e);
       readInk();
@@ -343,12 +343,24 @@
           }))
       : Promise.resolve();
 
+  // Resolves once the user doesn't ask for reduced motion (right away if they don't now).
+  const motionAllowed = () =>
+    reduceMotion.matches
+      ? new Promise((resolve) =>
+          reduceMotion.addEventListener("change", function on() {
+            if (!reduceMotion.matches) {
+              reduceMotion.removeEventListener("change", on);
+              resolve();
+            }
+          }))
+      : Promise.resolve();
+
   // Step the fade in chunky increments so it reads as a dither dissolve, not a blend.
   function fade(from, to) {
     return new Promise((resolve) => {
       const start = performance.now();
       const tick = (now) => {
-        const t = clamp01((now - start) / FADE_MS);
+        const t = reduceMotion.matches ? 1 : clamp01((now - start) / FADE_MS);
         level = from + (to - from) * Math.round(t * FADE_STEPS) / FADE_STEPS;
         render();
         if (t < 1) requestAnimationFrame(tick);
@@ -397,15 +409,18 @@
       tintTo(list[current.index].team, 0);
       level = 1;
       render();
-      return;
+    } else {
+      await visible();
+      tintTo(list[current.index].team, FADE_MS);
+      await fade(0, 1);
     }
-    await visible();
-    tintTo(list[current.index].team, FADE_MS);
-    await fade(0, 1);
     while (list.length > 1) {
+      // With reduced motion the current star stays put until motion is allowed again.
+      await motionAllowed();
       // Load the next headshot during the hold, so the switch starts right on time.
       const [next] = await Promise.all([loadNext(list, current.index + 1), wait(HOLD_MS)]);
       if (!next) return;
+      await motionAllowed();
       await visible();
       // The background hue glides to the next jersey across the whole switch: while this
       // star dissolves out, through the gap, and as the next one dissolves in.
