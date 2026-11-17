@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -73,7 +75,9 @@ def test_failed_switch_puts_the_select_back(page, defenses):
     expect(page.locator("#team-select")).to_have_value("NYJ")
 
 
-def test_without_data_explains_how_to_collect(page):
+def test_without_data_says_so(page):
     page.goto("/defense/")
-    expect(page.locator("#df-error")).to_contain_text("python -m app.data.collect")
+    # The API's wording: the old developer instruction, or the newer "aren't available yet".
+    expect(page.locator("#df-error")).to_contain_text(
+        re.compile(r"python -m app\.data\.collect|Defense stats aren't available yet"))
     expect(page.locator("#df-team")).to_be_hidden()
