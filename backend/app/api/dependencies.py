@@ -169,6 +169,8 @@ class ReloadingPlayerData:
             # Keep serving the previous data if the new file can't be read.
             log.error("Couldn't load player cache %s: %s", self._cache_path, error)
             if self._repo is not None:
+                # Remember the broken file's version, so it isn't re-read on every request.
+                self._versions = versions
                 return
             players = None
         if players is None:

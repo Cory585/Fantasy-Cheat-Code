@@ -205,6 +205,21 @@ def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     assert data.current()[0] is sample
 
 
+def test_a_broken_cache_is_read_once_not_on_every_request(tmp_path, monkeypatch):
+    from app.api import dependencies
+
+    path = tmp_path / "players.json"
+    data = dependencies.ReloadingPlayerData(path)
+    data.current()
+    path.write_text("{not json", encoding="utf-8")
+    reads = []
+    real = dependencies.load_player_cache
+    monkeypatch.setattr(dependencies, "load_player_cache", lambda p: (reads.append(1), real(p))[1])
+    for _ in range(3):
+        data.current()
+    assert len(reads) == 1
+
+
 def test_a_file_deleted_while_checking_for_changes_is_treated_as_missing(tmp_path, monkeypatch):
     from pathlib import Path
 
