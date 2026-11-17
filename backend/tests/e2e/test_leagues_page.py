@@ -125,6 +125,20 @@ def test_profile_holds_at_most_ten_leagues(page, key):
     expect(page.locator(".league-full")).to_contain_text(f"limit of {MAX_LEAGUES} leagues")
 
 
+def test_league_errors_read_as_plain_language(page, key):
+    page.route("**/leagues", lambda route: route.fulfill(status=502, body="Bad gateway"))
+    page.goto("/profile/")
+    expect(page.locator(".result-error")).to_have_text(
+        "Your leagues can't be loaded or saved right now. Try again in a moment.")
+    page.unroute("**/leagues")
+    page.route("**/leagues", lambda route: route.fulfill(
+        status=503, content_type="application/json",
+        body='{"detail": "Leagues are being moved. Back soon.", "code": "leagues_unavailable"}'))
+    page.reload()
+    expect(page.locator(".result-error")).to_have_text("Leagues are being moved. Back soon.")
+    assert "HTTP" not in page.locator("main").inner_text()
+
+
 def test_rate_limited_changes_explain_the_wait(page, key):
     original = limiter.rules
     limiter.rules = [rule for rule in original if rule.name != "league-changes"] + [

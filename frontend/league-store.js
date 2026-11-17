@@ -128,9 +128,11 @@ window.LeagueStore = (() => {
     if (body && body.code === "league_conflict") {
       return "This league was changed in another tab or on another device. Reload to see the latest version.";
     }
-    if (body && typeof body.detail === "string") return body.detail;
+    // The server's own explanation, when it sent one.
+    if (body && typeof body.detail === "string" && body.detail.trim()) return body.detail.trim();
     if (response.status === 422) return "That league couldn't be saved: check its name, spots, and roster.";
-    return `The server returned HTTP ${response.status}.`;
+    if (response.status >= 500) return "Your leagues can't be loaded or saved right now. Try again in a moment.";
+    return "Something went wrong with your leagues. Reload the page and try again.";
   }
 
   // ---------- Versions ----------
