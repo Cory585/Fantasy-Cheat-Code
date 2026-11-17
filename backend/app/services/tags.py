@@ -32,8 +32,8 @@ MIN_GAMES = 3
 MIN_TARGETS = 15
 RECENT_GAMES = 3  # for hot/cold streaks and rising snaps
 TRENDING_CHANGE = 0.25  # ESPN's daily change in rostered %, in points
-INJURY_STATUSES = {"Q": "Questionable", "D": "Doubtful", "O": "Out", "IR": "Injured reserve",
-                   "PUP": "PUP list", "SUS": "Suspended", "NA": "Not active"}
+# The codes the sync stores; app.data.sync.INJURY_CODES maps Sleeper's other statuses to O or IR.
+INJURY_STATUSES = {"Q": "Questionable", "D": "Doubtful", "O": "Out", "IR": "Injured reserve"}
 
 
 def _tag(key, label, category, positions, description):

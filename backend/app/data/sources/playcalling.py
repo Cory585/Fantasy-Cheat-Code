@@ -57,11 +57,6 @@ def _team(value: str) -> str:
     return TEAM_ALIASES.get(value, value)
 
 
-def parse_play_by_play(text: str) -> list[dict]:
-    """One row per (game, offense) with summed play-calling and efficiency counts."""
-    return parse_play_by_play_tables(text)[0]
-
-
 USAGE_COUNTS = (
     "targets", "targets_left", "targets_middle", "targets_right", "air_yards", "deep_targets",
     "behind_los_targets", "red_zone_targets", "end_zone_targets", "third_down_targets",

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.api import defenses, draft, errors, leagues, live_draft, meta, players, start_sit, tags, tiers, trades
 from app.api.errors import error_response
@@ -15,6 +16,10 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 app = FastAPI(title=settings.app_name, version=settings.version)
 errors.install(app)
+
+# Compress JSON and the static site (/players is a few hundred KB). Starlette leaves
+# text/event-stream alone, so the live draft's events still stream as they happen.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Requests are small (a trade is a few dozen ids); anything bigger is a mistake or abuse.
 MAX_BODY_BYTES = 256 * 1024

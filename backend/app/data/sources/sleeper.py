@@ -45,16 +45,6 @@ class SleeperSource:
         params = [("season_type", "regular")] + [("position[]", p) for p in POSITION_MAP]
         return self._client.get_json(f"{PROJECTIONS_API}/{season}/{week}", params=params)
 
-    def ros_projections(
-        self,
-        season: int,
-        weeks: range,
-        scoring: ScoringFormat,
-        played_first_week: frozenset[str] = frozenset(),
-    ) -> dict[str, float]:
-        """Sum of weekly projected points per Sleeper player_id over `weeks`."""
-        return ros_totals(self.weekly_points(season, weeks, scoring, played_first_week))
-
     def weekly_points(
         self,
         season: int,

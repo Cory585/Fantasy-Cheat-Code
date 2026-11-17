@@ -103,6 +103,22 @@ def test_units_and_fantasy_points_allowed(league_db):
     assert buf.summary.points_allowed_rank == 1
 
 
+def test_fantasy_points_allowed_skip_weeks_without_a_game_score(league_db):
+    # The schedule lags the stats: week 6's player lines are in, its scores aren't.
+    conn = db.connect(league_db)
+    conn.execute("UPDATE games SET away_score = NULL, home_score = NULL WHERE season = 2025 AND week = 6")
+    conn.commit()
+    conn.close()
+    buf = DefenseBreakdowns(league_db).get().breakdown("BUF")
+    assert buf.summary.games == 5
+    wr = next(f for f in buf.fantasy_allowed if f.position == "WR")
+    assert wr.points_per_game == 13.0  # 5 games of 13 points, not 6 games' points over 5
+    # Position groups too: BUF's line gets 3 sacks a game.
+    dl = groups_of(buf)["DL"]
+    assert next(s for s in dl.stats if s.key == "sacks").value == 3.0
+    assert dl.players[0].games == 5 and dl.players[0].stats["sacks"] == 15
+
+
 def test_league_lists_every_team_best_first(league_db):
     summary = DefenseBreakdowns(league_db).get().league()
     assert [t.overall_rank for t in summary.teams] == sorted(t.overall_rank for t in summary.teams)

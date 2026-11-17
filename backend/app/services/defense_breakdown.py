@@ -176,9 +176,11 @@ class LeagueDefenses:
                 offense_against[(opponent, week)] = (dropbacks or 0, sacks or 0, ints or 0, epa or 0.0)
 
         self.teams: dict[str, _TeamSeason] = defaultdict(_TeamSeason)
+        counted: set[tuple[str, int]] = set()  # (team, week) games behind each team's game count
         for (team, week), line in lines.items():
             if (team, week) not in allowed:
                 continue
+            counted.add((team, week))
             t = self.teams[team]
             # Play-by-play sacks include team sacks the stat line (players' credited sacks) misses.
             against = offense_against.get((team, week))
@@ -205,12 +207,12 @@ class LeagueDefenses:
         self.players: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
         group_of = {pos: g.key for g in GROUPS for pos in g.positions}
         placeholders = ",".join("?" * len(DEFENSIVE_POSITIONS))
-        for gsis, team, name, position, stats in conn.execute(
-                f"SELECT gsis_id, team, name, position, stats FROM player_week_stats "  # noqa: S608 - only "?" placeholders
+        for gsis, team, week, name, position, stats in conn.execute(
+                f"SELECT gsis_id, team, week, name, position, stats FROM player_week_stats "  # noqa: S608 - only "?" placeholders
                 f"WHERE season = ? AND season_type = 'REG' AND position IN ({placeholders})",
                 (s, *sorted(DEFENSIVE_POSITIONS))):
-            if team not in self.teams:
-                continue
+            if (team, week) not in counted:
+                continue  # like the fantasy points below: only weeks in the team's game count
             line = json.loads(stats)
             entry = self.players[(team, group_of[position])].setdefault(
                 gsis, {"name": name, "position": position, "games": 0, "stats": dict.fromkeys(PLAYER_STATS, 0.0)})
@@ -218,13 +220,15 @@ class LeagueDefenses:
             for key, (_, fn) in PLAYER_STATS.items():
                 entry["stats"][key] += fn(line)
 
+        # Only weeks counted in the defense's games: player stats can arrive before the game's
+        # score does, and those points over too few games would inflate the per-game numbers.
         self.fantasy_allowed: dict[str, dict[str, float]] = {pos: defaultdict(float) for pos in FANTASY_POSITIONS}
-        for opponent, position, points in conn.execute(
-                "SELECT opponent, position, SUM(fantasy_points_ppr) FROM player_week_stats "
+        for opponent, week, position, points in conn.execute(
+                "SELECT opponent, week, position, SUM(fantasy_points_ppr) FROM player_week_stats "
                 "WHERE season = ? AND season_type = 'REG' AND position IN ('QB', 'RB', 'WR', 'TE') "
-                "GROUP BY opponent, position", (s,)):
-            if opponent in self.teams:
-                self.fantasy_allowed[position][opponent] = float(points or 0.0)
+                "GROUP BY opponent, week, position", (s,)):
+            if (opponent, week) in counted:
+                self.fantasy_allowed[position][opponent] += float(points or 0.0)
 
         self.info: dict[str, tuple] = {}
         try:

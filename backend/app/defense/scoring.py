@@ -1,8 +1,18 @@
-"""Standard fantasy scoring for team defense / special teams (DST)."""
+"""Standard fantasy scoring for team defense / special teams (DST).
+
+These are Sleeper's and Yahoo's default points-allowed tiers. ESPN's default tiers are on a
+smaller scale, so this isn't ESPN scoring.
+
+Caveat: these points are the DST model's target and the "actual" score of a played game, but
+the synced DST consensus projection averages Sleeper's and ESPN's projections, each in its own
+provider's scoring. A defense's projection and its actual points can therefore be on slightly
+different scales.
+"""
 
 
 def points_allowed_score(points_allowed: float) -> float:
-    """Standard points-allowed tiers (ESPN/Yahoo default)."""
+    """Points-allowed tiers (Sleeper and Yahoo default): 0 allowed = 10, 1-6 = 7, 7-13 = 4,
+    14-20 = 1, 21-27 = 0, 28-34 = -1, 35+ = -4."""
     if points_allowed <= 0:
         return 10
     if points_allowed <= 6:

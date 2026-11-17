@@ -10,7 +10,13 @@ python -m app.data.sync                         # current week -> week 18, PPR
 python -m app.data.sync --scoring half_ppr      # standard | half_ppr | ppr
 python -m app.data.sync --start-week 10 --end-week 18
 python -m app.data.sync --no-espn               # Sleeper projections only
+python -m app.data.sync --force                 # write even if far fewer players than the current cache
 ```
+
+The sync never replaces the cache with an empty one. It stops with an error when the start
+week is past the end week (for example, when Sleeper's current week is a playoff week). It also
+won't write a cache with under half the current cache's players unless you pass `--force`.
+Provider records that don't parse are logged and skipped.
 
 The running API picks up a new cache without a restart. If no cache exists (or it can't be
 read), the API falls back to the fictional sample players in `app/data/sample_players.py`, and
@@ -75,6 +81,9 @@ python -m app.data.collect --datasets player_week_stats,injuries
 Re-running replaces rows with the same key, so it's safe to run daily. `espn_market` keeps
 one snapshot per day, so trends in rostered % and ADP build up over time.
 
+A running API reloads once a collection finishes (each run is marked in `collection_runs`), not
+on every write while it's in progress, and keeps serving the previous data while it rebuilds.
+
 | Table | Source | What's in it |
 |---|---|---|
 | `teams` | ESPN sports API | Names, colors, logos |
@@ -88,7 +97,7 @@ one snapshot per day, so trends in rostered % and ADP build up over time.
 | `team_game_offense` | nflverse play-by-play | Per offense per game: neutral pass rate over expected (coaching tendency), plays, dropbacks, sacks taken, turnovers, EPA per dropback |
 | `player_game_usage` | nflverse play-by-play | Per player per game: targets by field location (left/middle/right), air yards, deep (20+), behind-the-line, red-zone, end-zone, and third-down targets; red-zone and goal-line carries |
 | `game_weather` | ESPN venues + [Open-Meteo](https://open-meteo.com) | Forecast temperature, wind, and precipitation for the 3 hours from kickoff, for unplayed games (Open-Meteo data is CC BY 4.0, free for non-commercial use) |
-| `collection_runs` | | When each dataset was last collected |
+| `collection_runs` | | When each dataset was last collected, and when the last whole run finished |
 
 ### Linking players across sources
 
@@ -126,7 +135,9 @@ All sources here are public APIs or published data files. No scraping is needed.
    schedule. The final projection is 70% provider projection and 30% this estimate
    (`FORM_WEIGHT`). The form estimate is capped at ±25% of the provider projection, because it
    can't see role changes like a starter returning from injury. Players listed Out or on IR,
-   and team defenses, use the provider projection only.
+   and team defenses, use the provider projection only. So do players without weekly
+   projections (a cache synced before they were stored): their total can't be cut to the
+   remaining weeks, so it isn't a fair cap for the form estimate.
 3. **Strength of schedule.** Each defense's fantasy points allowed per game to the position this
    season, relative to the league average and shrunk toward average for small samples, then
    averaged over the player's remaining opponents. Kickers use kicker points allowed (computed
@@ -220,9 +231,9 @@ The draft page can follow an ESPN league's draft as it happens (`app/api/live_dr
 
 | Endpoint | What it does |
 |---|---|
-| `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
+| `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year from August, last year before then; `LIVE_DRAFT_SEASON_MONTH` moves the cutover). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
 | `GET /draft/live/{session_id}` | The draft now: status (`pre_draft`, `in_progress`, `complete`), teams in draft order, rounds, and every pick so far matched to the player pool by ESPN id. |
-| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever a pick comes in, until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
+| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever the draft changes (a pick, a corrected pick, the draft order, a team name), until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
 | `DELETE /draft/live/{session_id}` | Ends the session and forgets the cookies. |
 
 ESPN has no official API; this reads the league endpoint the ESPN draft room uses (views
@@ -238,8 +249,13 @@ and light:
 - **Polling.** ESPN is read at most once per `LIVE_DRAFT_POLL_SECONDS` (default 4) per session,
   however many streams or tabs follow it. A stream runs for up to `LIVE_DRAFT_STREAM_HOURS`
   (default 1) before the browser reconnects, and stops as soon as its session ends.
-- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 500) sessions at once, and connecting
-  has its own rate limit bucket (below).
+- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 80) sessions at once, and connecting
+  has its own rate limit bucket (below). All sessions share one ESPN rate,
+  `LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND` (default 20), so keep the session cap at or below that
+  rate times the poll interval; a failed read is reused until the interval passes too. A session
+  can have at most `LIVE_DRAFT_STREAMS_PER_SESSION` (default 6) event streams open and a client
+  `LIVE_DRAFT_STREAMS_PER_CLIENT` (default 30); a stream over either cap gets a
+  `live_draft_too_many_streams` problem and ends, and the browser tries again later.
 
 The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
 page says the plan may not match.
@@ -334,7 +350,7 @@ change. Without them, kickers and defenses use the plain matchup factor above.
 | Model | Features (`app/defense/features.py`, `app/kicker/features.py`) |
 |---|---|
 | DST | Opponent Vegas total (estimated when there's no line yet) and expected points-allowed score; point spread; opponent sack rate, pass-heavy play-calling, and pace; the expected opposing QB's sack and interception rates (with injuries); the defense's takeaways, QB hits, and passes defended; expected takeaways (both sides of the matchup combined); defenders out; wind |
-| Kicker | Team Vegas total; point spread (favorites kick more); FG accuracy (shrunk toward 85%) and PAT accuracy (toward 95%); share of 50+ yard attempts; kicker points the opponent allows; dome, wind, cold, altitude, home |
+| Kicker | Team Vegas total and point spread (both estimated the same way as for DST when there's no line yet; favorites kick more); FG accuracy (shrunk toward 85%) and PAT accuracy (toward 95%); share of 50+ yard attempts; kicker points the opponent allows; dome, wind, cold, altitude, home |
 
 Each training run prints out-of-sample backtests: fit on earlier seasons, score on the next.
 Mean absolute error per game (lower is better) and average weekly rank correlation (how well it
@@ -523,7 +539,7 @@ stable for clients to branch on:
 Validation errors don't echo the submitted input back. Browsers that hit a missing page get
 `frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
 
-**Rate limits.** Per client IP, in memory (`app/api/ratelimit.py`):
+**Rate limits.** Per client IP (an IPv6 client by its /64 network), in memory (`app/api/ratelimit.py`):
 
 | Bucket | Applies to | Burst | Sustained |
 |---|---|---|---|

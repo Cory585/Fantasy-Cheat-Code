@@ -184,3 +184,42 @@ def test_nav_masthead_and_main_share_one_page_width(page):
     })""")
     assert {width for width, _ in boxes} == {"1120px"}, boxes
     assert len({left for _, left in boxes}) == 1, boxes
+
+
+def _player_pool_requests(page):
+    asked = []
+    page.on("request", lambda request: re.search(r"/players(\?|$)", request.url) and asked.append(request.url))
+    return asked
+
+
+@pytest.mark.parametrize("path", ["/", "/finder/", "/start-sit/", "/team/", "/tiers/", "/draft/", "/profile/",
+                                  "/defense/"])
+def test_pages_load_the_player_pool_once(page, path):
+    # The backdrop's star portrait and the page share one request.
+    asked = _player_pool_requests(page)
+    page.goto(path)
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("canvas.star-portrait")).to_have_count(1)
+    assert len(asked) == 1, asked
+
+
+def test_portrait_takes_the_jersey_color_and_the_page_keeps_its_own(page):
+    page.goto("/tiers/")
+    background = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    # The top star is Jahmyr Gibbs (DET): the portrait's dots switch to Detroit's hue.
+    expect(page.locator("canvas.star-portrait")).to_have_attribute("style", re.compile(r"--portrait-hue:\s*201\b"))
+    assert page.evaluate("document.documentElement.getAttribute('style')") is None
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == background
+    assert page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--land-hue').trim()") == "212"
+    assert page.problems.errors == []
+
+
+def test_data_saver_skips_the_portrait(page):
+    page.add_init_script("Object.defineProperty(navigator, 'connection', { value: { saveData: true } })")
+    asked = _player_pool_requests(page)
+    page.goto("/tiers/")  # needs no players of its own
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".backdrop .ridge")).to_have_count(5)  # the landscape still draws
+    expect(page.locator("canvas.star-portrait")).to_have_count(0)
+    assert asked == []
+    assert page.problems.errors == []

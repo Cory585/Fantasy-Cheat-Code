@@ -17,9 +17,9 @@ const state = {
 const MAX_RESULTS = 8;
 const MAX_PER_SIDE = 40; // matches the API's limit
 
-// Starting lineup slots per team (FLEX = RB/WR/TE). Matches the backend default.
-const DEFAULT_SLOTS = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
-const SLOT_LIMIT = 4;
+// Starting lineup slots per team, the same ones a saved league has (/league-store.js):
+// FLEX takes an RB, WR, or TE; SUPERFLEX also takes a QB. The trade API accepts all of them.
+const { SLOTS, DEFAULT_SLOTS, MAX_SLOT: SLOT_LIMIT } = window.LeagueStore;
 state.slots = { ...DEFAULT_SLOTS };
 
 function slotsSummary() {
@@ -31,7 +31,7 @@ function slotsSummary() {
 
 function renderLineupSettings() {
   const grid = document.getElementById("lineup-slots");
-  grid.replaceChildren(...Object.keys(DEFAULT_SLOTS).map((slot) => {
+  grid.replaceChildren(...SLOTS.map((slot) => {
     const row = document.createElement("div");
     row.className = "stepper";
     const label = document.createElement("span");
@@ -59,7 +59,7 @@ function renderLineupSettings() {
     return row;
   }));
   const summary = document.querySelector(".lineup-settings summary");
-  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  const custom = SLOTS.some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
   summary.textContent = custom ? "Starting lineup (custom)" : "Starting lineup";
 }
 
@@ -247,7 +247,7 @@ function writeUrl() {
     if (name && name !== `Team ${side.toUpperCase()}`) params.set(`${side}n`, name);
   }
   if (state.numTeams !== 12) params.set("teams", String(state.numTeams));
-  const custom = Object.keys(DEFAULT_SLOTS).some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
+  const custom = SLOTS.some((k) => state.slots[k] !== DEFAULT_SLOTS[k]);
   if (custom) params.set("slots", Object.entries(state.slots).map(([k, n]) => `${k}${n}`).join("."));
   const hash = params.toString();
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
@@ -275,7 +275,7 @@ function readUrl() {
   state.slots = { ...DEFAULT_SLOTS };
   for (const part of (params.get("slots") || "").split(".")) {
     const match = /^([A-Z]+)(\d)$/.exec(part);
-    if (match && match[1] in DEFAULT_SLOTS) state.slots[match[1]] = Math.min(SLOT_LIMIT, Number(match[2]));
+    if (match && SLOTS.includes(match[1])) state.slots[match[1]] = Math.min(SLOT_LIMIT, Number(match[2]));
   }
 }
 
