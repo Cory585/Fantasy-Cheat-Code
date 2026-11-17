@@ -63,8 +63,15 @@ def test_edit_does_not_overwrite_a_roster_saved_elsewhere(page):
     page.click('button[aria-label="Remove Sample QB Two"]')
     expect(page.locator("#save-status")).to_contain_text("changed in another tab or on another device")
     assert saved(page)["roster"] == ["wr1"]  # the other device's roster is kept
-    page.reload()
+    # The page switches to the other device's version, and the next edit saves on top of it.
     expect(page.locator(".team-item")).to_have_count(1)
+    expect(page.locator("#team-name-input")).to_have_value("Elsewhere")
+    search = page.locator("#team-search")
+    search.fill("Sample RB One")
+    search.press("Enter")
+    expect(page.locator(".team-item")).to_have_count(2)
+    expect(page.locator("#save-status")).not_to_contain_text("changed in another tab")
+    assert saved(page)["roster"] == ["wr1", "rb1"]
 
 
 def test_roster_is_grouped_and_removable(page):
