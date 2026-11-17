@@ -309,3 +309,23 @@ def record_run(conn: sqlite3.Connection, dataset: str, season: int, rows: int) -
         "collection_runs",
         [{"dataset": dataset, "season": season, "rows": rows, "ran_at": datetime.now(timezone.utc).isoformat()}],
     )
+
+
+# The collection_runs row (dataset, season) recording when the last whole collection finished.
+# The API reloads off it rather than off every commit, so it never serves a half-done collection.
+COMPLETED_RUN = ("*", 0)
+
+
+def record_completed_run(conn: sqlite3.Connection, rows: int) -> None:
+    """Mark a collection as finished (with the total rows it wrote)."""
+    record_run(conn, COMPLETED_RUN[0], COMPLETED_RUN[1], rows)
+
+
+def last_completed_run(conn: sqlite3.Connection) -> str | None:
+    """When the last whole collection finished (ISO timestamp), or None if none is recorded."""
+    try:
+        row = conn.execute("SELECT ran_at FROM collection_runs WHERE dataset = ? AND season = ?",
+                           COMPLETED_RUN).fetchone()
+    except sqlite3.OperationalError:  # a database from before collection_runs existed
+        return None
+    return row[0] if row else None
