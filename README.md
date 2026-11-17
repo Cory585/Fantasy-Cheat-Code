@@ -209,5 +209,5 @@ breakdown, and the test suite.
 
 ## Next steps
 
-- Lineup impact in the trade analyzer (`TradeAnalyzer._lineup_impact`, optimal lineup before and after).
+- Lineup impact in the trade analyzer: the optimal starting lineup before and after the trade, using `roster_ids`.
 - Draft guide that accounts for your roster so far.

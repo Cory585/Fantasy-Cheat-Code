@@ -81,25 +81,29 @@ def collect_dataset(
 def collect(datasets: list[str], seasons: list[int], conn) -> dict[str, int | Exception]:
     """Collect each dataset into the database. One failure doesn't stop the others.
 
-    Results are keyed "dataset:season".
+    Results are keyed "dataset:season". When it's done (even after failures) the run is marked
+    complete, which is what tells a running API to reload.
     """
     results: dict[str, int | Exception] = {}
     latest = max(seasons)
-    with RateLimitedClient(min_interval=settings.request_interval_seconds) as client:
-        for dataset in datasets:
-            for season in [latest] if dataset in SEASONLESS_DATASETS else sorted(seasons):
-                key = f"{dataset}:{season}"
-                log.info("Collecting %s (%s season)...", dataset, season)
-                try:
-                    result = collect_dataset(client, dataset, season)
-                    tables = result if isinstance(result, dict) else dict([result])
-                    count = sum(db.upsert(conn, table, rows) for table, rows in tables.items())
-                    db.record_run(conn, dataset, season, count)
-                    results[key] = count
-                    log.info("  %s: %d rows", key, count)
-                except Exception as error:  # noqa: BLE001 - report and continue with the rest
-                    log.error("  %s failed: %s", key, error)
-                    results[key] = error
+    try:
+        with RateLimitedClient(min_interval=settings.request_interval_seconds) as client:
+            for dataset in datasets:
+                for season in [latest] if dataset in SEASONLESS_DATASETS else sorted(seasons):
+                    key = f"{dataset}:{season}"
+                    log.info("Collecting %s (%s season)...", dataset, season)
+                    try:
+                        result = collect_dataset(client, dataset, season)
+                        tables = result if isinstance(result, dict) else dict([result])
+                        count = sum(db.upsert(conn, table, rows) for table, rows in tables.items())
+                        db.record_run(conn, dataset, season, count)
+                        results[key] = count
+                        log.info("  %s: %d rows", key, count)
+                    except Exception as error:  # noqa: BLE001 - report and continue with the rest
+                        log.error("  %s failed: %s", key, error)
+                        results[key] = error
+    finally:
+        db.record_completed_run(conn, sum(r for r in results.values() if isinstance(r, int)))
     return results
 
 

@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Path
+import hashlib
+
+from fastapi import APIRouter, Depends, Path, Request, Response
+from pydantic import TypeAdapter
 
 from app.api.errors import ApiError
 
@@ -15,13 +18,34 @@ router = APIRouter(prefix="/players", tags=["players"])
 # before it reaches a lookup or a log line.
 PLAYER_ID_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
 
+_PLAYER_LIST = TypeAdapter(list[Player])
+
+
+def _etag_matches(header: str | None, etag: str) -> bool:
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    # Weak comparison: a client may send the tag with or without the W/ prefix.
+    return any(tag.strip().removeprefix("W/") == etag.removeprefix("W/") for tag in header.split(","))
+
 
 @router.get("", response_model=list[Player])
 def list_players(
+    request: Request,
     position: Position | None = None,
     repo: PlayerRepository = Depends(get_player_repository),
-) -> list[Player]:
-    return repo.list(position)
+) -> Response:
+    """The player pool. Every page loads it, so it carries an ETag: send it back in
+    `If-None-Match` and an unchanged pool is a bodiless 304."""
+    body = _PLAYER_LIST.dump_json(repo.list(position))
+    # Weak, because GZipMiddleware may re-encode the body; the tag describes the content.
+    etag = f'W/"{hashlib.sha256(body).hexdigest()[:32]}"'
+    # no-cache: the browser keeps a copy but checks it on each use, so a new sync shows up at once.
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(body, media_type="application/json", headers=headers)
 
 
 @router.get("/{player_id}", response_model=Player)

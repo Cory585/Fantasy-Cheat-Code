@@ -107,6 +107,22 @@ def test_search_adds_players_with_the_keyboard(page):
     assert "b=" in page.url
 
 
+def test_enter_in_an_empty_search_adds_nobody(page):
+    page.goto("/")
+    search = page.locator('.side[data-side="a"] .player-search')
+    expect(search).to_be_enabled()
+    search.click()
+    search.press("Enter")
+    search.fill("Sample WR")
+    search.fill("")  # typed, then cleared
+    search.press("Enter")
+    expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(0)
+    # With an option picked from the list, Enter still adds it.
+    search.press("ArrowDown")
+    search.press("Enter")
+    expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(1)
+
+
 def test_past_byes_drop_off_once_the_current_week_is_known(page):
     held = []
     page.route("**/meta", lambda route: held.append(route))
@@ -120,3 +136,34 @@ def test_past_byes_drop_off_once_the_current_week_is_known(page):
         route.fulfill(status=200, content_type="application/json", body=json.dumps(meta))
     expect(rb3).not_to_contain_text("bye week")
     expect(page.locator(".roster-item", has_text="Sample WR Two")).to_contain_text("bye week 10")
+
+
+def test_lineup_settings_match_saved_leagues_and_the_api_accepts_them(page):
+    # The trade page offers the same spots as a saved league: SUPERFLEX, up to 5 of each.
+    answers = []
+
+    def answered(response):
+        if response.url.endswith("/trades/analyze"):
+            answers.append((response.status, response.request.post_data_json["league"]["roster_slots"]))
+
+    page.on("response", answered)
+    page.goto("/#a=qb1&b=qb2&slots=SUPERFLEX5")
+    expect(page.locator(".tr-why-side")).to_have_count(2)
+    page.click(".lineup-settings summary")
+    expect(page.locator(".lineup-settings summary")).to_have_text("Starting lineup (custom)")
+    expect(page.locator('#lineup-slots [aria-label="SUPERFLEX starters"]')).to_have_text("5")
+    expect(page.locator('#lineup-slots [aria-label="More SUPERFLEX starters"]')).to_be_disabled()
+    page.click('#lineup-slots [aria-label="More QB starters"]')
+    page.click('#lineup-slots [aria-label="More QB starters"]')
+    page.click('#lineup-slots [aria-label="More QB starters"]')
+    page.click('#lineup-slots [aria-label="More QB starters"]')
+    expect(page.locator('#lineup-slots [aria-label="QB starters"]')).to_have_text("5")
+    expect(page.locator('#lineup-slots [aria-label="More QB starters"]')).to_be_disabled()
+    for _ in range(50):
+        if any(slots.get("QB") == 5 for _, slots in answers):
+            break
+        page.wait_for_timeout(100)
+    assert answers and all(status == 200 for status, _ in answers), answers
+    assert answers[-1][1]["SUPERFLEX"] == 5 and answers[-1][1]["QB"] == 5
+    expect(page.locator(".result-error")).to_have_count(0)
+    expect(page.locator(".tr-why-side")).to_have_count(2)

@@ -13,20 +13,22 @@ import asyncio
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_live_drafts, get_player_repository
 from app.api.errors import ApiError
+from app.api.ratelimit import client_address
 from app.config import settings
 from app.data.repository import PlayerRepository
-from app.data.sources.espn_draft import EspnCredentials, LeagueNotFound, LeaguePrivate
+from app.data.sources.espn_draft import EspnCredentials, EspnDraft, LeagueNotFound, LeaguePrivate
 from app.models.live_draft import LiveDraft, LiveDraftRequest, LiveDraftSession
-from app.services.live_draft import LiveDrafts, Session, TooManySessions, to_live_draft
+from app.services.live_draft import LiveDrafts, Session, TooManySessions, default_season, to_live_draft
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,17 @@ PRIVATE = ("espn_private_league",
 NOT_FOUND = ("espn_league_not_found", "ESPN has no league with that id for that season.")
 UPSTREAM = ("espn_unavailable", "Couldn't read the draft from ESPN. Try again in a moment.")
 ENDED = ("live_draft_not_found", "That live draft session has ended. Connect the league again.")
+TOO_MANY_STREAMS = ("live_draft_too_many_streams",
+                    "This draft is open in too many tabs. Close one and this one will pick up.")
+
+# Reads of a session's draft wait on ESPN (and on the shared ESPN rate), so they get their
+# own threads: a backlog of them can't hold up connecting a league or anything else that
+# uses the default executor.
+_snapshot_threads = ThreadPoolExecutor(max_workers=64, thread_name_prefix="live-draft")
+
+
+async def _snapshot(drafts: LiveDrafts, session: Session) -> EspnDraft:
+    return await asyncio.get_running_loop().run_in_executor(_snapshot_threads, drafts.snapshot, session)
 
 
 def _espn_error(error: Exception) -> ApiError:
@@ -63,7 +76,7 @@ def _session(drafts: LiveDrafts, session_id: str) -> Session:
 async def start_live_draft(body: LiveDraftRequest, drafts: Drafts, players: Players) -> LiveDraftSession:
     """Start following a league's draft. Public leagues need only the league id."""
     credentials = EspnCredentials(espn_s2=body.espn_s2, swid=body.swid) if body.espn_s2 and body.swid else None
-    season = body.season or date.today().year
+    season = body.season or default_season(date.today(), settings.live_draft_season_month)
     try:
         session, draft = await asyncio.to_thread(drafts.create, body.league_id, season, credentials)
     except TooManySessions:
@@ -78,7 +91,7 @@ async def start_live_draft(body: LiveDraftRequest, drafts: Drafts, players: Play
 async def get_live_draft(session_id: SessionId, drafts: Drafts, players: Players) -> LiveDraft:
     session = _session(drafts, session_id)
     try:
-        draft = await asyncio.to_thread(drafts.snapshot, session)
+        draft = await _snapshot(drafts, session)
     except (LeaguePrivate, LeagueNotFound, httpx.HTTPError, ValueError) as error:
         raise _espn_error(error) from None
     return to_live_draft(draft, players.list(), session.updated_at)
@@ -97,17 +110,34 @@ def _event(name: str, data: dict | str) -> str:
 
 @router.get("/{session_id}/events", response_class=StreamingResponse,
             responses={200: {"content": {"text/event-stream": {}}}})
-async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players) -> StreamingResponse:
-    """A `draft` event (the LiveDraft JSON) now and whenever a pick comes in or the status
-    changes; `problem` events ({code, detail}) when ESPN can't be read. The stream ends once
-    the draft is complete, the cookies stop working, the session ends, or it has run its
-    maximum length."""
+async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Players,
+                            request: Request) -> StreamingResponse:
+    """A `draft` event (the LiveDraft JSON) now and whenever the draft changes (a pick, a
+    corrected pick, the draft order, a team's name, the status); `problem` events ({code,
+    detail}) when ESPN can't be read. The stream ends once the draft is complete, the cookies
+    stop working, the session ends, or it has run its maximum length.
+
+    A session, and a client, can only have so many streams open at once; one over the cap
+    gets a `live_draft_too_many_streams` problem and ends, and the browser retries later."""
     session = _session(drafts, session_id)
     pool = players.list()
     deadline = time.monotonic() + settings.live_draft_stream_hours * 3600
+    client = client_address(request, settings.trust_proxy, settings.trusted_proxy_hops)
 
     async def stream():
         yield f"retry: {int(drafts.poll_seconds * 1000)}\n\n"
+        # Counted here rather than before responding, so the count is always released: the
+        # finally runs however the stream ends, including the browser going away.
+        if not drafts.open_stream(session, client):
+            yield _event("problem", {"code": TOO_MANY_STREAMS[0], "detail": TOO_MANY_STREAMS[1]})
+            return
+        try:
+            async for chunk in follow():
+                yield chunk
+        finally:
+            drafts.close_stream(session, client)
+
+    async def follow():
         last = None
         while True:
             # Disconnecting (or expiry) ends the stream too, so ESPN stops being read with the cookies.
@@ -115,7 +145,7 @@ async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Play
                 yield _event("problem", {"code": ENDED[0], "detail": ENDED[1]})
                 return
             try:
-                draft = await asyncio.to_thread(drafts.snapshot, session)
+                draft = await _snapshot(drafts, session)
             except (LeaguePrivate, LeagueNotFound) as error:
                 api_error = _espn_error(error)
                 yield _event("problem", {"code": api_error.code, "detail": api_error.detail})
@@ -124,9 +154,9 @@ async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Play
                 api_error = _espn_error(error)
                 yield _event("problem", {"code": api_error.code, "detail": api_error.detail})
             else:
-                key = (draft.status, len(draft.picks), draft.picks[-1].overall if draft.picks else 0)
-                if key != last:
-                    last = key
+                # Any change counts: a new pick, a corrected one, the draft order being set, a renamed team.
+                if draft != last:
+                    last = draft
                     yield _event("draft", to_live_draft(draft, pool, session.updated_at).model_dump_json())
                 else:
                     yield ": waiting\n\n"  # keeps proxies from closing an idle stream

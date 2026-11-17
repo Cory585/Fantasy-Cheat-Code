@@ -26,16 +26,7 @@ const els = {
   credit: $("profile-credit"),
 };
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-const { el } = window.PlayerUI;
-
-function svg(tag, attrs = {}, text) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-  if (text != null) node.textContent = text;
-  return node;
-}
+const { el, svg } = window.PlayerUI;
 
 function formatStat(value) {
   if (value == null) return "–";

@@ -126,3 +126,16 @@ def test_fetch_raises_other_errors():
 def test_fetch_rejects_a_bad_league_id():
     with pytest.raises(ValueError):
         source(lambda request: httpx.Response(200)).draft(2026, "../777")
+
+
+@pytest.mark.parametrize("body", [
+    {"draftDetail": "drafting"},
+    {"draftDetail": {"picks": ["not a pick"]}},
+    {"settings": ["not", "an", "object"]},
+    {"settings": {"draftSettings": 5}},
+    {"settings": {"rosterSettings": {"lineupSlotCounts": [1, 2]}}},
+    {"draftDetail": {"picks": [{"playerId": 5, "overallPickNumber": "one"}]}},
+])
+def test_fetch_turns_an_unexpected_response_shape_into_a_value_error(body):
+    with pytest.raises(ValueError):
+        source(lambda request: httpx.Response(200, json=body)).draft(2026, "777")

@@ -25,7 +25,7 @@ import numpy as np
 
 from app.config import DATA_DIR, settings
 from app.defense.model import RidgeModel, evaluate
-from app.defense.train import choose_alpha, first_season_with_prior, to_arrays
+from app.defense.train import backtest_rows, choose_alpha, first_season_with_prior, played_rows, to_arrays
 from app.kicker.features import EXPECTED_SIGNS, FEATURES, KickerFeatureBuilder
 
 log = logging.getLogger(__name__)
@@ -99,16 +99,19 @@ def backtest(rows, test_season: int) -> dict:
 
 
 def train(conn: sqlite3.Connection, seasons: list[int]) -> tuple[RidgeModel, list[dict]]:
-    rows = [r for r in KickerFeatureBuilder(conn).rows(seasons) if r.target is not None]
+    builder = KickerFeatureBuilder(conn)
+    rows = played_rows(builder, seasons)
     if not rows:
         raise RuntimeError("No played games with data. Run `python -m app.data.collect --seasons 2022-2026` first.")
     played_seasons = sorted({r.season for r in rows})
-    backtests = [backtest(rows, s) for s in played_seasons[1:]]
+    backtests = [backtest(backtest_rows(builder, seasons, s), s) for s in played_seasons[1:]]
     alpha = choose_alpha(rows, FEATURES, EXPECTED_SIGNS)
     model = fit(rows, played_seasons[-1], alpha, metadata={
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "seasons": played_seasons,
         "games": len(rows),
+        # The line estimate the training rows used, so predictions use the same one.
+        "line_coefs": list(builder.line_coefs()),
         "backtests": backtests,
     })
     return model, backtests

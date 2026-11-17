@@ -3,7 +3,8 @@
 // My team: the roster and lineup spots for one of the profile's leagues (see
 // /league-store.js), picked at the top. Changes save to the server a moment after the last
 // edit; the start/sit page reads the same leagues to set a lineup. With no leagues yet, the
-// first change makes one.
+// first change makes one. Nothing can be edited until the leagues have loaded, so an edit
+// can't make a second league for someone who already has one.
 
 (() => {
   const { el, loadPlayers, loadMeta, avatar, profileUrl, createSearch, POSITIONS } = window.PlayerUI;
@@ -35,6 +36,10 @@
   let players = new Map();
   let clearArmed = null;
   let firstWeek = 1; // byes before the current week are already past
+  let loaded = false; // the leagues have loaded; until then nothing can be edited
+  let loadError = null; // why the leagues didn't load (shown with a Try again button)
+  let profile = null; // the profile key the leagues were loaded under; saves go there
+  let playersReady = false;
 
   // ---------- Saving ----------
 
@@ -55,6 +60,7 @@
   }
 
   function persist(message = "Saved.") {
+    if (!loaded) return;
     dirty = true;
     doneMessage = message;
     say("Saving…");
@@ -67,13 +73,14 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     if (inFlight) await inFlight;
-    if (!dirty) return;
+    if (!dirty || !loaded) return;
     dirty = false;
     const body = snapshot();
     const editing = team;
+    const options = { key: profile };
     inFlight = (async () => {
       try {
-        const saved = editing.id ? await Store.save(editing.id, body) : await Store.create(body);
+        const saved = editing.id ? await Store.save(editing.id, body, options) : await Store.create(body, options);
         if (!editing.id) {
           editing.id = saved.id;
           Store.setActive(saved.id);
@@ -117,11 +124,19 @@
       + "Showing the latest version.", true);
   }
 
-  // Leaving with an edit still waiting: send it anyway.
+  // Leaving with an edit still waiting: send it anyway. The first edit of a profile with no
+  // leagues makes its league here, unless that league is already being made (its id isn't
+  // known yet, so there's nothing to save the edit to).
   function flushOnLeave() {
-    if (!dirty || !team.id) return;
-    dirty = false;
-    Store.save(team.id, snapshot(), { keepalive: true }).catch(() => {});
+    if (!dirty || !loaded) return;
+    const options = { keepalive: true, key: profile };
+    if (team.id) {
+      dirty = false;
+      Store.save(team.id, snapshot(), options).catch(() => {});
+    } else if (!inFlight) {
+      dirty = false;
+      Store.create(snapshot(), options).catch(() => {});
+    }
   }
 
   // ---------- Which league ----------
@@ -146,6 +161,19 @@
   }
 
   function renderPicker() {
+    if (loadError) {
+      const retry = el("button", "btn btn-quiet btn-small", "Try again");
+      retry.type = "button";
+      retry.id = "leagues-retry";
+      retry.addEventListener("click", () => loadLeagues(true));
+      els.picker.replaceChildren(
+        el("p", "result-error", `Couldn't load your leagues: ${loadError} Editing is off until they load.`), retry);
+      return;
+    }
+    if (!loaded) {
+      els.picker.replaceChildren(el("p", "section-note", "Loading your leagues…"));
+      return;
+    }
     if (!leagues.length) {
       const note = el("p", "section-note", "Your first change here makes a league. Add more on your ");
       const link = el("a", null, "profile");
@@ -182,7 +210,7 @@
       minus.dataset.slot = slot;
       minus.dataset.step = "-1";
       minus.setAttribute("aria-label", `Fewer ${slot} spots`);
-      minus.disabled = team.slots[slot] <= 0;
+      minus.disabled = !loaded || team.slots[slot] <= 0;
       const count = el("output", "stepper-count", String(team.slots[slot]));
       count.setAttribute("aria-label", `${slot} spots`);
       const plus = el("button", "stepper-btn", "+");
@@ -190,7 +218,7 @@
       plus.dataset.slot = slot;
       plus.dataset.step = "1";
       plus.setAttribute("aria-label", `More ${slot} spots`);
-      plus.disabled = team.slots[slot] >= Store.MAX_SLOT;
+      plus.disabled = !loaded || team.slots[slot] >= Store.MAX_SLOT;
       row.append(label, minus, count, plus);
       return row;
     }));
@@ -201,6 +229,7 @@
   }
 
   function changeSlot(slot, step) {
+    if (!loaded) return;
     team.slots[slot] = Math.min(Store.MAX_SLOT, Math.max(0, team.slots[slot] + step));
     renderSteppers();
     // Re-rendering replaced the button; keep focus on its replacement for keyboard users.
@@ -217,7 +246,7 @@
     const missing = team.roster.length - known.length;
     els.count.textContent = `${team.roster.length} of ${Store.MAX_ROSTER} players`
       + (missing && players.size ? ` (${missing} no longer in the player pool)` : "");
-    els.clear.disabled = team.roster.length === 0;
+    els.clear.disabled = !loaded || team.roster.length === 0;
     if (!team.roster.length) {
       els.roster.replaceChildren(el("p", "roster-empty", "No players yet. Search above to add your roster."));
       return;
@@ -256,7 +285,7 @@
   }
 
   function addPlayer(player) {
-    if (team.roster.includes(player.id) || team.roster.length >= Store.MAX_ROSTER) return;
+    if (!loaded || team.roster.includes(player.id) || team.roster.length >= Store.MAX_ROSTER) return;
     team.roster.push(player.id);
     persist(`Added ${player.name}.`);
     renderRoster();
@@ -264,6 +293,7 @@
   }
 
   function removePlayer(id) {
+    if (!loaded) return;
     const name = players.get(id)?.name || "player";
     team.roster = team.roster.filter((x) => x !== id);
     persist(`Removed ${name}.`);
@@ -337,20 +367,66 @@
     });
     window.addEventListener("pagehide", flushOnLeave);
     // Another tab changed the leagues: pick up their version, unless this one has unsaved edits.
+    // If it switched profiles, first save the edits here to the profile they were made in.
     Store.onChange(async () => {
-      if (dirty || inFlight) return;
+      if (!loaded) {
+        if (loadError) loadLeagues();
+        return;
+      }
+      if (Store.profileKey() !== profile) await flush();
+      else if (dirty || inFlight) return;
+      const key = Store.profileKey();
+      let result;
       try {
-        leagues = (await Store.list()).leagues;
+        result = await Store.list();
       } catch {
         return;
       }
+      if (dirty || inFlight || key !== Store.profileKey()) return; // a newer edit or switch; try again then
+      profile = key;
+      leagues = result.leagues;
       useLeague(leagues.find((x) => x.id === team.id) || Store.activeLeague(leagues));
     });
+  }
+
+  // Name, steppers, and search are off until the leagues have loaded (and, for the search,
+  // until there are players to find).
+  function renderEditing() {
+    els.name.disabled = !loaded;
+    els.reset.disabled = !loaded;
+    els.search.disabled = !loaded || !playersReady;
+    renderSteppers();
+    renderRoster();
+  }
+
+  async function loadLeagues(retrying = false) {
+    loadError = null;
+    renderPicker();
+    const key = Store.profileKey();
+    try {
+      leagues = (await Store.list()).leagues;
+    } catch (error) {
+      loadError = error.message;
+      renderPicker();
+      if (retrying) $("leagues-retry")?.focus();
+      return;
+    }
+    loaded = true;
+    profile = key;
+    useLeague(Store.activeLeague(leagues));
+    renderEditing();
+    if (!Store.isPersistent()) {
+      say("This browser isn't letting the page keep your profile key, so your team is only reachable until you leave.", true);
+    } else if (retrying) {
+      say("Leagues loaded.");
+      ($("league-select") || els.name).focus();
+    }
   }
 
   async function init() {
     bind();
     useLeague(null);
+    renderEditing();
     const search = createSearch({
       input: els.search,
       list: els.results,
@@ -360,20 +436,10 @@
       full: () => (team.roster.length >= Store.MAX_ROSTER
         ? `A roster can hold up to ${Store.MAX_ROSTER} players. Remove one to add another.` : null),
     });
-    const leaguesLoaded = Store.list().then(
-      (result) => {
-        leagues = result.leagues;
-        // An edit made before the leagues arrived belongs to a new league; keep it.
-        if (!dirty) useLeague(Store.activeLeague(leagues));
-        if (!Store.isPersistent()) {
-          say("This browser isn't letting the page keep your profile key, so your team is only reachable until you leave.", true);
-        }
-      },
-      (error) => say(`Couldn't load your leagues: ${error.message}`, true),
-    );
+    loadLeagues();
     try {
-      const [loaded, meta] = await Promise.all([loadPlayers(), loadMeta(), leaguesLoaded]);
-      players = loaded;
+      const [pool, meta] = await Promise.all([loadPlayers(), loadMeta()]);
+      players = pool;
       firstWeek = meta?.current_week ?? 1;
     } catch (error) {
       els.roster.replaceChildren(el("p", "result-error", error.message));
@@ -381,10 +447,10 @@
       return;
     }
     // The search stays disabled until there are players to find, so nothing typed is lost.
-    els.search.disabled = false;
+    playersReady = true;
     els.search.placeholder = "Search players or teams to add";
+    renderEditing();
     search.render();
-    renderRoster();
   }
 
   init();

@@ -11,10 +11,13 @@ Weather is averaged over the three hours from kickoff. Past games already have o
 temperature and wind in the nflverse schedule, so this only covers games not yet played.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
-from app.data.sources.espn import SITE_API, TEAM_ALIASES
+from app.data.sources.espn import SITE_API, competitor_abbrev, is_completed, scoreboard_competition
 from app.data.sources.http import RateLimitedClient
+
+log = logging.getLogger(__name__)
 
 GEOCODE_API = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_API = "https://api.open-meteo.com/v1/forecast"
@@ -79,22 +82,38 @@ def fetch_upcoming_weather(client: RateLimitedClient, season: int) -> list[dict]
 
 
 def parse_scoreboard_games(data: dict) -> list[dict]:
+    """Unplayed games on an ESPN scoreboard. Malformed events are logged and skipped."""
     games = []
     week = (data.get("week") or {}).get("number")
-    for event in data.get("events", []):
-        competition = event["competitions"][0]
-        if competition["status"]["type"].get("completed"):
+    for event in data.get("events") or []:
+        competition = scoreboard_competition(event)
+        if competition is None or is_completed(competition):
             continue
-        teams = {c["homeAway"]: c["team"]["abbreviation"] for c in competition["competitors"]}
-        venue = competition.get("venue") or {}
-        address = venue.get("address") or {}
+        kickoff = event.get("date")
+        try:
+            kickoff_dt = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
+        except (AttributeError, ValueError):
+            log.warning("Skipping ESPN event %s with a bad kickoff time %r", event.get("id"), kickoff)
+            continue
+        if kickoff_dt.tzinfo is None:
+            kickoff_dt = kickoff_dt.replace(tzinfo=timezone.utc)
+        if event.get("id") is None:
+            log.warning("Skipping ESPN event with no id at %s", kickoff)
+            continue
+        teams = {
+            c.get("homeAway"): competitor_abbrev(c)
+            for c in competition.get("competitors") or []
+            if isinstance(c, dict)
+        }
+        venue = competition.get("venue") if isinstance(competition.get("venue"), dict) else {}
+        address = venue.get("address") if isinstance(venue.get("address"), dict) else {}
         games.append({
             "espn_event_id": str(event["id"]),
             "week": week,
-            "away_team": TEAM_ALIASES.get(teams.get("away"), teams.get("away")),
-            "home_team": TEAM_ALIASES.get(teams.get("home"), teams.get("home")),
-            "kickoff": event["date"],
-            "kickoff_dt": datetime.fromisoformat(event["date"].replace("Z", "+00:00")),
+            "away_team": teams.get("away"),
+            "home_team": teams.get("home"),
+            "kickoff": kickoff,
+            "kickoff_dt": kickoff_dt,
             "venue": venue.get("fullName"),
             "city": address.get("city"),
             "state": address.get("state"),

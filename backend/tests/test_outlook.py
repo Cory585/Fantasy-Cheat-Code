@@ -46,9 +46,11 @@ def conn(tmp_path):
     return conn
 
 
-def player(pid, team, proj, espn_id=None, position=Position.RB, injury=None):
+def player(pid, team, proj, espn_id=None, position=Position.RB, injury=None, weekly=True):
+    # Weekly projections mean `proj` was summed over the remaining weeks (see season.rest_of_season).
     return Player(id=pid, name=pid, position=position, team=team, ros_projection=proj,
-                  espn_id=espn_id, injury_status=injury)
+                  espn_id=espn_id, injury_status=injury,
+                  weekly_projections={5: {"sleeper": proj / 2}, 6: {"sleeper": proj / 2}} if weekly else {})
 
 
 def build(conn, players, **kw):
@@ -102,6 +104,15 @@ def test_no_form_for_injured_unlinked_or_defense_players(conn):
     for pid in ("hurt", "unlinked", "dst"):
         assert out[pid].form_projection is None
         assert out[pid].adjusted_projection == 40
+
+
+def test_no_form_when_the_total_was_not_rebuilt_from_weekly_projections(conn):
+    # An old cache's synced total may still count played weeks, so it's no cap for form: clamping
+    # to it would cut the player's value. The total is used as it is.
+    a = build(conn, [player("a", "AAA", 400, espn_id=1, weekly=False)], form_weight=0.5)["a"]
+    assert a.recent_ppg == 20 and a.recent_games == 4  # form is still reported
+    assert a.form_projection is None
+    assert a.adjusted_projection == 400
 
 
 def test_defense_schedule_uses_opponent_scoring(conn):

@@ -100,6 +100,17 @@ class EspnIndex:
         return fallback
 
 
+def _int_id(value, source: str, name: str) -> int | None:
+    """`value` as an int, or None (logged) when a provider sends something that isn't a number."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        log.warning("Ignoring non-numeric %s id %r for %s", source, value, name or "an unnamed player")
+        return None
+
+
 def _full_name(raw: dict) -> str:
     return raw.get("full_name") or f"{raw.get('first_name', '')} {raw.get('last_name', '')}".strip()
 
@@ -126,7 +137,7 @@ def build_players(
         position = sleeper.POSITION_MAP[raw["position"]]
         team = raw["team"]
         name = _full_name(raw)
-        espn_id = int(raw["espn_id"]) if raw.get("espn_id") else None
+        espn_id = _int_id(raw.get("espn_id"), "Sleeper espn_id", name)
 
         sources: dict[str, float] = {}
         weekly: dict[int, dict[str, float]] = {}
@@ -177,8 +188,15 @@ def espn_projections(
 ) -> list[EspnProjection]:
     projections = []
     for p in espn_players:
+        if not isinstance(p, dict):
+            log.warning("Skipping malformed ESPN player entry: %r", p)
+            continue
         position = espn.POSITION_MAP.get(p.get("defaultPositionId"))
         if position is None:
+            continue
+        espn_id = _int_id(p.get("id"), "ESPN player", p.get("fullName", ""))
+        if espn_id is None:
+            log.warning("Skipping ESPN player with no usable id: %s", p.get("fullName") or "unnamed")
             continue
         team = teams.get(p.get("proTeamId"))
         weekly = espn.weekly_points(
@@ -187,7 +205,7 @@ def espn_projections(
         )
         projections.append(
             EspnProjection(
-                espn_id=p["id"],
+                espn_id=espn_id,
                 name=p.get("fullName", ""),
                 position=position,
                 team=team.abbrev if team else None,
@@ -198,6 +216,16 @@ def espn_projections(
     return projections
 
 
+class SyncError(Exception):
+    """The sync can't produce a usable cache; the existing cache is left in place."""
+
+
+# A new cache with fewer than this share of the current cache's players is refused (unless
+# forced), since a provider outage or a bad week range is far likelier than half the league
+# vanishing.
+MIN_CACHE_FRACTION = 0.5
+
+
 def sync(
     output: Path,
     scoring: ScoringFormat,
@@ -205,12 +233,19 @@ def sync(
     start_week: int | None = None,
     end_week: int = REGULAR_SEASON_END_WEEK,
     use_espn: bool = True,
+    force: bool = False,
 ) -> list[Player]:
+    """Raises SyncError, without touching `output`, when there is nothing worth writing."""
     with RateLimitedClient(min_interval=settings.request_interval_seconds) as client:
         sleeper_src = SleeperSource(client)
         state = sleeper_src.nfl_state()
         season = season or int(state["season"])
         start_week = start_week or max(int(state["week"]), 1)
+        if start_week > end_week:
+            raise SyncError(
+                f"Start week {start_week} is past end week {end_week}, so there are no weeks to project. "
+                "Pass --start-week and/or --end-week to pick a range."
+            )
         weeks = range(start_week, end_week + 1)
         log.info("Syncing %s season, weeks %d-%d, %s scoring", season, start_week, end_week, scoring.value)
 
@@ -237,7 +272,7 @@ def sync(
 
     players = build_players(sleeper_players, sleeper_ros, EspnIndex(espn_proj), bye_weeks, sleeper_weekly)
     write_cache(output, players, season=season, weeks=weeks, scoring=scoring,
-                season_start=season_start(state, season))
+                season_start=season_start(state, season), force=force)
     log.info("Wrote %d players to %s", len(players), output)
     return players
 
@@ -254,10 +289,21 @@ def season_start(state: dict, season: int) -> str | None:
 
 def write_cache(
     output: Path, players: list[Player], season: int, weeks: range, scoring: ScoringFormat,
-    season_start: str | None = None,
+    season_start: str | None = None, force: bool = False,
 ) -> None:
     """`season_start` is Sleeper's `season_start_date`; without a collected schedule, the API
-    counts the current week from it."""
+    counts the current week from it.
+
+    Raises SyncError instead of writing an empty cache, or (unless `force`) one with under
+    MIN_CACHE_FRACTION of the current cache's players, so the previous cache keeps serving."""
+    if not players:
+        raise SyncError(f"No players to write; keeping the existing cache at {output}.")
+    current = _cached_player_count(output)
+    if not force and current and len(players) < current * MIN_CACHE_FRACTION:
+        raise SyncError(
+            f"Only {len(players)} players, down from {current} in {output}; keeping the existing cache. "
+            "Pass --force to write it anyway."
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "synced_at": datetime.now(timezone.utc).isoformat(),
@@ -273,6 +319,15 @@ def write_cache(
     os.replace(tmp, output)
 
 
+def _cached_player_count(path: Path) -> int:
+    """How many players the cache at `path` holds (0 if it's missing or unreadable)."""
+    try:
+        players = json.loads(path.read_text(encoding="utf-8")).get("players")
+    except (OSError, ValueError, AttributeError):
+        return 0
+    return len(players) if isinstance(players, list) else 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -283,10 +338,16 @@ def main() -> None:
     parser.add_argument("--end-week", type=int, default=REGULAR_SEASON_END_WEEK)
     parser.add_argument("--no-espn", action="store_true", help="Use Sleeper projections only")
     parser.add_argument("--output", type=Path, default=settings.player_cache_path)
+    parser.add_argument("--force", action="store_true",
+                        help="Write the cache even if it has far fewer players than the current one")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    sync(args.output, args.scoring, args.season, args.start_week, args.end_week, use_espn=not args.no_espn)
+    try:
+        sync(args.output, args.scoring, args.season, args.start_week, args.end_week,
+             use_espn=not args.no_espn, force=args.force)
+    except SyncError as error:
+        raise SystemExit(f"Sync failed: {error}") from None
 
 
 if __name__ == "__main__":

@@ -21,8 +21,9 @@
     keyInput: $("key-input"),
     keyError: $("key-input-error"),
   };
+  els.keySwitch = els.keyForm.querySelector('button[type="submit"]');
 
-  const { el } = window.PlayerUI;
+  const { el, plural } = window.PlayerUI;
   const state = { leagues: [], max: Store.MAX_LEAGUES, loaded: false, busy: false, renaming: null };
   let removeArmed = null; // { id, timer }
 
@@ -47,7 +48,6 @@
 
   const isFull = () => state.leagues.length >= state.max;
   const starters = (league) => Object.values(league.slots).reduce((a, b) => a + b, 0);
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   function updated(iso) {
     const date = new Date(iso);
@@ -220,9 +220,15 @@
     });
   }
 
+  // Loads can overlap (a key switch here plus a change in another tab); only the latest one
+  // may show its leagues, or an older profile's list could replace the current one.
+  let loadId = 0;
+
   async function load() {
+    const id = ++loadId;
     try {
       const { leagues, max } = await Store.list();
+      if (id !== loadId) return;
       state.leagues = leagues;
       state.max = max;
       state.loaded = true;
@@ -230,6 +236,7 @@
         say("This browser isn't letting the page keep your profile key, so these leagues are only reachable until you leave.", true);
       }
     } catch (error) {
+      if (id !== loadId) return;
       els.list.replaceChildren(el("li", "result-error", error.message));
       els.count.textContent = "";
       return;
@@ -243,36 +250,65 @@
     els.key.value = Store.profileKey();
   }
 
+  function setKeyShown(shown) {
+    els.key.type = shown ? "text" : "password";
+    els.keyShow.textContent = shown ? "Hide" : "Show";
+    els.keyShow.setAttribute("aria-pressed", String(shown));
+  }
+
+  function revealKey() {
+    setKeyShown(true);
+    els.key.select();
+  }
+
+  let switchArmed = null; // the key a switch is waiting to be confirmed for
+
+  function disarmSwitch() {
+    switchArmed = null;
+    els.keySwitch.textContent = "Switch profile";
+  }
+
   function bindKey() {
-    els.keyShow.addEventListener("click", () => {
-      const showing = els.key.type === "text";
-      els.key.type = showing ? "password" : "text";
-      els.keyShow.textContent = showing ? "Show" : "Hide";
-      els.keyShow.setAttribute("aria-pressed", String(!showing));
-    });
+    els.keyShow.addEventListener("click", () => setKeyShown(els.key.type !== "text"));
     els.keyCopy.addEventListener("click", async () => {
       if (await window.PlayerUI.copyText(Store.profileKey())) {
         say("Profile key copied. Paste it on this page on your other device.");
       } else {
         // Show and select the key so it can be copied by hand.
-        els.key.type = "text";
-        els.key.select();
+        revealKey();
         say("Copy the selected key.");
       }
     });
+    els.keyInput.addEventListener("input", disarmSwitch);
     els.keyForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const key = els.keyInput.value.trim();
       if (key === Store.profileKey()) {
+        disarmSwitch();
         say("That's already this browser's profile.");
         return;
       }
-      if (!Store.useProfileKey(key)) {
+      if (!Store.isValidKey(key)) {
+        disarmSwitch();
         fieldError(els.keyInput, els.keyError, "That doesn't look like a profile key. Copy it again from the other device.");
         return;
       }
       fieldError(els.keyInput, els.keyError);
+      // The current key is the only way back to this profile's leagues, so show it and ask
+      // first (unless there's nothing here to lose).
+      const nothingToLose = state.loaded && !state.leagues.length;
+      if (!nothingToLose && switchArmed !== key) {
+        switchArmed = key;
+        els.keySwitch.textContent = "Confirm switch";
+        revealKey();
+        say("Switching leaves this profile's leagues behind. Copy its key (shown above) first if you want to come back "
+          + "to them, then press Confirm switch.");
+        return;
+      }
+      disarmSwitch();
+      Store.useProfileKey(key);
       els.keyInput.value = "";
+      setKeyShown(false);
       showKey();
       say("Switched profiles.");
       state.loaded = false;

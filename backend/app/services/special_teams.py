@@ -60,6 +60,11 @@ KICKER_LABELS = {
     "altitude": "altitude",
     "home": "home field",
 }
+KICKER_LABELS_WITHOUT_LINE = {
+    **KICKER_LABELS,
+    "team_implied_points": "team's projected points",
+    "team_favored_by": "projected point spread",
+}
 
 
 @dataclass(frozen=True)
@@ -77,10 +82,6 @@ class TeamModels:
     # team -> week -> the defense's actual fantasy points (played games)
     dst_actual: dict[str, dict[int, float]] = field(default_factory=dict)
 
-    @property
-    def available(self) -> bool:
-        return bool(self.dst or self.kicker or self.dst_actual)
-
 
 def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | None,
                      kicker_path: Path | None) -> TeamModels:
@@ -89,6 +90,9 @@ def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | Non
     builder = KickerFeatureBuilder(conn, first_season=season - 1)
     models = TeamModels()
 
+    # Games without a Vegas line use the line estimate each model was trained with. Models saved
+    # before it was recorded fit it on the loaded games instead.
+    builder.use_line_coefs(_line_coefs(dst_model))
     for row in builder.dst_rows([season], include_unplayed=True):
         if row.target is not None:
             models.dst_actual.setdefault(row.defense, {})[row.week] = round(row.target, 2)
@@ -96,8 +100,10 @@ def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | Non
             labels = DST_LABELS_WITHOUT_LINE if row.context.get("line_estimated") else DST_LABELS
             models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, labels)
     if kicker_model is not None:
+        builder.use_line_coefs(_line_coefs(kicker_model))
         for row in builder.rows([season], include_unplayed=True):
-            models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, KICKER_LABELS)
+            labels = KICKER_LABELS_WITHOUT_LINE if row.context.get("line_estimated") else KICKER_LABELS
+            models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, labels)
     return models
 
 
@@ -109,6 +115,14 @@ def _load_model(path: Path | None) -> RidgeModel | None:
     except (OSError, ValueError, KeyError) as error:
         log.error("Couldn't load model %s: %s", path, error)
         return None
+
+
+def _line_coefs(model: RidgeModel | None) -> list[float] | None:
+    """The line-estimate coefficients saved with the model, if it has usable ones."""
+    coefs = model.metadata.get("line_coefs") if model is not None else None
+    if isinstance(coefs, list) and len(coefs) == 4 and all(isinstance(v, (int, float)) for v in coefs):
+        return coefs
+    return None
 
 
 def _estimate(model: RidgeModel, row, labels: dict[str, str]) -> ModelEstimate:

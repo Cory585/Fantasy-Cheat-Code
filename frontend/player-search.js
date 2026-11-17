@@ -17,6 +17,15 @@ window.PlayerUI = (() => {
     return node;
   }
 
+  // An SVG element with attributes (and text, as text), for the hand-drawn charts.
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs = {}, text) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
   // ---------- Requests and errors ----------
   // Every page turns a failed request into the same kind of plain-language message, and
   // shows it in the same error block with a "Try again" button (errorBlock below).
@@ -152,8 +161,17 @@ window.PlayerUI = (() => {
     return () => clearInterval(timer);
   }
 
+  // The player pool as a Map by id. One request per page, shared by every caller (the page
+  // and backdrop.js's portrait); each caller gets its own Map. A failure is retried next call.
+  let playersRequest = null;
   async function loadPlayers() {
-    const players = await getJson("/players", "Couldn't load players");
+    if (!playersRequest) {
+      playersRequest = getJson("/players", "Couldn't load players");
+      playersRequest.catch(() => {
+        playersRequest = null;
+      });
+    }
+    const players = await playersRequest;
     return new Map(players.map((p) => [p.id, p]));
   }
 
@@ -270,6 +288,9 @@ window.PlayerUI = (() => {
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
+  // "1 player", "2 players".
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
   const profileUrl = (id) => `/player/?id=${encodeURIComponent(id)}`;
 
   function normalize(text) {
@@ -379,7 +400,10 @@ window.PlayerUI = (() => {
         if (full()) return;
         // Search again: the players may have arrived since the list was last drawn.
         state.results = search();
-        const choice = state.results[state.active >= 0 ? state.active : 0];
+        // With nothing typed and no option highlighted, Enter picks nothing (rather than the
+        // top-projected player).
+        const index = state.active >= 0 ? state.active : input.value.trim() ? 0 : -1;
+        const choice = state.results[index];
         if (choice) pick(choice);
       } else if (event.key === "Escape" && state.open) {
         event.preventDefault();
@@ -391,7 +415,7 @@ window.PlayerUI = (() => {
   }
 
   return {
-    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
+    POSITIONS, el, svg, ordinal, plural, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
     loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
   };
 })();

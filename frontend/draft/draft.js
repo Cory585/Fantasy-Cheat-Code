@@ -560,6 +560,12 @@ function livePicksMade() {
   return picks.length ? picks[picks.length - 1].overall : 0;
 }
 
+// What the plan is built from, so a corrected pick or the draft order being set refreshes it too.
+function livePlanInputs() {
+  const picks = state.live?.draft?.picks || [];
+  return JSON.stringify([state.teams, state.slot, state.rounds, picks.map((p) => [p.overall, p.player_id])]);
+}
+
 function liveTeamSlot() {
   const team = state.live?.draft?.teams.find((t) => t.id === state.live.teamId);
   return team?.slot ?? null;
@@ -641,7 +647,7 @@ function renderLive() {
 function applyDraft(draft) {
   const live = state.live;
   const first = !live.draft;
-  const before = livePicksMade();
+  const before = livePlanInputs();
   live.draft = draft;
   if (!draft.teams.some((t) => t.id === live.teamId)) {
     live.teamId = (draft.teams.find((t) => t.slot === state.slot) || draft.teams[0])?.id ?? null;
@@ -657,7 +663,7 @@ function applyDraft(draft) {
   }
   if (draft.status === "complete") closeStream();
   if (first) update();
-  else if (livePicksMade() !== before) update({ keepPlan: true });
+  else if (livePlanInputs() !== before) update({ keepPlan: true });
 }
 
 function closeStream() {
