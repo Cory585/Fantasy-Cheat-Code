@@ -81,8 +81,7 @@ def test_nav_groups_tabs_and_marks_the_current_one(page, path):
 DEVELOPER_TEXT = re.compile(r"python -m|Still to build|data collector|backend is running|data sync", re.IGNORECASE)
 
 
-# Not /defense/: with no defense data, its error is the API's own message.
-@pytest.mark.parametrize("path", PAGES)
+@pytest.mark.parametrize("path", [*PAGES, "/defense/"])
 def test_pages_show_no_developer_instructions(page, path):
     page.goto(path)
     page.wait_for_load_state("networkidle")
