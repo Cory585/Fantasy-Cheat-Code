@@ -190,3 +190,14 @@ def test_pages_load_the_player_pool_once(page, path):
     page.wait_for_load_state("networkidle")
     expect(page.locator("canvas.star-portrait")).to_have_count(1)
     assert len(asked) == 1, asked
+
+
+def test_data_saver_skips_the_portrait(page):
+    page.add_init_script("Object.defineProperty(navigator, 'connection', { value: { saveData: true } })")
+    asked = _player_pool_requests(page)
+    page.goto("/tiers/")  # needs no players of its own
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".backdrop .ridge")).to_have_count(5)  # the landscape still draws
+    expect(page.locator("canvas.star-portrait")).to_have_count(0)
+    assert asked == []
+    assert page.problems.errors == []

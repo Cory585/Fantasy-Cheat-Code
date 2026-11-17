@@ -146,6 +146,8 @@
 
   // Only the main tool pages (the ones with a masthead) get the portrait.
   if (!document.querySelector(".masthead")) return;
+  // It costs the player pool and a headshot every minute, so skip it when data is precious.
+  if (navigator.connection?.saveData) return;
 
   const COLS = 180, ROWS = 131; // dither resolution (ESPN headshots are 350x254)
   const FADE_MS = 1600, HOLD_MS = 60000, GAP_MS = 800, FADE_STEPS = 16; // each star stays about a minute
