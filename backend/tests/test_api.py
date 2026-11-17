@@ -124,6 +124,53 @@ def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path,
     assert data.current()[0].get("x1").ros_projection == 60.0
 
 
+def test_week_state_is_worked_out_once_a_day(tmp_path, monkeypatch):
+    from datetime import date
+
+    from app.api.dependencies import ReloadingPlayerData
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+    from app.services import season
+
+    path = tmp_path / "players.json"
+    write_cache(path, [Player(id="x1", name="A", position=Position.WR, team="KC", ros_projection=1.0)],
+                2026, range(10, 19), ScoringFormat.PPR)
+    calls = []
+    real = season.week_state
+    monkeypatch.setattr(season, "week_state", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    day = date(2026, 11, 11)
+    monkeypatch.setattr(season, "today", lambda: day)
+    data = ReloadingPlayerData(path)
+    for _ in range(5):
+        data.current()
+        data.matchups()
+    assert len(calls) == 1
+    day = date(2026, 11, 12)
+    data.current()
+    assert len(calls) == 2
+
+
+def test_players_and_outlooks_are_read_together_once_per_request(monkeypatch):
+    from app.api import dependencies
+
+    calls = []
+    monkeypatch.setattr(dependencies._data, "current", lambda: (calls.append(1), ("repo", {"o": 1}))[1])
+    app.dependency_overrides.pop(dependencies.get_player_repository, None)
+    app.dependency_overrides.pop(dependencies.get_outlooks, None)
+
+    from fastapi import Depends, FastAPI
+
+    probe = FastAPI()
+
+    @probe.get("/probe")
+    def both(repo=Depends(dependencies.get_player_repository), outlooks=Depends(dependencies.get_outlooks)):
+        return {"repo": repo, "outlooks": outlooks}
+
+    assert TestClient(probe).get("/probe").json() == {"repo": "repo", "outlooks": {"o": 1}}
+    assert len(calls) == 1
+
+
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     from app.api.dependencies import ReloadingPlayerData
 

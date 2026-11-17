@@ -3,6 +3,7 @@
 import logging
 import sqlite3
 import threading
+from datetime import date
 from pathlib import Path
 
 from fastapi import Depends
@@ -92,6 +93,8 @@ class ReloadingPlayerData:
         self._tags: dict[str, list[PlayerTag]] = {}
         self._players: list[Player] | None = None  # as synced; None with sample data
         self._as_of: calendar.WeekState | None = None  # where the season stood for the projections
+        # The week state for one day, so it's worked out once a day, not on every request.
+        self._state_cache: tuple[date, calendar.WeekState] | None = None
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
         with self._lock:
@@ -131,8 +134,14 @@ class ReloadingPlayerData:
             self._derive()
 
     def _week_state(self) -> calendar.WeekState:
-        return calendar.week_state(self._matchups, cache_weeks(self._meta), _season(self._meta),
-                                   parse_date(self._meta.get("season_start")))
+        """Where the season stands today. It only changes with the date or the data, so it's
+        cached for the day and cleared on reload."""
+        day = calendar.today()
+        if self._state_cache is None or self._state_cache[0] != day:
+            state = calendar.week_state(self._matchups, cache_weeks(self._meta), _season(self._meta),
+                                        parse_date(self._meta.get("season_start")), day)
+            self._state_cache = (day, state)
+        return self._state_cache[1]
 
     def _derive(self) -> None:
         """Rest-of-season projections, outlooks, and tags for the current week. Once the season
@@ -165,6 +174,7 @@ class ReloadingPlayerData:
             self._players = players
             self._meta = self._load_meta()
             self._matchups = self._load_matchups()
+            self._state_cache = None
             self._derive()
             log.info("Loaded %d players (%d with schedule/form outlooks) for week %d",
                      len(players), len(self._outlooks), self._as_of.week)
@@ -255,9 +265,17 @@ _data = ReloadingPlayerData(settings.player_cache_path, settings.database_path,
                             (settings.dst_model_path, settings.kicker_model_path))
 
 
-def get_player_repository() -> PlayerRepository:
+def get_player_data() -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
+    """The players and their outlooks, read together once per request, so both come from the
+    same week even if it turns over mid-request."""
+    return _data.current()
+
+
+def get_player_repository(
+    data: tuple[PlayerRepository, dict[str, PlayerOutlook]] = Depends(get_player_data),
+) -> PlayerRepository:
     """Synced Sleeper/ESPN data if `python -m app.data.sync` has been run, else sample data."""
-    return _data.current()[0]
+    return data[0]
 
 
 def get_data_source() -> str:
@@ -265,9 +283,11 @@ def get_data_source() -> str:
     return _data.source()
 
 
-def get_outlooks() -> dict[str, PlayerOutlook]:
+def get_outlooks(
+    data: tuple[PlayerRepository, dict[str, PlayerOutlook]] = Depends(get_player_data),
+) -> dict[str, PlayerOutlook]:
     """Schedule and form outlooks by player id (empty without a collected database)."""
-    return _data.current()[1]
+    return data[1]
 
 
 def get_adp() -> dict[int, float]:
