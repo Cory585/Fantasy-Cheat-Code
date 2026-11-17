@@ -18,6 +18,7 @@ const els = {
   legend: $("position-legend"),
   filter: $("position-filter"),
   planList: $("plan-list"),
+  planJump: $("plan-jump"),
   status: $("data-status"),
   tooltip: $("viz-tooltip"),
   liveForm: $("live-form"),
@@ -482,12 +483,26 @@ function targetItem(target, overall, dry = new Set()) {
   return item;
 }
 
+// A sticky row of links, one per pick card, so a long plan (15+ cards, very tall on a
+// phone) can be crossed in one tap.
+function renderPlanJump(picks) {
+  els.planJump.hidden = picks.length < 2;
+  els.planJump.replaceChildren(...picks.map(({ pick }) => {
+    const link = el("a", "plan-jump-chip", pick.label);
+    link.href = `#pick-${pick.overall}`;
+    link.setAttribute("aria-label", `Pick ${pick.label}, round ${pick.round}`);
+    return link;
+  }));
+}
+
 function renderPlan() {
   const plan = state.plan;
   if (!plan) {
+    renderPlanJump([]);
     if (!state.error) els.planList.replaceChildren(el("li", "plan-loading player-meta", "Loading your picks…"));
     return;
   }
+  renderPlanJump(plan.picks);
   if (!plan.picks.length && state.live) {
     els.planList.replaceChildren(el("li", "player-meta", "You've made all your picks."));
     return;
@@ -495,6 +510,8 @@ function renderPlan() {
   els.planList.replaceChildren(
     ...plan.picks.map(({ pick, targets, position_mix, picks_until_next, tier_alerts }, i) => {
       const card = el("li", "plan-pick");
+      card.id = `pick-${pick.overall}`;
+      card.tabIndex = -1; // the pick links move focus here
       const head = el("div", "plan-pick-head");
       head.append(el("strong", null, pick.label), el("span", null, `Round ${pick.round}, ${ordinal(pick.overall)} overall`));
       card.append(head, mixBar(position_mix, picks_until_next));
@@ -531,6 +548,7 @@ function renderPlan() {
 
 function renderError(error) {
   state.error = error;
+  renderPlanJump([]);
   els.planList.replaceChildren(errorBlock(error, () => update(), { tag: "li" }));
   els.status.textContent = ""; // the error block announces itself
 }
@@ -863,6 +881,18 @@ function init() {
     state.teams = Number(button.dataset.teams);
     state.slot = Math.min(state.slot, state.teams);
     update();
+  });
+  els.planJump.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href^='#pick-']");
+    const card = link && document.getElementById(link.hash.slice(1));
+    if (!card) return;
+    // Scroll here rather than leave it to the smooth-scroll library's anchor handling, which
+    // can aim from a stale position. Focus moves to the card so the keyboard follows.
+    event.preventDefault();
+    event.stopPropagation();
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    card.focus({ preventScroll: true });
   });
   els.slot.addEventListener("change", () => setSlot(Number(els.slot.value)));
   els.slotPrev.addEventListener("click", () => setSlot(state.slot - 1));

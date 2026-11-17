@@ -162,6 +162,40 @@ def test_rebuilding_the_board_does_not_fade_it_but_new_cards_still_appear(page):
     assert cards > 0
 
 
+def test_pick_links_jump_to_each_card(page):
+    page.set_viewport_size({"width": 390, "height": 800})
+    open_draft(page)
+    chips = page.locator("#plan-jump .plan-jump-chip")
+    expect(chips).to_have_count(15)
+    expect(chips.first).to_have_text("1.05")
+    expect(chips.nth(7)).to_have_text("8.08")
+    chips.nth(7).click()
+    card = page.locator("#pick-92")
+    expect(card.locator(".plan-pick-head strong")).to_have_text("8.08")
+    expect(card).to_be_focused()  # so the keyboard carries on from the card
+    expect(card).to_be_in_viewport()
+    # The links stay at the top of the screen, and the card lands just below them.
+    nav = page.locator("#plan-jump")
+    for _ in range(40):  # wait for the smooth scroll to settle
+        nav_box, card_box = nav.bounding_box(), card.bounding_box()
+        if abs(card_box["y"] - (nav_box["y"] + nav_box["height"])) < 24:
+            break
+        page.wait_for_timeout(100)
+    assert nav_box["y"] == 0
+    assert nav_box["y"] + nav_box["height"] <= card_box["y"] < nav_box["y"] + nav_box["height"] + 24
+    assert page.problems.errors == []
+
+
+def test_pick_links_hide_while_the_plan_is_unavailable(page):
+    open_draft(page)
+    expect(page.locator("#plan-jump")).to_be_visible()
+    page.route("**/draft/plan?*", lambda route: route.fulfill(
+        status=500, content_type="application/json", body='{"detail": "x", "code": "internal_error"}'))
+    page.select_option("#draft-slot", "9")
+    expect(page.locator(".error-block")).to_be_visible()
+    expect(page.locator("#plan-jump")).to_be_hidden()
+
+
 def test_names_with_markup_render_as_text(page):
     open_draft(page, "teams=4&slot=1&rounds=18")
     assert page.evaluate("window.__pwned") is None
