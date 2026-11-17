@@ -238,8 +238,10 @@ and light:
 - **Polling.** ESPN is read at most once per `LIVE_DRAFT_POLL_SECONDS` (default 4) per session,
   however many streams or tabs follow it. A stream runs for up to `LIVE_DRAFT_STREAM_HOURS`
   (default 1) before the browser reconnects, and stops as soon as its session ends.
-- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 500) sessions at once, and connecting
-  has its own rate limit bucket (below).
+- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 80) sessions at once, and connecting
+  has its own rate limit bucket (below). All sessions share one ESPN rate,
+  `LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND` (default 20), so keep the session cap at or below that
+  rate times the poll interval; a failed read is reused until the interval passes too.
 
 The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
 page says the plan may not match.
