@@ -37,6 +37,44 @@ def test_rate_limiter_no_wait_when_interval_passed():
     assert clock.sleeps == []
 
 
+def test_rate_limiter_reserves_consecutive_slots_for_waiting_callers():
+    # Three callers arrive at once (the clock doesn't move while they sleep): each gets
+    # the next slot, so call starts stay a full interval apart.
+    clock = FakeClock()
+    sleeps = []
+    limiter = RateLimiter(1.0, clock=clock, sleep=sleeps.append)
+    for _ in range(3):
+        limiter.wait()
+    assert sleeps == [pytest.approx(1.0), pytest.approx(2.0)]
+
+
+def test_rate_limiter_sleeps_without_holding_its_lock():
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    sleeps = []
+
+    def slow_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 1:
+            started.set()
+            release.wait(5)
+
+    clock = FakeClock()
+    limiter = RateLimiter(1.0, clock=clock, sleep=slow_sleep)
+    limiter.wait()  # takes slot 0
+    first = threading.Thread(target=limiter.wait)  # takes slot 1 and sleeps
+    first.start()
+    assert started.wait(5)
+    second = threading.Thread(target=limiter.wait)  # must not block behind the sleeper
+    second.start()
+    second.join(5)
+    assert not second.is_alive()
+    release.set()
+    first.join(5)
+    assert sleeps == [pytest.approx(1.0), pytest.approx(2.0)]
+
+
 def test_client_retries_429_then_succeeds():
     calls = {"n": 0}
 
