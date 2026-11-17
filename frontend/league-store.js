@@ -84,8 +84,10 @@ window.LeagueStore = (() => {
 
   // ---------- Requests ----------
 
-  async function call(method, path, body, { keepalive = false, headers = {} } = {}) {
-    const options = { method, headers: { "X-Profile-Key": profileKey(), ...headers }, keepalive };
+  // `key` sends the request under that profile instead of the current one: a page that loaded
+  // its leagues before another tab switched profiles keeps saving them where they live.
+  async function call(method, path, body, { keepalive = false, headers = {}, key = null } = {}) {
+    const options = { method, headers: { "X-Profile-Key": key || profileKey(), ...headers }, keepalive };
     if (body !== undefined) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(body);
@@ -222,8 +224,9 @@ window.LeagueStore = (() => {
     return { leagues, max: result.max_leagues ?? MAX_LEAGUES };
   }
 
-  async function create(league) {
-    const made = remember(await call("POST", "/leagues", body(league)));
+  // `options`: `keepalive` (for a save sent as the page closes) and `key` (see `call`), as for `save`.
+  async function create(league, options = {}) {
+    const made = remember(await call("POST", "/leagues", body(league), options));
     announce();
     return made;
   }
