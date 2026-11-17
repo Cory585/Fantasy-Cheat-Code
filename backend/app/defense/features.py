@@ -139,11 +139,13 @@ class DefenseFeatureBuilder:
         # Points scored/allowed per team-game.
         self.scored = defaultdict(dict)  # (season, team) -> week -> points scored
         self.allowed = defaultdict(dict)
-        self.coach = {}  # (season, team) -> head coach (from any game)
+        # (season, team) -> week -> head coach that game. By week, so the weeks before a
+        # mid-season firing keep the coach who was actually calling plays then.
+        self.coaches = defaultdict(dict)
         for g in self.games:
             for team, coach in ((g["away"], g["away_coach"]), (g["home"], g["home_coach"])):
                 if coach:
-                    self.coach[(g["season"], team)] = coach
+                    self.coaches[(g["season"], team)][g["week"]] = coach
             if g["away_score"] is None or g["home_score"] is None:
                 continue
             self.scored[(g["season"], g["away"])][g["week"]] = g["away_score"]
@@ -374,14 +376,23 @@ class DefenseFeatureBuilder:
                   if w < week and w in allowed]
         return sum(points) / len(points) if games and points else None
 
+    def coach(self, season, team, week) -> str | None:
+        """The team's head coach for its game in `week`, or its latest coach before then."""
+        by_week = self.coaches.get((season, team), {})
+        if week in by_week:
+            return by_week[week]
+        earlier = [w for w in by_week if w < week]
+        return by_week[max(earlier)] if earlier else None
+
     def _proe(self, season, team, week):
         """Neutral pass rate over expected, with the head coach's last season as the prior."""
         rows = self._before(self.offense.get((season, team), {}), week)
         oe_sum, oe_n = sum(r["oe_sum"] for r in rows), sum(r["oe_n"] for r in rows)
-        coach = self.coach.get((season, team))
+        coach = self.coach(season, team, week)
         prior = 0.0  # league average PROE is ~0 by construction
         if coach:
-            prev_team = next((t for (s_, t), c_ in self.coach.items() if s_ == season - 1 and c_ == coach), None)
+            prev_team = next((t for (s_, t), by_week in self.coaches.items()
+                              if s_ == season - 1 and coach in by_week.values()), None)
             if prev_team:
                 prev = list(self.offense.get((season - 1, prev_team), {}).values())
                 n = sum(r["oe_n"] for r in prev)
