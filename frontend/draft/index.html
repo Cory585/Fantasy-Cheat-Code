@@ -13,6 +13,7 @@
   <script src="/theme-boot.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#content">Skip to content</a>
   <nav class="site-nav" aria-label="Main">
     <div class="site-nav-inner">
       <a class="site-name" href="/">Fantasy Cheat Code</a>
@@ -53,7 +54,7 @@
     </div>
   </nav>
 
-  <header class="masthead">
+  <header class="masthead" id="content" tabindex="-1">
     <div class="masthead-title">
       <h1>Draft Masterclass</h1>
       <p class="lede">Choose your draft slot to see when you're on the clock and who should still be there each time.</p>
@@ -75,7 +76,7 @@
       </fieldset>
       <fieldset class="setup-group">
         <legend>Your pick</legend>
-        <div class="stepper">
+        <div class="step-control">
           <button type="button" class="btn btn-quiet step-btn" id="slot-prev" aria-label="Earlier pick">&#9664;</button>
           <select id="draft-slot" aria-label="Your draft slot"></select>
           <button type="button" class="btn btn-quiet step-btn" id="slot-next" aria-label="Later pick">&#9654;</button>
@@ -160,7 +161,7 @@
         </div>
         <ul class="position-legend" id="position-legend" aria-label="Position colors"></ul>
       </div>
-      <div class="draft-board" id="draft-board"></div>
+      <div class="draft-board" id="draft-board" data-no-appear></div>
     </section>
 
     <section class="draft-section" id="plan" aria-labelledby="plan-heading">
@@ -181,6 +182,7 @@
           <button type="button" data-position="DST">DST</button>
         </div>
       </div>
+      <nav class="plan-jump" id="plan-jump" aria-label="Jump to a pick" hidden></nav>
       <ol class="plan-list" id="plan-list"></ol>
     </section>
   </main>

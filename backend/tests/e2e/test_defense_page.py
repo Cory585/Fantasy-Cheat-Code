@@ -38,6 +38,16 @@ def test_team_breakdown_and_league_table(page, defenses):
     assert not page.problems.errors
 
 
+def test_picking_a_team_from_the_table_moves_focus_to_its_heading(page, defenses):
+    page.goto("/defense/?team=BUF")
+    expect(page.locator("#df-team-name")).to_have_text("Buffalo Bills")
+    page.focus("#df-table-body button[data-team='NYJ']")
+    page.keyboard.press("Enter")
+    heading = page.locator("#df-team-name")
+    expect(heading).to_have_text("NYJ")
+    expect(heading).to_be_focused()
+
+
 def test_switching_teams_dims_the_old_one_while_loading(page, defenses):
     page.goto("/defense/?team=BUF")
     expect(page.locator("#df-team-name")).to_have_text("Buffalo Bills")

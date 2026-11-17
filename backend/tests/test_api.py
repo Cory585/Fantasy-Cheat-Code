@@ -500,6 +500,59 @@ def test_oversized_body_is_rejected():
     body = b'{"side_a": {"player_ids": ["rb1"]}, "junk": "' + b"x" * 300_000 + b'"}'
     resp = client.post("/trades/analyze", content=body, headers={"content-type": "application/json"})
     assert resp.status_code == 413
+    assert resp.json()["code"] == "payload_too_large"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def _chunks(total: int, size: int = 16 * 1024):
+    yield b'{"side_a": {"player_ids": ["rb1"]}, "side_b": {"player_ids": ["wr1"]}, "junk": "'
+    for _ in range(total // size):
+        yield b"x" * size
+    yield b'"}'
+
+
+def test_oversized_chunked_body_is_rejected():
+    # A generator body is sent with Transfer-Encoding: chunked and no Content-Length.
+    resp = client.post("/trades/analyze", content=_chunks(800_000), headers={"content-type": "application/json"})
+    assert resp.status_code == 413
+    assert resp.json() == {"detail": "Request body is larger than 256 KB.", "code": "payload_too_large"}
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert "Content-Security-Policy" in resp.headers
+
+
+def test_small_chunked_body_is_accepted():
+    resp = client.post("/trades/analyze", content=_chunks(10_000), headers={"content-type": "application/json"})
+    assert resp.status_code == 200
+
+
+def test_chunked_body_stops_being_read_at_the_limit():
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.main import LimitBodySize
+
+    async def endpoint(scope, receive, send):
+        while (await receive()).get("more_body"):
+            pass
+        raise AssertionError("read past the limit")
+
+    sent, reads = [], 0
+
+    async def receive():
+        nonlocal reads
+        reads += 1
+        return {"type": "http.request", "body": b"x" * 1000, "more_body": True}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": "/", "headers": []}
+    # On a thread of its own: after the browser tests, Playwright's sync API leaves an event
+    # loop running on the main thread, and asyncio.run refuses to start inside it.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(asyncio.run, LimitBodySize(endpoint, max_bytes=10_000)(scope, receive, send)).result()
+    assert reads == 11
+    assert sent[0]["status"] == 413
 
 
 def test_corrupt_database_falls_back_to_projections_only(tmp_path):

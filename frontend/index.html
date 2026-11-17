@@ -13,6 +13,7 @@
   <script src="/theme-boot.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#content">Skip to content</a>
   <nav class="site-nav" aria-label="Main">
     <div class="site-nav-inner">
       <a class="site-name" href="/">Fantasy Cheat Code</a>
@@ -53,7 +54,7 @@
     </div>
   </nav>
 
-  <header class="masthead">
+  <header class="masthead" id="content" tabindex="-1">
     <div class="masthead-title">
       <h1>Trade Analyzer</h1>
       <p class="lede">Build both sides of a trade and see who comes out ahead on rest-of-season value.</p>
@@ -83,7 +84,8 @@
 
   <main>
     <section class="sides" aria-label="Trade sides">
-      <article class="side" data-side="a">
+      <article class="side" data-side="a" aria-labelledby="side-a-heading">
+        <h2 class="visually-hidden" id="side-a-heading">Team A</h2>
         <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
@@ -103,7 +105,7 @@
             <ul class="search-results" id="results-a" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
         </div>
-        <ul class="roster" aria-live="polite"></ul>
+        <ul class="roster"></ul>
         <p class="side-total"></p>
       </article>
 
@@ -113,7 +115,8 @@
         </button>
       </div>
 
-      <article class="side" data-side="b">
+      <article class="side" data-side="b" aria-labelledby="side-b-heading">
+        <h2 class="visually-hidden" id="side-b-heading">Team B</h2>
         <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
@@ -133,14 +136,17 @@
             <ul class="search-results" id="results-b" role="listbox" aria-label="Matching players" hidden></ul>
           </div>
         </div>
-        <ul class="roster" aria-live="polite"></ul>
+        <ul class="roster"></ul>
         <p class="side-total"></p>
       </article>
     </section>
 
-    <section class="result" id="result" aria-live="polite">
+    <section class="result" id="result">
       <p class="result-empty">Add at least one player to each side to see who wins the trade.</p>
     </section>
+
+    <!-- One line for screen readers when the trade changes; the result itself isn't a live region. -->
+    <p class="visually-hidden" id="trade-announce" role="status"></p>
 
     <div class="actions">
       <span id="share-status" class="share-status" role="status"></span>

@@ -112,6 +112,98 @@ def test_hovering_a_board_cell_shows_a_tooltip(page):
     expect(page.locator("#viz-tooltip")).to_contain_text("QB")
 
 
+def test_tooltip_text_changes_only_when_the_target_does(page):
+    # No smooth scrolling, whose late scroll events would hide the tip mid-test.
+    page.emulate_media(reduced_motion="reduce")
+    open_draft(page)
+    cells = page.locator(".pick.pos-QB")
+    tooltip = page.locator("#viz-tooltip")
+    cells.nth(0).scroll_into_view_if_needed()
+    cells.nth(0).hover()
+    expect(tooltip).to_be_visible()
+    page.evaluate("""() => {
+        window.__tipWrites = 0;
+        new MutationObserver((records) => { window.__tipWrites += records.length; })
+            .observe(document.getElementById('viz-tooltip'), { childList: true, characterData: true, subtree: true });
+    }""")
+    box = cells.nth(0).bounding_box()
+    middle = box["y"] + box["height"] / 2
+    for step in range(10):  # wander around inside one cell
+        page.mouse.move(box["x"] + 5 + step * 3, middle)
+    # It still follows the pointer, without rewriting its text.
+    before = tooltip.get_attribute("style")
+    page.mouse.move(box["x"] + box["width"] - 4, middle)
+    expect(tooltip).not_to_have_attribute("style", before)
+    assert page.evaluate("window.__tipWrites") == 0
+
+    second = cells.nth(1)
+    expected = second.get_attribute("data-tip")
+    second.hover()
+    expect(tooltip).to_have_text(expected)
+    assert page.evaluate("window.__tipWrites") >= 1
+
+
+def test_rebuilding_the_board_does_not_fade_it_but_new_cards_still_appear(page):
+    open_draft(page)
+    page.wait_for_timeout(800)  # the page's entrance animation
+    # motion.js animates with inline opacity; record every element that gets one.
+    page.evaluate("""() => {
+        window.__faded = new Set();
+        new MutationObserver((records) => {
+            for (const r of records) if (r.target.style?.opacity) window.__faded.add(r.target);
+        }).observe(document.querySelector('main'), { attributes: true, attributeFilter: ['style'], subtree: true });
+    }""")
+    page.click('#league-size button[data-teams="8"]')
+    expect(page.locator(".team-head")).to_have_count(8)
+    expect(page.locator(".plan-pick-head strong").nth(1)).to_have_text("2.04")
+    page.wait_for_timeout(500)
+    in_board = page.evaluate("[...window.__faded].filter((el) => el.closest('#draft-board')).length")
+    cards = page.evaluate("[...window.__faded].filter((el) => el.matches('.plan-pick')).length")
+    assert in_board == 0
+    assert cards > 0
+
+
+def test_pick_links_jump_to_each_card(page):
+    page.set_viewport_size({"width": 390, "height": 800})
+    open_draft(page)
+    chips = page.locator("#plan-jump .plan-jump-chip")
+    expect(chips).to_have_count(15)
+    expect(chips.first).to_have_text("1.05")
+    expect(chips.nth(7)).to_have_text("8.08")
+    # Let the page's entrance and card appear animations finish: they offset the cards
+    # with transforms, which would skew where the scroll lands.
+    page.wait_for_timeout(1000)
+    chips.nth(7).click()
+    card = page.locator("#pick-92")
+    expect(card.locator(".plan-pick-head strong")).to_have_text("8.08")
+    expect(card).to_be_focused()  # so the keyboard carries on from the card
+    expect(card).to_be_in_viewport()
+    # The links stay at the top of the screen, and the card lands just below them.
+    nav = page.locator("#plan-jump")
+    last = None
+    for _ in range(50):  # wait for the smooth scroll to settle
+        page.wait_for_timeout(100)
+        card_y = card.bounding_box()["y"]
+        if last is not None and abs(card_y - last) < 0.5:
+            break
+        last = card_y
+    nav_box = nav.bounding_box()
+    nav_bottom = nav_box["y"] + nav_box["height"]
+    assert abs(nav_box["y"]) < 1  # stuck to the top (allowing for subpixel rounding)
+    assert nav_bottom - 1 <= card_y < nav_bottom + 24
+    assert page.problems.errors == []
+
+
+def test_pick_links_hide_while_the_plan_is_unavailable(page):
+    open_draft(page)
+    expect(page.locator("#plan-jump")).to_be_visible()
+    page.route("**/draft/plan?*", lambda route: route.fulfill(
+        status=500, content_type="application/json", body='{"detail": "x", "code": "internal_error"}'))
+    page.select_option("#draft-slot", "9")
+    expect(page.locator(".error-block")).to_be_visible()
+    expect(page.locator("#plan-jump")).to_be_hidden()
+
+
 def test_names_with_markup_render_as_text(page):
     open_draft(page, "teams=4&slot=1&rounds=18")
     assert page.evaluate("window.__pwned") is None

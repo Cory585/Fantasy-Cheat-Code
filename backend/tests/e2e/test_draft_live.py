@@ -172,6 +172,24 @@ def test_bad_league_id_is_caught_before_sending(page, espn):
     page.click("#live-connect")
     expect(page.locator("#live-message")).to_contain_text("Enter your league ID")
     assert espn.calls == []
+    # The error is tied to the field, so a screen reader reads it with the field.
+    league = page.locator("#live-league")
+    expect(league).to_be_focused()
+    expect(league).to_have_attribute("aria-invalid", "true")
+    expect(league).to_have_attribute("aria-describedby", "live-message")
+
+
+def test_half_filled_private_league_marks_the_missing_cookie(page, espn):
+    page.goto("/draft/")
+    page.fill("#live-league", "777")
+    page.locator(".live-connect details summary").click()
+    page.fill("#live-s2", "abc")
+    page.click("#live-connect")
+    swid = page.locator("#live-swid")
+    expect(swid).to_be_focused()
+    expect(swid).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#live-league")).not_to_have_attribute("aria-invalid", "true")
+    assert espn.calls == []
 
 
 def test_disconnect_forgets_the_session(page, espn):

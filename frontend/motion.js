@@ -3,10 +3,17 @@
 // Site-wide motion: Lenis smooth scrolling and GSAP feedback for presses, text entry,
 // dropdowns, and content as it appears. Everything hooks in through event delegation and
 // a MutationObserver, so page scripts don't need to know about it. Users who ask for
-// reduced motion get none of it.
+// reduced motion get none of it, including when they turn it on after the page loads.
 (() => {
-  if (!window.gsap || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const { gsap } = window;
+  if (!window.gsap) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  // With reduced motion every tween jumps straight to its end state (still running its
+  // onComplete and clearProps), so the page ends up the same, just without the movement.
+  const instant = (vars) => (reduceMotion.matches ? { ...vars, duration: 0, delay: 0, stagger: 0 } : vars);
+  const gsap = {
+    to: (targets, vars) => window.gsap.to(targets, instant(vars)),
+    fromTo: (targets, from, vars) => window.gsap.fromTo(targets, from, instant(vars)),
+  };
   const EASE_OUT = "power3.out";
 
   // ---------- Smooth scrolling ----------
@@ -19,9 +26,25 @@
     return (/auto|scroll/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1)
       || (/auto|scroll/.test(style.overflowX) && node.scrollWidth > node.clientWidth + 1);
   }
-  if (window.Lenis) {
-    new window.Lenis({ autoRaf: true, lerp: 0.12, anchors: true, prevent: scrollsOnItsOwn });
+  let lenis = null;
+  function smoothScrolling(on) {
+    if (on && !lenis && window.Lenis) {
+      lenis = new window.Lenis({ autoRaf: true, lerp: 0.12, anchors: true, prevent: scrollsOnItsOwn });
+    } else if (!on && lenis) {
+      lenis.destroy();
+      lenis = null;
+    }
   }
+  smoothScrolling(!reduceMotion.matches);
+
+  // Turning reduced motion on mid-visit finishes anything still moving and stops smooth
+  // scrolling; turning it off brings smooth scrolling back.
+  reduceMotion.addEventListener("change", () => {
+    if (reduceMotion.matches) {
+      window.gsap.globalTimeline.getChildren(true, true, false).forEach((tween) => tween.progress(1));
+    }
+    smoothScrolling(!reduceMotion.matches);
+  });
 
   // Elements whose CSS already uses transform: only fade those, never move or scale them.
   const hasTransform = (el) => getComputedStyle(el).transform !== "none";
@@ -142,16 +165,29 @@
   // Collect what page scripts add during a frame, then animate only the outermost new
   // elements (a new card animates as one, not each of its children separately). Pages
   // often re-render a whole container when one thing changes, so anything that comes
-  // back identical to what was just removed stays still.
+  // back identical to what was just removed stays still. Containers marked
+  // data-no-appear (e.g. the draft board, rebuilt on every live pick) are left alone
+  // entirely: nothing inside them is tracked, compared, or animated.
+  const STILL = "[data-no-appear]";
   let pending = new Set();
-  let removed = new Set();
+  let removed = new Map(); // tag and class -> elements removed this frame with them
   let scheduled = false;
+  const shapeOf = (el) => `${el.tagName}.${el.className}`;
+  // Only elements of the same shape are compared, and isEqualNode stops at the first
+  // difference, so nothing is serialized.
+  const cameBack = (el) => removed.get(shapeOf(el))?.some((old) => old.isEqualNode(el)) ?? false;
+  function outermost(el) {
+    for (let parent = el.parentElement; parent && parent !== main; parent = parent.parentElement) {
+      if (pending.has(parent)) return false;
+    }
+    return true;
+  }
   function flush() {
     scheduled = false;
-    const added = [...pending].filter((el) => !removed.has(el.outerHTML));
+    const added = [...pending].filter((el) => el.isConnected && outermost(el) && !cameBack(el));
     pending = new Set();
-    removed = new Set();
-    appear(added.filter((el) => !added.some((other) => other !== el && other.contains(el))));
+    removed = new Map();
+    appear(added);
   }
 
   const main = document.querySelector("main");
@@ -163,8 +199,16 @@
           if (el.getAttribute("role") === "listbox" && !el.hidden && record.oldValue !== null) openListbox(el);
           continue;
         }
-        for (const node of record.addedNodes) if (node instanceof HTMLElement) pending.add(node);
-        for (const node of record.removedNodes) if (node instanceof HTMLElement) removed.add(node.outerHTML);
+        if (record.target.closest?.(STILL)) continue;
+        for (const node of record.addedNodes) {
+          if (node instanceof HTMLElement && !node.matches(STILL)) pending.add(node);
+        }
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement) || node.matches(STILL)) continue;
+          const shape = shapeOf(node);
+          if (removed.has(shape)) removed.get(shape).push(node);
+          else removed.set(shape, [node]);
+        }
       }
       if (pending.size && !scheduled) {
         scheduled = true;
