@@ -63,6 +63,27 @@ def test_kicker_games_without_a_line_say_the_points_are_projected(league):
     assert not labels & {"team's Vegas total", "point spread"}
 
 
+def test_games_without_a_line_use_the_line_estimate_each_model_was_trained_with(league, tmp_path):
+    conn, _, _ = league
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= 5")
+    conn.commit()
+    # Each model predicts exactly its implied-points feature, and was trained with a line
+    # estimate that's a constant (DST: 30 points, kicker: 20).
+    for feature, coefs, name in (("opp_implied_points", [30.0, 0, 0, 0], "dst.json"),
+                                 ("team_implied_points", [20.0, 0, 0, 0], "k.json")):
+        RidgeModel([feature], np.array([0.0]), np.array([1.0]), np.array([1.0]), 0.0, 1.0,
+                   {"line_coefs": coefs}).save(tmp_path / name)
+    models = load_team_models(conn, 2025, tmp_path / "dst.json", tmp_path / "k.json")
+    assert models.dst["BUF"][5].points == 30.0
+    assert models.kicker["BUF"][5].points == 20.0
+    # A model saved without them fits the estimate on the loaded games, as before.
+    RidgeModel(["opp_implied_points"], np.array([0.0]), np.array([1.0]), np.array([1.0]), 0.0, 1.0,
+               {}).save(tmp_path / "old.json")
+    builder = KickerFeatureBuilder(conn, first_season=2024)
+    expected = builder.estimated_points(2025, 5, "NE", "BUF", True)
+    assert load_team_models(conn, 2025, tmp_path / "old.json", None).dst["BUF"][5].points == round(expected, 2)
+
+
 def test_without_saved_models_only_actual_dst_points_are_loaded(league, tmp_path):
     conn, _, _ = league
     models = load_team_models(conn, 2025, tmp_path / "missing.json", None)
