@@ -96,6 +96,26 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- Site navigation ---------- */
 
+/* First thing a keyboard user reaches: jumps past the nav. Off screen until focused. */
+.skip-link {
+  position: absolute;
+  z-index: 100;
+  left: 1rem;
+  top: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--focus);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus { transform: none; }
+
+/* The skip link's target takes focus only so the next Tab starts there; no ring needed. */
+#content:focus, #profile:focus { outline: none; }
+
 .site-nav {
   border-bottom: 1px solid var(--line);
   background: var(--surface);
