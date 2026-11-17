@@ -161,8 +161,17 @@ window.PlayerUI = (() => {
     return () => clearInterval(timer);
   }
 
+  // The player pool as a Map by id. One request per page, shared by every caller (the page
+  // and backdrop.js's portrait); each caller gets its own Map. A failure is retried next call.
+  let playersRequest = null;
   async function loadPlayers() {
-    const players = await getJson("/players", "Couldn't load players");
+    if (!playersRequest) {
+      playersRequest = getJson("/players", "Couldn't load players");
+      playersRequest.catch(() => {
+        playersRequest = null;
+      });
+    }
+    const players = await playersRequest;
     return new Map(players.map((p) => [p.id, p]));
   }
 
