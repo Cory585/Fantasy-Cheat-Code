@@ -127,22 +127,29 @@ window.PlayerUI = (() => {
       button.disabled = true;
       retry();
     });
-    let wait = error?.retryAfter || 0;
-    if (wait) {
-      const tick = () => {
-        button.textContent = wait > 0 ? `Try again in ${wait}s` : "Try again";
-        button.disabled = wait > 0;
-        wait -= 1;
-      };
-      tick();
-      const timer = setInterval(() => {
-        // Stop once the wait is over, or if the block has been replaced.
-        if (wait < 0 || !button.isConnected) clearInterval(timer);
-        else tick();
-      }, 1000);
-    }
+    if (error?.retryAfter) countdown(button, error.retryAfter);
     block.append(button);
     return block;
+  }
+
+  /**
+   * Keep a "Try again" button disabled for `seconds`, counting down on its label (after a 429,
+   * so it can't outpace the server's limit). Returns a function that stops the countdown
+   * early; it also stops if the button is removed from the page.
+   */
+  function countdown(button, seconds) {
+    let wait = Math.ceil(seconds);
+    const tick = () => {
+      button.textContent = wait > 0 ? `Try again in ${wait}s` : "Try again";
+      button.disabled = wait > 0;
+      wait -= 1;
+    };
+    tick();
+    const timer = setInterval(() => {
+      if (wait < 0 || !button.isConnected) clearInterval(timer);
+      else tick();
+    }, 1000);
+    return () => clearInterval(timer);
   }
 
   async function loadPlayers() {
@@ -384,7 +391,7 @@ window.PlayerUI = (() => {
   }
 
   return {
-    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock,
+    POSITIONS, el, ordinal, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
     loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
   };
 })();

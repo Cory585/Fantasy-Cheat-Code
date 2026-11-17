@@ -48,39 +48,19 @@ function initials(name) {
 
 // ---------- States ----------
 
-// The one retry countdown; cleared whenever the notice changes, so timers never stack.
-let retryTimer = null;
-
-function clearRetryTimer() {
-  clearInterval(retryTimer);
-  retryTimer = null;
-}
+// Stops the one retry countdown; called whenever the notice changes, so timers never stack.
+let stopCountdown = () => {};
 
 function showNotice(text, { retryAfter = null, retry = false } = {}) {
-  clearRetryTimer();
+  stopCountdown();
+  stopCountdown = () => {};
   els.notice.querySelector(".notice-link")?.remove();
   els.noticeText.textContent = text;
   els.notice.hidden = false;
   els.retry.hidden = !retry;
   els.retry.disabled = false;
-  if (retryAfter) {
-    // Don't let the button outpace the server's limits.
-    els.retry.disabled = true;
-    let left = retryAfter;
-    els.retry.textContent = `Try again in ${left}s`;
-    retryTimer = setInterval(() => {
-      left -= 1;
-      if (left <= 0) {
-        clearRetryTimer();
-        els.retry.disabled = false;
-        els.retry.textContent = "Try again";
-      } else {
-        els.retry.textContent = `Try again in ${left}s`;
-      }
-    }, 1000);
-  } else {
-    els.retry.textContent = "Try again";
-  }
+  els.retry.textContent = "Try again";
+  if (retryAfter) stopCountdown = PlayerUI.countdown(els.retry, retryAfter);
 }
 
 function showFatal(title, text, { retry = false, retryAfter = null } = {}) {
@@ -140,7 +120,7 @@ function renderHeader(profile) {
 }
 
 function renderEspnStatus(espn) {
-  clearRetryTimer();
+  stopCountdown();
   els.notice.hidden = true;
   if (espn.status === "unavailable") {
     const why = espn.code === "upstream_busy" ? "ESPN is busy right now" : "ESPN couldn't be reached";
@@ -341,9 +321,10 @@ async function load(id) {
     return;
   }
   if (response.status === 429) {
-    const wait = Number(response.headers.get("Retry-After")) || 10;
+    // PlayerUI reads Retry-After (seconds or a date, capped); wait 10s if it's missing.
+    const wait = (await PlayerUI.responseError(response)).retryAfter || 10;
     showFatal("Slow down for a moment", "You've opened a lot of profiles quickly. Profiles can be loaded again shortly.", {
-      retry: true, retryAfter: Math.min(wait, 120),
+      retry: true, retryAfter: wait,
     });
     return;
   }
