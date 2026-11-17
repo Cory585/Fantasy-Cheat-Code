@@ -55,6 +55,24 @@ def test_switching_teams_dims_the_old_one_while_loading(page, defenses):
     expect(team).not_to_have_class("is-stale")
 
 
+def test_failed_switch_puts_the_select_back(page, defenses):
+    page.goto("/defense/?team=BUF")
+    expect(page.locator("#df-team-name")).to_have_text("Buffalo Bills")
+    page.route("**/defenses/NYJ", lambda route: route.fulfill(
+        status=500, content_type="application/json",
+        body='{"detail": "Something went wrong on the server. Try again in a moment.", "code": "internal_error"}'))
+    page.select_option("#team-select", "NYJ")
+    error = page.locator("#df-error")
+    expect(error).to_contain_text("Something went wrong on the server")
+    # Buffalo is still on screen, so the select says Buffalo, not the team that failed.
+    expect(page.locator("#team-select")).to_have_value("BUF")
+    expect(page.locator("#df-team-name")).to_have_text("Buffalo Bills")
+    page.unroute("**/defenses/NYJ")
+    error.get_by_role("button", name="Try again").click()
+    expect(page.locator("#df-team-name")).to_have_text("NYJ")
+    expect(page.locator("#team-select")).to_have_value("NYJ")
+
+
 def test_without_data_explains_how_to_collect(page):
     page.goto("/defense/")
     expect(page.locator("#df-error")).to_contain_text("python -m app.data.collect")

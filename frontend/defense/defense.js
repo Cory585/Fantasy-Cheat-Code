@@ -34,6 +34,7 @@
   let league = null;
   let sort = { key: "overall_rank", ascending: true };
   let loading = 0; // id of the latest team request, so a slow older one can't overwrite it
+  let shown = null; // the team whose breakdown is on screen
 
   // ---------- helpers ----------
 
@@ -217,11 +218,14 @@
     } catch (error) {
       if (id !== loading) return;
       setBusy(false);
+      // Put the select back on the team still on screen, so its breakdown isn't read as this one.
+      if (shown) els.select.value = shown;
       showError(error, () => showTeam(team, { push }));
       return;
     }
     if (id !== loading) return;
     setBusy(false);
+    shown = team;
     renderHero(data);
     renderGroups(data.groups);
     renderUnits(data.units);
