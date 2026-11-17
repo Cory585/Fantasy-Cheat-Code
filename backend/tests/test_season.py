@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.models.player import Player, Position
 from app.services.matchups import Game, MatchupData
-from app.services.season import current_week, parse_date, played_teams, rest_of_season, week_on, week_start
+from app.services.season import current_week, local_date, parse_date, played_teams, rest_of_season, week_on, week_start
 
 
 def test_week_one_starts_the_tuesday_after_labor_day():
@@ -76,3 +76,12 @@ def test_played_teams_counts_final_games_and_past_dates():
         "EEE": {11: Game(11, "FFF", True, False, gameday="2026-11-22")},
     })
     assert played_teams(data, 11, date(2026, 11, 20)) == {"AAA", "CCC"}
+
+
+def test_local_date_converts_utc_timestamps_to_the_local_day():
+    utc = "2026-11-11T03:30:00+00:00"
+    assert local_date(utc) == datetime(2026, 11, 11, 3, 30, tzinfo=timezone.utc).astimezone().date()
+    assert local_date("2026-11-11T03:30:00Z") == local_date(utc)
+    assert local_date("2026-11-11T03:30:00") == date(2026, 11, 11)  # no zone: taken as local
+    assert local_date("2026-11-11") == date(2026, 11, 11)
+    assert local_date("never") is None and local_date(None) is None

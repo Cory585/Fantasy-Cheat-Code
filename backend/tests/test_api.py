@@ -157,6 +157,11 @@ def test_meta_reports_synced_data_and_whether_it_is_stale(monkeypatch):
     monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 18))
     data = client.get("/meta").json()
     assert (data["current_week"], data["synced_week"], data["stale"]) == (11, 10, True)
+    # A sync run before the cached weeks (--start-week 12 in week 10) counts as their first week.
+    cache.update(weeks=[12, 18])
+    monkeypatch.setattr("app.services.season.today", lambda: date(2026, 11, 12))
+    data = client.get("/meta").json()
+    assert (data["current_week"], data["synced_week"], data["stale"]) == (12, 12, False)
 
 
 def test_unreadable_cache_reports_sample_source(tmp_path):

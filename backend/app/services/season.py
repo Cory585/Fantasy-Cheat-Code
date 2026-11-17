@@ -6,7 +6,7 @@ projections, so weeks that have been played stop counting without a fresh sync.
 """
 
 from collections.abc import Container
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.config import REGULAR_SEASON_END_WEEK
 from app.models.player import Player
@@ -45,6 +45,18 @@ def parse_date(value) -> date | None:
         return date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def local_date(value) -> date | None:
+    """The local calendar date of an ISO timestamp from cache metadata (e.g. `synced_at`,
+    written in UTC), so it compares with `today()`, which is local too. None if unreadable."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return parse_date(value)
+    return moment.astimezone().date() if moment.tzinfo else moment.date()
 
 
 def current_week(

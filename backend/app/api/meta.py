@@ -49,8 +49,10 @@ def meta(
 
 
 def _synced_week(cache: dict, advisor: StartSitAdvisor) -> int:
-    """The week the sync ran in, by the calendar (else the first week it synced)."""
-    synced_on = calendar.parse_date(cache.get("synced_at"))
+    """The week the sync ran in, by the local calendar like the current week, within the weeks
+    the cache covers (else the first week it synced)."""
+    first, last = advisor.weeks
+    synced_on = calendar.local_date(cache.get("synced_at"))
     if synced_on is None or advisor.season is None:
-        return advisor.weeks[0]
-    return calendar.week_on(synced_on, advisor.season, advisor.season_start)
+        return first
+    return min(max(calendar.week_on(synced_on, advisor.season, advisor.season_start), first), last)
