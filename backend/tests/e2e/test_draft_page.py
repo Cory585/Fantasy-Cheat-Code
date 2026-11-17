@@ -113,11 +113,12 @@ def test_hovering_a_board_cell_shows_a_tooltip(page):
 
 
 def test_tooltip_text_changes_only_when_the_target_does(page):
+    # No smooth scrolling, whose late scroll events would hide the tip mid-test.
+    page.emulate_media(reduced_motion="reduce")
     open_draft(page)
     cells = page.locator(".pick.pos-QB")
     tooltip = page.locator("#viz-tooltip")
     cells.nth(0).scroll_into_view_if_needed()
-    page.wait_for_timeout(300)  # scrolling hides the tip, so let it settle first
     cells.nth(0).hover()
     expect(tooltip).to_be_visible()
     page.evaluate("""() => {
