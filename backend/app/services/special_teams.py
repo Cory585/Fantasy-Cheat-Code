@@ -60,6 +60,11 @@ KICKER_LABELS = {
     "altitude": "altitude",
     "home": "home field",
 }
+KICKER_LABELS_WITHOUT_LINE = {
+    **KICKER_LABELS,
+    "team_implied_points": "team's projected points",
+    "team_favored_by": "projected point spread",
+}
 
 
 @dataclass(frozen=True)
@@ -97,7 +102,8 @@ def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | Non
             models.dst.setdefault(row.defense, {})[row.week] = _estimate(dst_model, row, labels)
     if kicker_model is not None:
         for row in builder.rows([season], include_unplayed=True):
-            models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, KICKER_LABELS)
+            labels = KICKER_LABELS_WITHOUT_LINE if row.context.get("line_estimated") else KICKER_LABELS
+            models.kicker.setdefault(row.defense, {})[row.week] = _estimate(kicker_model, row, labels)
     return models
 
 

@@ -53,6 +53,16 @@ def test_stronger_offense_gets_the_higher_kicker_estimate(league):
     assert models.kicker["BUF"][5].points > models.kicker["NYJ"][5].points
 
 
+def test_kicker_games_without_a_line_say_the_points_are_projected(league):
+    conn, dst_path, k_path = league
+    conn.execute("UPDATE games SET spread_line = NULL, total_line = NULL WHERE season = 2025 AND week >= 5")
+    conn.commit()
+    models = load_team_models(conn, 2025, dst_path, k_path)
+    labels = {label for label, _ in models.kicker["BUF"][5].factors}
+    assert labels & {"team's projected points", "projected point spread"}
+    assert not labels & {"team's Vegas total", "point spread"}
+
+
 def test_without_saved_models_only_actual_dst_points_are_loaded(league, tmp_path):
     conn, _, _ = league
     models = load_team_models(conn, 2025, tmp_path / "missing.json", None)
