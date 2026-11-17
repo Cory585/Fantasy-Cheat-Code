@@ -1751,7 +1751,7 @@ main {
   overflow-wrap: anywhere;
 }
 
-.plan-list .result-error { grid-column: 1 / -1; }
+.plan-list .error-block { grid-column: 1 / -1; }
 
 /* Shared chart tooltip */
 

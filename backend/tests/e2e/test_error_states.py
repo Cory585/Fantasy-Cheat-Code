@@ -92,6 +92,8 @@ def test_draft_plan_error_has_a_retry(page):
     page.goto("/draft/")
     block = page.locator("#plan-list .error-block")
     expect(block).to_be_visible()
+    # The plan list is a grid of cards; the error spans all of it.
+    assert block.bounding_box()["width"] >= page.locator("#plan-list").bounding_box()["width"] - 1
     failing.stop()
     block.get_by_role("button", name="Try again").click()
     expect(page.locator(".plan-pick").first).to_be_visible()
