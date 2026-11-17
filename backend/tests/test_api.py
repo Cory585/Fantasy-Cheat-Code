@@ -205,6 +205,26 @@ def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):
     assert data.current()[0] is sample
 
 
+def test_a_file_deleted_while_checking_for_changes_is_treated_as_missing(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from app.api.dependencies import _mtime
+
+    kept, wal = tmp_path / "fantasy.db", tmp_path / "fantasy.db-wal"
+    kept.write_bytes(b"x")
+    wal.write_bytes(b"x")
+    real_stat = Path.stat
+
+    def stat(self, *args, **kwargs):
+        if self == wal:  # SQLite removed the -wal file after it was seen to exist
+            raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    assert _mtime(kept, wal) == real_stat(kept).st_mtime
+    assert _mtime(wal) is None
+
+
 def test_meta_reports_data_source():
     data = client.get("/meta").json()
     assert data["players"] == 12  # sample data in tests

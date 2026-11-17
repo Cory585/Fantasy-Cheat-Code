@@ -65,7 +65,12 @@ def _season(meta: dict) -> int | None:
 
 def _mtime(*paths: Path) -> float | None:
     """Latest modification time across paths (None if none exist)."""
-    times = [p.stat().st_mtime for p in paths if p.exists()]
+    times = []
+    for p in paths:
+        try:
+            times.append(p.stat().st_mtime)
+        except OSError:  # missing, or (like SQLite's -wal file) deleted since it was last seen
+            pass
     return max(times) if times else None
 
 
