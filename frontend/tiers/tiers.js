@@ -5,7 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
-  const { el, getJson, messageOf, errorBlock, noteDataStatus } = window.PlayerUI;
+  const { el, getJson, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -144,7 +144,7 @@
     } catch (error) {
       if (id !== requestId) return;
       els.list.replaceChildren(errorBlock(error, load, { tag: "li" }));
-      els.status.textContent = messageOf(error);
+      els.status.textContent = ""; // the error block announces itself
       return;
     }
     if (id !== requestId) return;

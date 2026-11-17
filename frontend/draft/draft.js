@@ -57,7 +57,7 @@ const profileUrl = (playerId) => `/player/?id=${encodeURIComponent(playerId)}`;
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const { el, ordinal, request, errorMessage, getJson, messageOf, errorBlock } = window.PlayerUI;
+const { el, ordinal, request, errorMessage, getJson, errorBlock } = window.PlayerUI;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 function svg(tag, attrs = {}, text) {
@@ -508,7 +508,7 @@ function renderPlan() {
 function renderError(error) {
   state.error = error;
   els.planList.replaceChildren(errorBlock(error, () => update(), { tag: "li" }));
-  els.status.textContent = messageOf(error);
+  els.status.textContent = ""; // the error block announces itself
 }
 
 async function loadPlan() {

@@ -116,8 +116,10 @@ window.PlayerUI = (() => {
   function errorBlock(error, retry, { tag = "div" } = {}) {
     const block = el(tag, "error-block");
     const text = el("p", "error-block-text", typeof error === "string" ? error : messageOf(error));
+    // The message itself is the alert, so it's announced inside a list (tag "li") too, where
+    // the item can't take the role.
+    text.setAttribute("role", "alert");
     block.append(text);
-    if (tag === "div") block.setAttribute("role", "alert");
     if (!retry) return block;
     const button = el("button", "btn btn-quiet btn-small error-block-retry", "Try again");
     button.type = "button";
