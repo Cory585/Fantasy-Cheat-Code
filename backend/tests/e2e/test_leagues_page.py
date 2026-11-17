@@ -231,6 +231,26 @@ def test_profile_key_moves_leagues_to_another_browser(page, key, browser, base_u
         other.close()
 
 
+def test_switching_keys_asks_first_and_shows_the_current_key(page, key):
+    add_league(page, key, "Keep me")
+    other = secrets.token_urlsafe(32)
+    add_league(page, other, "Over there")
+    page.goto("/profile/")
+    expect(page.locator(".league-card-name")).to_have_text("Keep me")
+    page.fill("#key-input", other)
+    page.click("text=Switch profile")
+    # Nothing switched yet: the current key is shown so it can be copied first.
+    expect(page.locator("#profile-status")).to_contain_text("Copy its key")
+    expect(page.locator("#profile-key")).to_have_attribute("type", "text")
+    expect(page.locator("#profile-key")).to_have_value(key)
+    expect(page.locator(".league-card-name")).to_have_text("Keep me")
+    assert page.evaluate("localStorage.getItem('fcc.profile.v1')") == key
+    page.click("#key-form button:has-text('Confirm switch')")
+    expect(page.locator(".league-card-name")).to_have_text("Over there")
+    expect(page.locator("#profile-key")).to_have_value(other)
+    expect(page.locator("#profile-key")).to_have_attribute("type", "password")
+
+
 def test_profile_page_fits_a_phone(page, key):
     add_league(page, key, "A league with a fairly long name")
     page.set_viewport_size({"width": 375, "height": 800})
