@@ -229,3 +229,25 @@ def test_non_ascii_digits_in_if_match_are_rejected(key, raw):
     league_id = create(key).json()["id"]
     resp = client.put(f"/leagues/{league_id}", json={"name": "A"}, headers={**headers(key), "If-Match": raw})
     assert resp.status_code == 400 and resp.json()["code"] == "invalid_if_match"
+
+
+def test_version_column_is_added_once_and_tolerates_a_race(tmp_path, monkeypatch):
+    import sqlite3
+
+    from app.data import league_store
+
+    path = tmp_path / "leagues.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE leagues (id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, "
+                 "slots TEXT NOT NULL, roster TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL)")
+    league_store.add_version_column(conn)
+    league_store.add_version_column(conn)  # another process got there first: no error
+    conn.close()
+
+    calls = []
+    real = league_store.add_version_column
+    monkeypatch.setattr(league_store, "add_version_column", lambda c: (calls.append(1), real(c)))
+    store = LeagueStore(path)
+    for _ in range(3):
+        store.list("me")
+    assert len(calls) == 1  # once per store, not on every request

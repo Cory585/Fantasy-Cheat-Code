@@ -71,11 +71,22 @@ def _league(row) -> League:
 COLUMNS = "id, name, slots, roster, created_at, updated_at, version"
 
 
+def add_version_column(conn: sqlite3.Connection) -> None:
+    """Gives a database made before leagues had versions its `version` column. Safe to run
+    more than once, and when another process adds the column at the same moment."""
+    try:
+        conn.execute("ALTER TABLE leagues ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+    except sqlite3.OperationalError as error:
+        if "duplicate column" not in str(error).lower():
+            raise
+
+
 class LeagueStore:
     def __init__(self, path: Path, max_total: int = 100_000):
         self._path = path
         self._max_total = max_total
         self._lock = threading.Lock()
+        self._migrated = False
 
     def _connect(self) -> sqlite3.Connection:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,9 +94,9 @@ class LeagueStore:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
-            # Databases made before leagues had versions.
-            if "version" not in {row[1] for row in conn.execute("PRAGMA table_info(leagues)")}:
-                conn.execute("ALTER TABLE leagues ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            if not self._migrated:
+                add_version_column(conn)
+                self._migrated = True
         except sqlite3.Error:
             conn.close()
             raise
