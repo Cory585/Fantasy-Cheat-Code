@@ -11,6 +11,7 @@
     count: $("league-count"),
     create: $("league-create"),
     name: $("league-name"),
+    nameError: $("league-name-error"),
     add: $("league-add"),
     list: $("league-list"),
     key: $("profile-key"),
@@ -18,6 +19,7 @@
     keyCopy: $("key-copy"),
     keyForm: $("key-form"),
     keyInput: $("key-input"),
+    keyError: $("key-input-error"),
   };
 
   const { el } = window.PlayerUI;
@@ -27,6 +29,20 @@
   function say(message, isError = false) {
     els.status.textContent = message;
     els.status.classList.toggle("is-error", isError);
+  }
+
+  // Shows a form error under its field and ties it to the field, so a screen reader reads
+  // them together. No message clears it.
+  function fieldError(input, note, message = "") {
+    note.textContent = message;
+    if (message) {
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("aria-describedby", note.id);
+      input.focus();
+    } else {
+      input.removeAttribute("aria-invalid");
+      input.removeAttribute("aria-describedby");
+    }
   }
 
   const isFull = () => state.leagues.length >= state.max;
@@ -96,6 +112,7 @@
 
   function renameForm(league) {
     const form = el("form", "league-rename");
+    form.noValidate = true;
     const input = el("input", "team-name-input");
     input.value = league.name;
     input.maxLength = Store.MAX_NAME;
@@ -109,11 +126,14 @@
     input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") endRename(league.id);
     });
+    const note = el("p", "form-error");
+    note.id = "rename-error";
+    note.setAttribute("role", "status");
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      renameLeague(league, input.value);
+      renameLeague(league, input, note);
     });
-    form.append(input, save, cancel);
+    form.append(input, save, cancel, note);
     requestAnimationFrame(() => {
       input.focus();
       input.select();
@@ -151,10 +171,10 @@
     event.preventDefault();
     const name = els.name.value.trim();
     if (!name) {
-      say("Give the league a name.", true);
-      els.name.focus();
+      fieldError(els.name, els.nameError, "Give the league a name.");
       return;
     }
+    fieldError(els.name, els.nameError);
     busy(async () => {
       const league = await Store.create({ name });
       state.leagues.push(league);
@@ -164,10 +184,10 @@
     }).then(() => els.name.focus());
   }
 
-  function renameLeague(league, value) {
-    const name = value.trim();
+  function renameLeague(league, input, note) {
+    const name = input.value.trim();
     if (!name) {
-      say("Give the league a name.", true);
+      fieldError(input, note, "Give the league a name.");
       return;
     }
     if (name === league.name) {
@@ -248,10 +268,10 @@
         return;
       }
       if (!Store.useProfileKey(key)) {
-        say("That doesn't look like a profile key. Copy it again from the other device.", true);
-        els.keyInput.focus();
+        fieldError(els.keyInput, els.keyError, "That doesn't look like a profile key. Copy it again from the other device.");
         return;
       }
+      fieldError(els.keyInput, els.keyError);
       els.keyInput.value = "";
       showKey();
       say("Switched profiles.");

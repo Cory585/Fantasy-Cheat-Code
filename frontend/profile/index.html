@@ -70,12 +70,13 @@
           <p class="section-note" id="league-count"></p>
         </div>
       </div>
-      <form class="league-create" id="league-create">
+      <form class="league-create" id="league-create" novalidate>
         <label class="team-field">
           <span>New league</span>
           <input id="league-name" class="team-name-input" maxlength="40" placeholder="League name" autocomplete="off" required>
         </label>
         <button type="submit" class="btn btn-cta" id="league-add">Add league</button>
+        <p class="form-error" id="league-name-error" role="status"></p>
       </form>
       <ul class="league-list" id="league-list"></ul>
     </section>
@@ -88,12 +89,13 @@
         <button type="button" class="btn btn-quiet" id="key-show" aria-pressed="false">Show</button>
         <button type="button" class="btn btn-quiet" id="key-copy">Copy</button>
       </div>
-      <form class="league-create" id="key-form">
+      <form class="league-create" id="key-form" novalidate>
         <label class="team-field">
           <span>Use a key from another device (copy this one first if you want to come back to it)</span>
           <input id="key-input" class="team-name-input" autocomplete="off" spellcheck="false" placeholder="Paste a profile key">
         </label>
         <button type="submit" class="btn btn-quiet">Switch profile</button>
+        <p class="form-error" id="key-input-error" role="status"></p>
       </form>
     </section>
   </main>

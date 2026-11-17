@@ -60,6 +60,24 @@ def test_start_sit_call_is_announced_in_one_line(page):
     expect(status).to_have_text(re.compile(r"^Start Sample WR One\. (Confident call|Lean|Toss-up)$"))
 
 
+def test_profile_form_errors_show_inline_and_tie_to_their_field(page):
+    page.goto("/profile/")
+    expect(page.locator("#league-create")).to_have_attribute("novalidate", "")
+    page.click("#league-add")
+    name = page.locator("#league-name")
+    expect(name).to_be_focused()
+    expect(name).to_have_attribute("aria-invalid", "true")
+    expect(name).to_have_attribute("aria-describedby", "league-name-error")
+    expect(page.locator("#league-name-error")).to_have_text("Give the league a name.")
+
+    page.fill("#key-input", "not a key")
+    page.get_by_role("button", name="Switch profile").click()
+    key = page.locator("#key-input")
+    expect(key).to_be_focused()
+    expect(key).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#key-input-error")).to_contain_text("doesn't look like a profile key")
+
+
 def test_tier_names_are_headings(page):
     page.goto("/tiers/")
     expect(page.get_by_role("heading", name="Tier 1", level=2)).to_be_visible()

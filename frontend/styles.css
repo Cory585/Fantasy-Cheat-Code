@@ -2104,6 +2104,9 @@ main {
 
 .team-name-input[aria-invalid="true"] { border-color: var(--bad); }
 
+/* A form's inline error, under its fields (profile page). Kept rendered while empty: it's a live region. */
+.form-error { flex-basis: 100%; margin: 0; color: var(--bad); font-size: 0.875rem; }
+
 .slot-steppers { display: grid; gap: 0.375rem; }
 
 .slot-stepper {
