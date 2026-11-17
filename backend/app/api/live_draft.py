@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Annotated
 
@@ -24,7 +25,7 @@ from app.api.dependencies import get_live_drafts, get_player_repository
 from app.api.errors import ApiError
 from app.config import settings
 from app.data.repository import PlayerRepository
-from app.data.sources.espn_draft import EspnCredentials, LeagueNotFound, LeaguePrivate
+from app.data.sources.espn_draft import EspnCredentials, EspnDraft, LeagueNotFound, LeaguePrivate
 from app.models.live_draft import LiveDraft, LiveDraftRequest, LiveDraftSession
 from app.services.live_draft import LiveDrafts, Session, TooManySessions, to_live_draft
 
@@ -41,6 +42,15 @@ PRIVATE = ("espn_private_league",
 NOT_FOUND = ("espn_league_not_found", "ESPN has no league with that id for that season.")
 UPSTREAM = ("espn_unavailable", "Couldn't read the draft from ESPN. Try again in a moment.")
 ENDED = ("live_draft_not_found", "That live draft session has ended. Connect the league again.")
+
+# Reads of a session's draft wait on ESPN (and on the shared ESPN rate), so they get their
+# own threads: a backlog of them can't hold up connecting a league or anything else that
+# uses the default executor.
+_snapshot_threads = ThreadPoolExecutor(max_workers=64, thread_name_prefix="live-draft")
+
+
+async def _snapshot(drafts: LiveDrafts, session: Session) -> EspnDraft:
+    return await asyncio.get_running_loop().run_in_executor(_snapshot_threads, drafts.snapshot, session)
 
 
 def _espn_error(error: Exception) -> ApiError:
@@ -78,7 +88,7 @@ async def start_live_draft(body: LiveDraftRequest, drafts: Drafts, players: Play
 async def get_live_draft(session_id: SessionId, drafts: Drafts, players: Players) -> LiveDraft:
     session = _session(drafts, session_id)
     try:
-        draft = await asyncio.to_thread(drafts.snapshot, session)
+        draft = await _snapshot(drafts, session)
     except (LeaguePrivate, LeagueNotFound, httpx.HTTPError, ValueError) as error:
         raise _espn_error(error) from None
     return to_live_draft(draft, players.list(), session.updated_at)
@@ -115,7 +125,7 @@ async def live_draft_events(session_id: SessionId, drafts: Drafts, players: Play
                 yield _event("problem", {"code": ENDED[0], "detail": ENDED[1]})
                 return
             try:
-                draft = await asyncio.to_thread(drafts.snapshot, session)
+                draft = await _snapshot(drafts, session)
             except (LeaguePrivate, LeagueNotFound) as error:
                 api_error = _espn_error(error)
                 yield _event("problem", {"code": api_error.code, "detail": api_error.detail})
