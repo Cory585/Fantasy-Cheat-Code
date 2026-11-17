@@ -87,6 +87,11 @@ async function loadMeta() {
   const el = document.getElementById("data-status");
   const meta = state.meta;
   PlayerUI.noteDataStatus(meta);
+  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
+  if (state.loaded) {
+    for (const side of SIDES) renderRoster(side);
+    refreshValues();
+  }
   if (meta.source !== "synced") return;
   const synced = new Date(meta.synced_at);
   const when = Number.isNaN(synced.getTime()) ? null : synced.toLocaleString(undefined, {
@@ -97,9 +102,6 @@ async function loadMeta() {
   if (start && end) parts.push(`weeks ${start}–${end}`);
   if (meta.scoring) parts.push(meta.scoring.replace("_", "-").toUpperCase());
   el.textContent = `${parts.join(", ")}.${meta.outlooks ? " Includes schedule and recent form." : ""}`;
-  // Redraw rosters now that past bye weeks are known (without re-running the analysis).
-  for (const side of SIDES) renderRoster(side);
-  refreshValues();
 }
 
 // A bye before the current week (or, without one, before the first week with projections)

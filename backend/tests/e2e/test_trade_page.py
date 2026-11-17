@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -100,3 +101,18 @@ def test_search_adds_players_with_the_keyboard(page):
     expect(page.locator('.side[data-side="b"] .roster-item')).to_have_count(1)
     expect(page.locator("#results-b")).to_be_hidden()
     assert "b=" in page.url
+
+
+def test_past_byes_drop_off_once_the_current_week_is_known(page):
+    held = []
+    page.route("**/meta", lambda route: held.append(route))
+    page.goto("/#a=rb3&b=wr2")
+    rb3 = page.locator(".roster-item", has_text="Sample RB Three").locator(".player-meta")
+    expect(rb3).to_contain_text("bye week 5")  # before /meta, every bye is shown
+    while not held:
+        page.wait_for_timeout(50)
+    meta = {"source": "sample", "players": 12, "outlooks": 0, "weeks": [1, 18], "current_week": 7, "matchups": False}
+    for route in held:
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(meta))
+    expect(rb3).not_to_contain_text("bye week")
+    expect(page.locator(".roster-item", has_text="Sample WR Two")).to_contain_text("bye week 10")
