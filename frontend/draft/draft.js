@@ -733,18 +733,37 @@ function endLive(message, isError = false) {
   update();
 }
 
+// Marks the connect field an error is about (or none), and points it at the message, so a
+// screen reader reads the error along with the field.
+function markInvalid(field = null) {
+  for (const input of [els.liveLeague, els.liveS2, els.liveSwid]) {
+    if (input === field) {
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("aria-describedby", "live-message");
+    } else {
+      input.removeAttribute("aria-invalid");
+      input.removeAttribute("aria-describedby");
+    }
+  }
+}
+
 async function connectLive(event) {
   event.preventDefault();
   const leagueId = els.liveLeague.value.trim();
   const s2 = els.liveS2.value.trim();
   const swid = els.liveSwid.value.trim();
+  markInvalid();
   if (!/^\d{1,12}$/.test(leagueId)) {
     liveMessage("Enter your league ID: the number after leagueId= in your ESPN league's address.", true);
+    markInvalid(els.liveLeague);
     els.liveLeague.focus();
     return;
   }
   if (Boolean(s2) !== Boolean(swid)) {
     liveMessage("For a private league, paste both espn_s2 and SWID.", true);
+    const missing = s2 ? els.liveSwid : els.liveS2;
+    markInvalid(missing);
+    missing.focus();
     return;
   }
   const body = { league_id: leagueId };
