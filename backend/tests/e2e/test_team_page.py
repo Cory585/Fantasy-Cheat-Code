@@ -332,3 +332,19 @@ def test_edits_stay_with_the_profile_they_were_made_in(page, key):
     # Once it hears, it shows the other profile's league.
     page.evaluate("window.dispatchEvent(new StorageEvent('storage', {key: 'fcc.profile.v1'}))")
     expect(page.locator("#team-name-input")).to_have_value("Theirs")
+
+
+def test_flex_spot_explains_the_pick(page):
+    seed(page)
+    page.goto("/start-sit/?mode=lineup")
+    why = page.locator(".ss-spot", has_text="FLEX").locator(".ss-why")
+    expect(why).to_have_attribute("open", "")
+    expect(why.locator("summary")).to_contain_text("at flex?")
+    expect(why.locator(".ss-why-summary")).to_contain_text("gets the flex over")
+    expect(why.locator(".ss-reason").first).to_contain_text("Expected points")
+    expect(why.locator("tbody tr").first).to_be_visible()
+    expect(why).to_contain_text("best RB, WR, or TE left")
+    expect(page.locator(".ss-spot", has_text="QB").first.locator(".ss-why")).to_have_count(0)
+    why.get_by_role("button", name=re.compile("Compare")).click()
+    expect(page.locator(".ss-card")).to_have_count(2)
+    assert page.problems.errors == []
