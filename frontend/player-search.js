@@ -183,17 +183,16 @@ window.PlayerUI = (() => {
     return null;
   }
 
-  // A note under the page title when dataWarning has something to say. Pass /meta when the
-  // page already has it (null if it failed); otherwise it's fetched. Returns the meta.
-  async function noteDataStatus(meta) {
-    if (meta === undefined) meta = await loadMeta();
-    const warning = dataWarning(meta);
+  // A note under the page title when dataWarning has something to say. Call it as the page
+  // starts: the empty live region goes in right away and the warning is filled in once /meta
+  // arrives (the page's own loadMeta shares the request), so screen readers announce it.
+  async function noteDataStatus() {
     const title = document.querySelector(".masthead-title");
-    if (warning && title && !title.querySelector(".data-notice")) {
-      const note = el("p", "data-status data-notice", warning);
-      (title.querySelector(".lede") || title.lastElementChild).after(note);
-    }
-    return meta;
+    if (!title || title.querySelector(".data-notice")) return;
+    const note = el("p", "data-status data-notice");
+    note.setAttribute("role", "status");
+    (title.querySelector(".lede") || title.lastElementChild).after(note);
+    note.textContent = dataWarning(await loadMeta()) || "";
   }
 
   function teamLogoUrl(team) {

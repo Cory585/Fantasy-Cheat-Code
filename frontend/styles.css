@@ -227,6 +227,8 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .data-status:empty { display: none; }
+/* The data notice is a live region: keep it rendered (and announceable) while empty. */
+.data-notice:empty { display: block; margin: 0; }
 
 .inline-field {
   display: flex;

@@ -86,7 +86,6 @@ async function loadMeta() {
   if (!state.meta) return;
   const el = document.getElementById("data-status");
   const meta = state.meta;
-  PlayerUI.noteDataStatus(meta);
   // Redraw rosters now that past bye weeks are known (without re-running the analysis).
   if (state.loaded) {
     for (const side of SIDES) renderRoster(side);
@@ -761,6 +760,7 @@ function bindEvents() {
 }
 
 async function init() {
+  PlayerUI.noteDataStatus();
   bindEvents();
   renderLineupSettings();
   // Close the lineup popover on an outside click or Escape.

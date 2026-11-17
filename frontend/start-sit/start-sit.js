@@ -701,7 +701,6 @@
   function renderStatus() {
     const meta = state.meta;
     if (!meta) return;
-    noteDataStatus(meta);
     if (meta.source !== "synced") return;
     const parts = [`Week ${meta.current_week} is the current week`];
     if (!meta.matchups) parts.push("matchups and recent form aren't available yet");
@@ -709,6 +708,7 @@
   }
 
   async function init() {
+    noteDataStatus();
     readUrl();
     bind();
     createSearch({

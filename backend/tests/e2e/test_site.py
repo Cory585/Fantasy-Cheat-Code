@@ -89,7 +89,24 @@ SAMPLE_PAGES = ["/", "/start-sit/", "/draft/", "/tiers/", "/tiers/?h=ros", "/fin
 def test_sample_data_is_flagged(page, path):
     fake_meta(page, "sample")
     page.goto(path)
-    expect(page.locator(".masthead-title .data-notice")).to_have_text("Showing sample players, not real projections.")
+    notice = page.locator(".masthead-title .data-notice")
+    expect(notice).to_have_text("Showing sample players, not real projections.")
+    expect(notice).to_have_attribute("role", "status")
+
+
+def test_data_notice_is_a_live_region_before_meta_arrives(page):
+    held = []
+    page.route("**/meta", lambda route: held.append(route))
+    page.goto("/finder/")
+    notice = page.locator(".masthead-title .data-notice[role=status]")
+    expect(notice).to_have_count(1)
+    expect(notice).to_have_text("")
+    while not held:
+        page.wait_for_timeout(50)
+    meta = {"source": "sample", "players": 12, "outlooks": 0, "weeks": [1, 18], "current_week": 1, "matchups": False}
+    for route in held:
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(meta))
+    expect(notice).to_have_text("Showing sample players, not real projections.")
 
 
 def test_defense_page_has_no_player_data_notice(page):
@@ -112,7 +129,7 @@ def test_synced_data_is_not_flagged(page, path):
     fake_meta(page, "synced")
     page.goto(path)
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".data-notice")).to_have_count(0)
+    expect(page.locator(".data-notice")).to_have_text("")
 
 
 def test_404_page_links_every_section_in_nav_order(page):
