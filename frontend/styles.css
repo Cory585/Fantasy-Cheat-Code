@@ -29,6 +29,7 @@
 
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-body: "Barlow", system-ui, sans-serif;
+  --page-max: 1120px; /* width of the nav, masthead, and main column */
   color-scheme: light;
 }
 
@@ -103,7 +104,7 @@ button, input, select { font: inherit; color: inherit; }
 
 /* Two rows: the site name and theme toggle, then the tabs in labeled groups. */
 .site-nav-inner {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0.625rem 1.5rem 0;
   display: flex;
@@ -193,7 +194,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- Masthead ---------- */
 
 .masthead {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 2.5rem 1.5rem 1.5rem;
   display: flex;
@@ -370,7 +371,7 @@ select { cursor: pointer; }
 /* ---------- Trade sides ---------- */
 
 main {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0 1.5rem 3rem;
 }
@@ -2730,7 +2731,8 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 /* A star's headshot, dithered in the page's hue, in the open sky beside the page title. */
 .star-portrait {
   position: absolute;
-  right: max(0.5rem, calc(50vw - 600px));
+  /* 2.5rem out past the page column's right edge on wide screens. */
+  right: max(0.5rem, calc(50vw - var(--page-max) / 2 - 2.5rem));
   top: 4.25rem;
   width: min(44vw, 330px);
   height: auto;
