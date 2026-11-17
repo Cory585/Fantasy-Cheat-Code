@@ -52,12 +52,10 @@ let requestId = 0; // ignore responses to settings that have since changed
 
 // ---------- Helpers ----------
 
-const profileUrl = (playerId) => `/player/?id=${encodeURIComponent(playerId)}`;
-
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const { el, ordinal, request, errorMessage, getJson, errorBlock } = window.PlayerUI;
+const { el, ordinal, profileUrl, request, errorMessage, getJson, errorBlock } = window.PlayerUI;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 function svg(tag, attrs = {}, text) {

@@ -5,7 +5,7 @@
 // be shared, e.g. /tiers/?pos=RB&h=week&teams=10.
 
 (() => {
-  const { el, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
+  const { el, profileUrl, getJson, loadMeta, errorBlock, noteDataStatus } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     position: $("tier-position"),
@@ -68,7 +68,7 @@
     const head = el("div", "tier-player-head");
     head.append(el("span", "tier-rank", String(player.rank)));
     const name = el("a", "tier-player-name profile-link", player.name);
-    name.href = `/player/?id=${encodeURIComponent(player.player_id)}`;
+    name.href = profileUrl(player.player_id);
     head.append(name);
     if (player.injury_status) {
       const injury = el("span", "tier-injury", player.injury_status);
