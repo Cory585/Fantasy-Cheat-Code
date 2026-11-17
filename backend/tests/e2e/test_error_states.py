@@ -104,6 +104,8 @@ def test_finder_retries_loading(page):
     page.goto("/finder/")
     block = page.locator("#finder-list .error-block")
     expect(block).to_be_visible()
+    # A list item can't be an alert, so the message inside it is.
+    expect(block.get_by_role("alert")).to_contain_text("Something went wrong on the server")
     failing.stop()
     block.get_by_role("button", name="Try again").click()
     expect(page.locator(".finder-item").first).to_be_visible()
@@ -124,4 +126,6 @@ def test_finder_filters_keep_the_error(page):
 
 def test_defense_error_has_a_retry(page):
     page.goto("/defense/")
-    expect(page.locator("#df-error .error-block").get_by_role("button", name="Try again")).to_be_visible()
+    error = page.locator("#df-error")
+    expect(error.get_by_role("button", name="Try again")).to_be_visible()
+    expect(error.get_by_role("alert")).to_be_visible()

@@ -74,8 +74,9 @@
 
   // A failed request, with a button to try it again; showError(null) clears it.
   function showError(error, retry) {
-    els.error.replaceChildren(...(error ? [errorBlock(error, retry)] : []));
+    // Unhide first: an alert added inside a hidden element may never be announced.
     els.error.hidden = !error;
+    els.error.replaceChildren(...(error ? [errorBlock(error, retry)] : []));
   }
 
   function remember(team) {
