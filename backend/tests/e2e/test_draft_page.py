@@ -142,6 +142,26 @@ def test_tooltip_text_changes_only_when_the_target_does(page):
     assert page.evaluate("window.__tipWrites") >= 1
 
 
+def test_rebuilding_the_board_does_not_fade_it_but_new_cards_still_appear(page):
+    open_draft(page)
+    page.wait_for_timeout(800)  # the page's entrance animation
+    # motion.js animates with inline opacity; record every element that gets one.
+    page.evaluate("""() => {
+        window.__faded = new Set();
+        new MutationObserver((records) => {
+            for (const r of records) if (r.target.style?.opacity) window.__faded.add(r.target);
+        }).observe(document.querySelector('main'), { attributes: true, attributeFilter: ['style'], subtree: true });
+    }""")
+    page.click('#league-size button[data-teams="8"]')
+    expect(page.locator(".team-head")).to_have_count(8)
+    expect(page.locator(".plan-pick-head strong").nth(1)).to_have_text("2.04")
+    page.wait_for_timeout(500)
+    in_board = page.evaluate("[...window.__faded].filter((el) => el.closest('#draft-board')).length")
+    cards = page.evaluate("[...window.__faded].filter((el) => el.matches('.plan-pick')).length")
+    assert in_board == 0
+    assert cards > 0
+
+
 def test_names_with_markup_render_as_text(page):
     open_draft(page, "teams=4&slot=1&rounds=18")
     assert page.evaluate("window.__pwned") is None
