@@ -310,6 +310,18 @@ def test_requests_are_served_the_current_data_while_new_data_is_built(tmp_path, 
     assert data.current()[0] is not old
 
 
+def test_the_draft_planner_is_built_once_per_version_of_the_data():
+    from app.api.dependencies import get_draft_planner
+    from app.data.repository import InMemoryPlayerRepository
+    from app.data.sample_players import SAMPLE_PLAYERS
+
+    repo, adp = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
+    planner = get_draft_planner(repo, adp)
+    assert get_draft_planner(repo, adp) is planner
+    assert get_draft_planner(InMemoryPlayerRepository(SAMPLE_PLAYERS), adp) is not planner
+    assert get_draft_planner(repo, {1: 2.0}) is not planner
+
+
 def test_a_file_deleted_while_checking_for_changes_is_treated_as_missing(tmp_path, monkeypatch):
     from pathlib import Path
 

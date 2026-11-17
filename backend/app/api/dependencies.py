@@ -376,7 +376,15 @@ def get_draft_planner(
     repo: PlayerRepository = Depends(get_player_repository),
     adp: dict[int, float] = Depends(get_adp),
 ) -> DraftPlanner:
-    return DraftPlanner(repo.list(), adp)
+    """One planner per version of the data (its board ranks every player), not one per request."""
+    global _draft_planner
+    cached = _draft_planner
+    if cached is None or cached[0] is not repo or cached[1] is not adp:
+        cached = _draft_planner = (repo, adp, DraftPlanner(repo.list(), adp))
+    return cached[2]
+
+
+_draft_planner: tuple[PlayerRepository, dict[int, float], DraftPlanner] | None = None
 
 
 _profile_service: ProfileService | None = None
