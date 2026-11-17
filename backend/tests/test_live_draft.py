@@ -96,6 +96,23 @@ def test_snapshot_reads_espn_at_most_once_per_interval():
     assert len(source.calls) == 2
 
 
+def test_a_failed_read_is_reused_until_the_interval_passes():
+    clock = Clock()
+    source = FakeSource(make_draft(), httpx.ConnectError("down"), make_draft(1))
+    drafts = LiveDrafts(source, poll_seconds=4, clock=clock)
+    session, _ = drafts.create("777", 2026, None)
+    clock.now += 4
+    for _ in range(3):  # several streams or tabs within one interval: one ESPN read
+        with pytest.raises(httpx.ConnectError):
+            drafts.snapshot(session)
+        clock.now += 1
+    assert len(source.calls) == 2
+    clock.now += 1  # 4 seconds after the failed read
+    assert len(drafts.snapshot(session).picks) == 1
+    assert len(source.calls) == 3
+    assert len(drafts.snapshot(session).picks) == 1  # success clears the error
+
+
 def test_unused_sessions_expire():
     clock = Clock()
     drafts = LiveDrafts(FakeSource(make_draft()), ttl_seconds=60, clock=clock)

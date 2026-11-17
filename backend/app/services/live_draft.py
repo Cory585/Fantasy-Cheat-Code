@@ -31,7 +31,8 @@ class Session:
     last_used: float
     draft: EspnDraft | None = None
     fetched_at: float = 0.0  # clock time of the last ESPN read
-    updated_at: datetime | None = None  # wall time of the last ESPN read
+    updated_at: datetime | None = None  # wall time of the last successful ESPN read
+    error: Exception | None = field(default=None, repr=False)  # the last read's failure, if it failed
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
@@ -83,14 +84,25 @@ class LiveDrafts:
             return len(self._sessions)
 
     def snapshot(self, session: Session) -> EspnDraft:
-        """The session's draft, read from ESPN unless it was read within the poll interval."""
+        """The session's draft, read from ESPN unless it was read within the poll interval.
+
+        A failed read counts too: its error is raised again until the interval has passed,
+        so an ESPN outage doesn't turn every open stream into its own request."""
         with session.lock:
             now = self._clock()
             session.last_used = now
             if session.draft is None or now - session.fetched_at >= self.poll_seconds:
-                session.draft = self._source.draft(session.season, session.league_id, session.credentials)
+                try:
+                    session.draft = self._source.draft(session.season, session.league_id, session.credentials)
+                except Exception as error:
+                    session.error = error
+                    session.fetched_at = self._clock()
+                    raise
+                session.error = None
                 session.fetched_at = self._clock()
                 session.updated_at = datetime.now(UTC)
+            if session.error is not None:
+                raise session.error.with_traceback(None)
             return session.draft
 
     def _purge(self, now: float) -> None:
