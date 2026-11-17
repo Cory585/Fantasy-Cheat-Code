@@ -54,6 +54,9 @@ class OutlookBuilder:
     form_weight: float = 0.3
     # Games before this week don't count as remaining, even without a score collected.
     start_week: int = 1
+    # Teams whose `start_week` game is over (see app.services.season.played_teams), so it
+    # isn't remaining either: the same games rest-of-season projections leave out.
+    played: frozenset[str] = frozenset()
 
     # ---------- public ----------
 
@@ -119,6 +122,8 @@ class OutlookBuilder:
         ).fetchall()
         remaining: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for week, away, home in rows:
+            if week == self.start_week and (away in self.played or home in self.played):
+                continue
             remaining[away].append((week, home))
             remaining[home].append((week, away))
         return remaining

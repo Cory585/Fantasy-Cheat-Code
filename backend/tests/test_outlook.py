@@ -69,6 +69,15 @@ def test_games_before_the_current_week_are_not_remaining(conn):
     assert a.games_remaining == 1 and a.remaining_opponents == ["SOFT"]
 
 
+def test_current_week_game_already_played_is_not_remaining(conn):
+    # Week 5's game has no score yet, but its date has passed (played_teams says so), as
+    # rest-of-season projections assume: it isn't remaining either.
+    a = build(conn, [player("a", "AAA", 40, espn_id=1)], start_week=5, played=frozenset({"AAA", "SOFT"}))["a"]
+    assert a.games_remaining == 1
+    b = build(conn, [player("b", "BBB", 40)], start_week=5, played=frozenset({"AAA", "SOFT"}))["b"]
+    assert b.games_remaining == 2  # BBB hasn't played week 5
+
+
 def test_form_blends_with_provider_and_uses_schedule(conn):
     out = build(conn, [player("a", "AAA", 40, espn_id=1)], form_weight=0.5)
     a = out["a"]

@@ -141,7 +141,7 @@ class ReloadingPlayerData:
         week, played = self._as_of
         players = [calendar.rest_of_season(p, week, played) for p in self._players]
         self._repo = InMemoryPlayerRepository(players)
-        self._outlooks = self._build_outlooks(players, week)
+        self._outlooks = self._build_outlooks(players, week, played)
         self._tags = self._build_tags(players)
 
     def _reload(self, versions: tuple) -> None:
@@ -224,7 +224,7 @@ class ReloadingPlayerData:
             log.error("Couldn't load ADP from %s: %s", self._db_paths[0], error)
             return {}
 
-    def _build_outlooks(self, players, week: int) -> dict[str, PlayerOutlook]:
+    def _build_outlooks(self, players, week: int, played: frozenset[str]) -> dict[str, PlayerOutlook]:
         if not self._db_paths or not self._db_paths[0].exists():
             log.info("No database at %s; trade values use projections only. Run `python -m app.data.collect`.",
                      self._db_paths[0] if self._db_paths else None)
@@ -238,6 +238,7 @@ class ReloadingPlayerData:
                     season=int(meta["season"]),
                     scoring=ScoringFormat(meta.get("scoring", settings.default_scoring)),
                     start_week=week,
+                    played=played,
                     end_week=cache_weeks(meta)[1],
                     form_weight=settings.form_weight,
                 ).build(players)
