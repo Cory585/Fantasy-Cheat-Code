@@ -29,6 +29,7 @@
 
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-body: "Barlow", system-ui, sans-serif;
+  --page-max: 1120px; /* width of the nav, masthead, and main column */
   color-scheme: light;
 }
 
@@ -123,7 +124,7 @@ button, input, select { font: inherit; color: inherit; }
 
 /* Two rows: the site name and theme toggle, then the tabs in labeled groups. */
 .site-nav-inner {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0.625rem 1.5rem 0;
   display: flex;
@@ -213,7 +214,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- Masthead ---------- */
 
 .masthead {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 2.5rem 1.5rem 1.5rem;
   display: flex;
@@ -361,11 +362,6 @@ select { cursor: pointer; }
 
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn-add {
-  background: var(--side);
-  color: var(--surface);
-}
-
 .btn-quiet {
   background: transparent;
   border-color: var(--line);
@@ -397,7 +393,7 @@ select { cursor: pointer; }
 /* ---------- Trade sides ---------- */
 
 main {
-  max-width: 1120px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0 1.5rem 3rem;
 }
@@ -996,46 +992,6 @@ main {
   font-weight: 600;
   font-size: 0.9375rem;
 }
-
-/* ---------- Feature pages still in development ---------- */
-
-.feature-status {
-  display: inline-block;
-  margin-top: 0.875rem;
-  padding: 0.125rem 0.625rem;
-  border: 1px solid var(--turf);
-  border-radius: 999px;
-  color: var(--turf);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-:root[data-theme="dark"] .feature-status { color: var(--good); border-color: var(--good); }
-
-.preview {
-  margin: 0;
-  padding: 1.25rem;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-}
-
-.preview figcaption {
-  margin-bottom: 1rem;
-  color: var(--muted);
-  font-size: 0.9375rem;
-}
-
-/* Grey bars standing in for content that doesn't exist yet. */
-.bar {
-  display: block;
-  height: 0.625rem;
-  border-radius: 4px;
-  background: var(--line);
-}
-
-.bar-wide { width: 75%; }
-.bar-mid { width: 50%; }
-.bar-short { width: 30%; }
 
 /* Tier lists */
 
@@ -2854,7 +2810,8 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
    so nothing on the page overlaps it. */
 :root {
   --portrait-width: min(44vw, 330px);
-  --portrait-right: max(0.5rem, calc(50vw - 600px));
+  /* 2.5rem out past the page column's right edge on wide screens. */
+  --portrait-right: max(0.5rem, calc(50vw - var(--page-max) / 2 - 2.5rem));
 }
 
 .star-portrait {
@@ -2870,7 +2827,7 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
 }
 
 .masthead-title {
-  max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - max(1.5rem, calc(50vw - 536px)) - 1rem);
+  max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - max(1.5rem, calc(50vw - var(--page-max) / 2 + 1.5rem)) - 1rem);
 }
 
 /* Smaller on tablets and phones, wholly below the nav, which wraps onto two or more rows. */
