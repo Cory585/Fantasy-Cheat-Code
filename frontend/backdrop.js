@@ -3,7 +3,7 @@
 // Page backdrop: a single-hue landscape behind every page, and on the main pages a star
 // player's headshot that dissolves in and out of the sky in ordered (Bayer) dithering.
 // Purely decorative, so it's hidden from assistive tech and never blocks the page.
-// Colors come from styles.css (--sky-*, --ridge-*, --land-portrait), keyed by the
+// Colors come from styles.css (--sky-*, --ridge-*, --land-portrait-light), keyed by the
 // data-land attribute that /theme-boot.js sets on <html> before first paint.
 (() => {
   const land = document.documentElement.dataset.land || "trade";
@@ -168,7 +168,7 @@
   const frame = ctx.createImageData(COLS, ROWS);
 
   // Each team's home jersey color as [hue, saturation %]. While a star is showing, the
-  // landscape (and the page tint that follows it) shifts to their jersey's hue.
+  // portrait's dots shift to their jersey's hue; the landscape and page keep their own.
   const JERSEYS = {
     ARI: [345, 30], ATL: [352, 28], BAL: [250, 30], BUF: [218, 32], CAR: [200, 30], CHI: [222, 26],
     CIN: [16, 34], CLE: [26, 28], DAL: [216, 26], DEN: [18, 34], DET: [201, 32], GB: [158, 26],
@@ -178,42 +178,24 @@
     TEN: [211, 30], WAS: [356, 26],
   };
   const root = document.documentElement;
-  let hue = parseFloat(getComputedStyle(root).getPropertyValue("--land-hue")) || 148;
-  let sat = parseFloat(getComputedStyle(root).getPropertyValue("--land-sat")) || 22;
 
-  function setTint(h, s) {
-    hue = h;
-    sat = s;
-    root.style.setProperty("--land-hue", h.toFixed(1));
-    root.style.setProperty("--land-sat", `${s.toFixed(1)}%`);
-  }
-
-  // Glide to a team's jersey hue the short way round the color wheel, recoloring the
-  // portrait's ink as it goes. Instant when the user prefers reduced motion.
-  function tintTo(team, ms) {
-    const jersey = JERSEYS[team];
-    if (!jersey) return;
-    const toHue = hue + ((((jersey[0] - hue) % 360) + 540) % 360) - 180;
-    if (reduceMotion.matches || !ms) {
-      setTint(toHue, jersey[1]);
-      readInk();
-      return;
-    }
-    const fromHue = hue, fromSat = sat, start = performance.now();
-    const tick = (now) => {
-      const t = clamp01((now - start) / ms);
-      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
-      setTint(fromHue + (toHue - fromHue) * e, fromSat + (jersey[1] - fromSat) * e);
-      readInk();
-      if (t < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
+  // The dots' color is the canvas's CSS color (styles.css: the page hue, or the jersey hue
+  // set below). It's read once per change, never per frame.
   let ink = [0, 0, 0];
   function readInk() {
     const match = getComputedStyle(canvas).color.match(/[\d.]+/g);
     ink = match ? match.slice(0, 3).map(Number) : [0, 0, 0];
+  }
+
+  // Switch the dots to a team's jersey hue. Called while no star is showing, so the color
+  // changes out of sight: each star appears in its own team's color.
+  function tintTo(team) {
+    const jersey = JERSEYS[team];
+    if (jersey) {
+      canvas.style.setProperty("--portrait-hue", String(jersey[0]));
+      canvas.style.setProperty("--portrait-sat", `${jersey[1]}%`);
+    }
+    readInk();
   }
 
   let density = null; // per-pixel dot density in [0, 1] for the current star
@@ -401,28 +383,24 @@
   async function run() {
     const list = await stars();
     if (!list.length) return;
-    readInk();
     let current = await loadNext(list, 0);
     if (!current) return;
     show(current.img);
+    tintTo(list[current.index].team);
     if (reduceMotion.matches) {
-      tintTo(list[current.index].team, 0);
       level = 1;
       render();
       return;
     }
     await visible();
-    tintTo(list[current.index].team, FADE_MS);
     await fade(0, 1);
     while (list.length > 1) {
       // Load the next headshot during the hold, so the switch starts right on time.
       const [next] = await Promise.all([loadNext(list, current.index + 1), wait(HOLD_MS)]);
       if (!next) return;
       await visible();
-      // The background hue glides to the next jersey across the whole switch: while this
-      // star dissolves out, through the gap, and as the next one dissolves in.
-      tintTo(list[next.index].team, FADE_MS * 2 + GAP_MS);
       await fade(1, 0);
+      tintTo(list[next.index].team);
       await wait(GAP_MS);
       show(next.img);
       await fade(0, 1);

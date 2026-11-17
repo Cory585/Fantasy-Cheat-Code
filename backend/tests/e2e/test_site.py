@@ -192,6 +192,17 @@ def test_pages_load_the_player_pool_once(page, path):
     assert len(asked) == 1, asked
 
 
+def test_portrait_takes_the_jersey_color_and_the_page_keeps_its_own(page):
+    page.goto("/tiers/")
+    background = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    # The top star is Jahmyr Gibbs (DET): the portrait's dots switch to Detroit's hue.
+    expect(page.locator("canvas.star-portrait")).to_have_attribute("style", re.compile(r"--portrait-hue:\s*201\b"))
+    assert page.evaluate("document.documentElement.getAttribute('style')") is None
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == background
+    assert page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--land-hue').trim()") == "212"
+    assert page.problems.errors == []
+
+
 def test_data_saver_skips_the_portrait(page):
     page.add_init_script("Object.defineProperty(navigator, 'connection', { value: { saveData: true } })")
     asked = _player_pool_requests(page)
