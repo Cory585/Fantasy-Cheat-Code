@@ -129,7 +129,9 @@ All sources here are public APIs or published data files. No scraping is needed.
    schedule. The final projection is 70% provider projection and 30% this estimate
    (`FORM_WEIGHT`). The form estimate is capped at ±25% of the provider projection, because it
    can't see role changes like a starter returning from injury. Players listed Out or on IR,
-   and team defenses, use the provider projection only.
+   and team defenses, use the provider projection only. So do players without weekly
+   projections (a cache synced before they were stored): their total can't be cut to the
+   remaining weeks, so it isn't a fair cap for the form estimate.
 3. **Strength of schedule.** Each defense's fantasy points allowed per game to the position this
    season, relative to the league average and shrunk toward average for small samples, then
    averaged over the player's remaining opponents. Kickers use kicker points allowed (computed
