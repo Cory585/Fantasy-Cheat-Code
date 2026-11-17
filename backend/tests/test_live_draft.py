@@ -254,6 +254,21 @@ def test_get_and_delete(use_source):
     assert (resp.status_code, resp.json()["code"]) == (404, "live_draft_not_found")
 
 
+def test_an_unexpected_espn_response_is_a_502_not_a_crash():
+    from app.data.sources.espn_draft import EspnDraftSource
+    from app.data.sources.http import RateLimitedClient
+
+    bodies = [{"teams": []}, {"draftDetail": "drafting"}]
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=bodies.pop(0)))
+    drafts = LiveDrafts(EspnDraftSource(RateLimitedClient(min_interval=0, max_retries=0, transport=transport)),
+                        poll_seconds=0)
+    app.dependency_overrides[get_live_drafts] = lambda: drafts
+    app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(POOL)
+    session_id = start().json()["session_id"]
+    resp = client.get(f"/draft/live/{session_id}")
+    assert (resp.status_code, resp.json()["code"]) == (502, "espn_unavailable")
+
+
 def test_unknown_or_malformed_session_ids(use_source):
     use_source(make_draft())
     assert client.get("/draft/live/" + "a" * 32).status_code == 404
