@@ -171,6 +171,21 @@ def test_parse_completed_teams_only_counts_final_games():
     assert espn.parse_completed_teams(data) == {"WAS", "NYG"}
 
 
+def test_parse_completed_teams_skips_malformed_events():
+    final = {"competitions": [{"status": {"type": {"completed": True}},
+                               "competitors": [{"team": {"abbreviation": "DET"}}, {"team": {}}, "junk"]}]}
+    data = {"events": [
+        None,
+        {},
+        {"competitions": []},
+        {"competitions": [{"status": None}]},
+        {"competitions": [{"status": {"type": "final"}, "competitors": [{"team": {"abbreviation": "KC"}}]}]},
+        {"competitions": [{"status": {"type": {"completed": True}}}]},  # no competitors
+        final,
+    ]}
+    assert espn.parse_completed_teams(data) == {"DET"}
+
+
 def test_espn_weekly_points_by_week():
     player = {"stats": [espn_stat(10, 20.0, receptions=4), espn_stat(11, 10.0), espn_stat(9, 99.0)]}
     assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.HALF_PPR) == {10: 18.0, 11: 10.0}

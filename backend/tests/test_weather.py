@@ -21,6 +21,27 @@ def test_parse_scoreboard_skips_finished_games_and_normalizes_teams():
     assert game["kickoff_dt"] == datetime(2026, 11, 12, 1, 15, tzinfo=timezone.utc)
 
 
+def test_parse_scoreboard_skips_malformed_events():
+    no_venue = event("7")
+    del no_venue["competitions"][0]["venue"]
+    no_id = event("x")
+    del no_id["id"]
+    data = {"week": {"number": 10}, "events": [
+        "not an event",
+        {"id": "3", "date": "2026-11-12T01:15Z"},  # no competitions
+        {"id": "4", "date": "2026-11-12T01:15Z", "competitions": []},
+        {"id": "5", "date": "2026-11-12T01:15Z", "competitions": [{"competitors": []}]},  # no status: not final
+        {**event("6"), "date": None},
+        {**event("8"), "date": "next Sunday"},
+        no_id,
+        no_venue,
+        event("1"),
+    ]}
+    games = weather.parse_scoreboard_games(data)
+    assert [g["espn_event_id"] for g in games] == ["5", "7", "1"]
+    assert games[0]["away_team"] is None and games[1]["city"] is None
+
+
 def test_geocode_prefers_matching_state():
     results = [{"admin1": "Georgia", "latitude": 30.9, "longitude": -83.3},
                {"admin1": "Massachusetts", "latitude": 42.07, "longitude": -71.25}]
