@@ -1513,7 +1513,9 @@ main {
   color: #fff;
 }
 
-.stepper {
+/* Earlier/later buttons around a select (draft pick, start/sit week). Not .stepper: that
+   is the lineup panel's grid, and sharing the name squeezed its buttons to 22px wide. */
+.step-control {
   display: flex;
   gap: 0.375rem;
   align-items: center;
