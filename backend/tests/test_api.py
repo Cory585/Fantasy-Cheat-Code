@@ -120,6 +120,8 @@ def test_rest_of_season_projections_drop_played_weeks_without_a_resync(tmp_path,
     player = data.current()[0].get("x1")
     assert player.ros_projection == 50.0 and player.projection_sources == {"sleeper": 50.0}
     assert player.weekly_projections == weekly
+    today = date(2027, 2, 1)  # season over: keep the synced totals instead of dropping everyone to 0
+    assert data.current()[0].get("x1").ros_projection == 60.0
 
 
 def test_player_repository_keeps_old_data_if_cache_is_corrupt(tmp_path):

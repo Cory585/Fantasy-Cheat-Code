@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 
 from app.models.player import Player, Position
 from app.services.matchups import Game, MatchupData
-from app.services.season import current_week, local_date, parse_date, played_teams, rest_of_season, week_on, week_start
+from app.services.season import current_week, local_date, parse_date, played_teams, rest_of_season, season_over, week_on, week_start
 
 
 def test_week_one_starts_the_tuesday_after_labor_day():
@@ -85,3 +85,21 @@ def test_local_date_converts_utc_timestamps_to_the_local_day():
     assert local_date("2026-11-11T03:30:00") == date(2026, 11, 11)  # no zone: taken as local
     assert local_date("2026-11-11") == date(2026, 11, 11)
     assert local_date("never") is None and local_date(None) is None
+
+
+def test_season_is_over_once_the_last_week_is_played():
+    data = MatchupData(schedule={
+        "AAA": {18: Game(18, "BBB", True, True)},
+        "BBB": {18: Game(18, "AAA", False, True)},
+        "CCC": {18: Game(18, "DDD", True, False, gameday="2027-01-10")},
+        "DDD": {18: Game(18, "CCC", False, False, gameday="2027-01-10")},
+    })
+    assert not season_over(data, (10, 18), 2026, day=date(2027, 1, 9))
+    assert season_over(data, (10, 18), 2026, day=date(2027, 1, 11))
+
+
+def test_season_is_over_by_the_calendar_without_a_schedule():
+    empty = MatchupData()
+    assert not season_over(empty, (10, 18), 2026, day=date(2027, 1, 11))  # Monday of week 18
+    assert season_over(empty, (10, 18), 2026, day=date(2027, 1, 12))
+    assert not season_over(empty, (1, 18), None, day=date(2027, 6, 1))  # sample data

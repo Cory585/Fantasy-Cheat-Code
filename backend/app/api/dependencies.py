@@ -91,7 +91,7 @@ class ReloadingPlayerData:
         self._meta: dict = {}
         self._tags: dict[str, list[PlayerTag]] = {}
         self._players: list[Player] | None = None  # as synced; None with sample data
-        self._as_of: tuple | None = None  # (week, teams that have played it) the projections are for
+        self._as_of: calendar.WeekState | None = None  # where the season stood for the projections
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
         with self._lock:
@@ -130,18 +130,20 @@ class ReloadingPlayerData:
         elif self._players is not None and self._week_state() != self._as_of:
             self._derive()
 
-    def _week_state(self) -> tuple[int, frozenset[str]]:
-        week = calendar.current_week(self._matchups, cache_weeks(self._meta), _season(self._meta),
-                                     parse_date(self._meta.get("season_start")))
-        return week, calendar.played_teams(self._matchups, week)
+    def _week_state(self) -> calendar.WeekState:
+        return calendar.week_state(self._matchups, cache_weeks(self._meta), _season(self._meta),
+                                   parse_date(self._meta.get("season_start")))
 
     def _derive(self) -> None:
-        """Rest-of-season projections, outlooks, and tags for the current week."""
-        self._as_of = self._week_state()
-        week, played = self._as_of
-        players = [calendar.rest_of_season(p, week, played) for p in self._players]
+        """Rest-of-season projections, outlooks, and tags for the current week. Once the season
+        is over, the synced totals stand (with no outlooks: there's no schedule left)."""
+        self._as_of = state = self._week_state()
+        if state.over:
+            players, self._outlooks = self._players, {}
+        else:
+            players = [calendar.rest_of_season(p, state.week, state.played) for p in self._players]
+            self._outlooks = self._build_outlooks(players, state.week, state.played)
         self._repo = InMemoryPlayerRepository(players)
-        self._outlooks = self._build_outlooks(players, week, played)
         self._tags = self._build_tags(players)
 
     def _reload(self, versions: tuple) -> None:
@@ -165,7 +167,7 @@ class ReloadingPlayerData:
             self._matchups = self._load_matchups()
             self._derive()
             log.info("Loaded %d players (%d with schedule/form outlooks) for week %d",
-                     len(players), len(self._outlooks), self._as_of[0])
+                     len(players), len(self._outlooks), self._as_of.week)
         self._adp = self._load_adp()
         self._versions = versions
 

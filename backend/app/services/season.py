@@ -2,10 +2,13 @@
 
 Start/sit, tiers, tags, defenses, and player values all use `current_week`, so they agree on
 the week. `rest_of_season` recomputes a player's rest-of-season projection from their weekly
-projections, so weeks that have been played stop counting without a fresh sync.
+projections, so weeks that have been played stop counting without a fresh sync. Once the
+season is over the synced totals are kept, rather than every projection dropping to zero,
+so the off-season draft board still has players on it.
 """
 
 from collections.abc import Container
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from app.config import REGULAR_SEASON_END_WEEK
@@ -93,6 +96,47 @@ def played_teams(matchups: MatchupData, week: int, day: date | None = None) -> f
         team for team, games in matchups.schedule.items()
         if (g := games.get(week)) is not None and (g.played or (g.gameday is not None and g.gameday < iso))
     )
+
+
+def season_over(
+    matchups: MatchupData,
+    weeks: tuple[int, int],
+    season: int | None = None,
+    season_start: date | None = None,
+    day: date | None = None,
+) -> bool:
+    """Whether every synced week has been played: with a collected schedule, every game in the
+    last week is over (see `played_teams`); without one, the calendar is past the last week."""
+    last = weeks[1]
+    day = day or today()
+    if matchups.available:
+        teams = {team for team, games in matchups.schedule.items() if last in games}
+        return bool(teams) and teams <= played_teams(matchups, last, day)
+    if season is None:
+        return False
+    return day >= week_start(season, season_start) + timedelta(days=7 * last)
+
+
+@dataclass(frozen=True)
+class WeekState:
+    """Where the season stands: the current week, the teams that have played it, and whether
+    the season is over."""
+
+    week: int
+    played: frozenset[str]
+    over: bool
+
+
+def week_state(
+    matchups: MatchupData,
+    weeks: tuple[int, int],
+    season: int | None = None,
+    season_start: date | None = None,
+    day: date | None = None,
+) -> WeekState:
+    day = day or today()
+    week = current_week(matchups, weeks, season, season_start, day)
+    return WeekState(week, played_teams(matchups, week, day), season_over(matchups, weeks, season, season_start, day))
 
 
 def rest_of_season(player: Player, week: int, played: Container[str] = frozenset()) -> Player:
