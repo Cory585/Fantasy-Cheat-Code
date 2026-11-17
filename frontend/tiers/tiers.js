@@ -105,7 +105,7 @@
     els.list.replaceChildren(...result.tiers.map((tier) => {
       const row = el("li", "tier-row");
       const label = el("div", "tier-label");
-      label.append(el("span", "tier-name", `Tier ${tier.tier}`));
+      label.append(el("h2", "tier-name", `Tier ${tier.tier}`));
       label.append(el("span", "tier-range player-meta",
         tier.high === tier.low ? `${fmt(tier.high)} ${unit}` : `${fmt(tier.high)}–${fmt(tier.low)} ${unit}`));
       const players = el("ol", "tier-players");

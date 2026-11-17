@@ -84,7 +84,8 @@
 
   <main>
     <section class="sides" aria-label="Trade sides">
-      <article class="side" data-side="a">
+      <article class="side" data-side="a" aria-labelledby="side-a-heading">
+        <h2 class="visually-hidden" id="side-a-heading">Team A</h2>
         <input class="team-name" value="Team A" aria-label="Team A name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
@@ -114,7 +115,8 @@
         </button>
       </div>
 
-      <article class="side" data-side="b">
+      <article class="side" data-side="b" aria-labelledby="side-b-heading">
+        <h2 class="visually-hidden" id="side-b-heading">Team B</h2>
         <input class="team-name" value="Team B" aria-label="Team B name" maxlength="30">
         <p class="side-hint">Sends these players</p>
         <div class="picker">
