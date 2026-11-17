@@ -3,10 +3,17 @@
 // Site-wide motion: Lenis smooth scrolling and GSAP feedback for presses, text entry,
 // dropdowns, and content as it appears. Everything hooks in through event delegation and
 // a MutationObserver, so page scripts don't need to know about it. Users who ask for
-// reduced motion get none of it.
+// reduced motion get none of it, including when they turn it on after the page loads.
 (() => {
-  if (!window.gsap || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const { gsap } = window;
+  if (!window.gsap) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  // With reduced motion every tween jumps straight to its end state (still running its
+  // onComplete and clearProps), so the page ends up the same, just without the movement.
+  const instant = (vars) => (reduceMotion.matches ? { ...vars, duration: 0, delay: 0, stagger: 0 } : vars);
+  const gsap = {
+    to: (targets, vars) => window.gsap.to(targets, instant(vars)),
+    fromTo: (targets, from, vars) => window.gsap.fromTo(targets, from, instant(vars)),
+  };
   const EASE_OUT = "power3.out";
 
   // ---------- Smooth scrolling ----------
@@ -19,9 +26,25 @@
     return (/auto|scroll/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1)
       || (/auto|scroll/.test(style.overflowX) && node.scrollWidth > node.clientWidth + 1);
   }
-  if (window.Lenis) {
-    new window.Lenis({ autoRaf: true, lerp: 0.12, anchors: true, prevent: scrollsOnItsOwn });
+  let lenis = null;
+  function smoothScrolling(on) {
+    if (on && !lenis && window.Lenis) {
+      lenis = new window.Lenis({ autoRaf: true, lerp: 0.12, anchors: true, prevent: scrollsOnItsOwn });
+    } else if (!on && lenis) {
+      lenis.destroy();
+      lenis = null;
+    }
   }
+  smoothScrolling(!reduceMotion.matches);
+
+  // Turning reduced motion on mid-visit finishes anything still moving and stops smooth
+  // scrolling; turning it off brings smooth scrolling back.
+  reduceMotion.addEventListener("change", () => {
+    if (reduceMotion.matches) {
+      window.gsap.globalTimeline.getChildren(true, true, false).forEach((tween) => tween.progress(1));
+    }
+    smoothScrolling(!reduceMotion.matches);
+  });
 
   // Elements whose CSS already uses transform: only fade those, never move or scale them.
   const hasTransform = (el) => getComputedStyle(el).transform !== "none";
