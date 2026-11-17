@@ -143,6 +143,13 @@ def test_cache_round_trip(tmp_path):
     assert load_player_cache(tmp_path / "missing.json") is None
 
 
+def test_load_player_cache_rejects_a_cache_with_no_players(tmp_path):
+    path = tmp_path / "players.json"
+    path.write_text('{"season": 2026, "weeks": [19, 18], "players": []}', encoding="utf-8")
+    with pytest.raises(ValueError, match="no players"):
+        load_player_cache(path)
+
+
 def test_sleeper_skips_teams_that_already_played():
     rows = [
         {"player_id": "1", "team": "DET", "stats": {"pts_ppr": 20.0}},
