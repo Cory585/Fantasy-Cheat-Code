@@ -358,10 +358,20 @@
     });
   }
 
-  async function stars() {
+  // The player pool. Pages that load /player-search.js share its single request with the
+  // page's own players (this script runs before it, so wait until every script has run);
+  // anywhere else, fetch it here.
+  async function loadPool() {
+    if (document.readyState === "loading") {
+      await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+    }
+    if (window.PlayerUI?.loadPlayers) return [...(await window.PlayerUI.loadPlayers()).values()];
     const response = await fetch("/players", { headers: { accept: "application/json" } });
-    if (!response.ok) return [];
-    const players = (await response.json()).filter(
+    return response.ok ? response.json() : [];
+  }
+
+  async function stars() {
+    const players = (await loadPool()).filter(
       (p) => ["QB", "RB", "WR", "TE"].includes(p.position) && Number.isInteger(p.espn_id) && p.espn_id > 0,
     );
     players.sort((a, b) => b.ros_projection - a.ros_projection);

@@ -173,3 +173,20 @@ def test_pages_ask_for_meta_once(page, path):
     page.goto(path)
     page.wait_for_load_state("networkidle")
     assert len(asked) == 1
+
+
+def _player_pool_requests(page):
+    asked = []
+    page.on("request", lambda request: re.search(r"/players(\?|$)", request.url) and asked.append(request.url))
+    return asked
+
+
+@pytest.mark.parametrize("path", ["/", "/finder/", "/start-sit/", "/team/", "/tiers/", "/draft/", "/profile/",
+                                  "/defense/"])
+def test_pages_load_the_player_pool_once(page, path):
+    # The backdrop's star portrait and the page share one request.
+    asked = _player_pool_requests(page)
+    page.goto(path)
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("canvas.star-portrait")).to_have_count(1)
+    assert len(asked) == 1, asked
