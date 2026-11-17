@@ -11,10 +11,15 @@ address they saw to whatever the client sent, so only the rightmost entries are
 trustworthy: with N proxies in front of the app (TRUSTED_PROXY_HOPS, default 1), the
 client is the Nth entry from the right. Entries further left are client-controlled.
 
+An IPv6 client is keyed by its /64 network, since one host usually holds a whole /64 and
+could otherwise rotate addresses for fresh buckets. IPv4-mapped IPv6 addresses count as
+the IPv4 address.
+
 Buckets live in a bounded LRU map, so a flood of distinct addresses can't exhaust memory.
 State is per process; running several workers multiplies the effective limit.
 """
 
+import ipaddress
 import math
 import threading
 import time
@@ -36,6 +41,27 @@ class Rule:
 
     def applies(self, path: str, method: str) -> bool:
         return (not self.methods or method.upper() in self.methods) and self.matches(path)
+
+
+def client_address(request: Request, trust_proxy: bool = False, proxy_hops: int = 1) -> str:
+    """The key for the client that sent the request (see the module docstring)."""
+    if trust_proxy:
+        entries = [e.strip() for e in request.headers.get("x-forwarded-for", "").split(",") if e.strip()]
+        if len(entries) >= max(1, proxy_hops):
+            return _network(entries[-max(1, proxy_hops)][:64])
+    return _network(request.client.host) if request.client else "unknown"
+
+
+def _network(address: str) -> str:
+    try:
+        ip = ipaddress.ip_address(address.strip("[]"))
+    except ValueError:
+        return address  # not an address (e.g. a test client's name): key on it as is
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))
+    return str(ip)
 
 
 class _Bucket:
@@ -65,11 +91,7 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     def client_key(self, request: Request) -> str:
-        if self.trust_proxy:
-            entries = [e.strip() for e in request.headers.get("x-forwarded-for", "").split(",") if e.strip()]
-            if len(entries) >= self.proxy_hops:
-                return entries[-self.proxy_hops][:64]
-        return request.client.host if request.client else "unknown"
+        return client_address(request, self.trust_proxy, self.proxy_hops)
 
     def check(self, client: str, path: str, method: str = "GET") -> float | None:
         """Take a token from each matching bucket. Returns None if allowed, else seconds to wait."""

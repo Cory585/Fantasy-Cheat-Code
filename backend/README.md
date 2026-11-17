@@ -226,9 +226,9 @@ The draft page can follow an ESPN league's draft as it happens (`app/api/live_dr
 
 | Endpoint | What it does |
 |---|---|
-| `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
+| `POST /draft/live` | Body `{"league_id": "123456"}`, plus `espn_s2` and `swid` for a private league, and optionally `season` (default: this year from August, last year before then; `LIVE_DRAFT_SEASON_MONTH` moves the cutover). Reads the draft once, so a wrong id or cookie fails right away, then returns a `session_id` and the draft. |
 | `GET /draft/live/{session_id}` | The draft now: status (`pre_draft`, `in_progress`, `complete`), teams in draft order, rounds, and every pick so far matched to the player pool by ESPN id. |
-| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever a pick comes in, until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
+| `GET /draft/live/{session_id}/events` | Server-Sent Events: a `draft` event with the same JSON now and whenever the draft changes (a pick, a corrected pick, the draft order, a team name), until the draft is complete. `problem` events (`{code, detail}`) report ESPN errors; the stream ends on `espn_private_league`, `espn_league_not_found`, or `live_draft_not_found`. |
 | `DELETE /draft/live/{session_id}` | Ends the session and forgets the cookies. |
 
 ESPN has no official API; this reads the league endpoint the ESPN draft room uses (views
@@ -244,8 +244,13 @@ and light:
 - **Polling.** ESPN is read at most once per `LIVE_DRAFT_POLL_SECONDS` (default 4) per session,
   however many streams or tabs follow it. A stream runs for up to `LIVE_DRAFT_STREAM_HOURS`
   (default 1) before the browser reconnects, and stops as soon as its session ends.
-- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 500) sessions at once, and connecting
-  has its own rate limit bucket (below).
+- **Limits.** At most `LIVE_DRAFT_MAX_SESSIONS` (default 80) sessions at once, and connecting
+  has its own rate limit bucket (below). All sessions share one ESPN rate,
+  `LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND` (default 20), so keep the session cap at or below that
+  rate times the poll interval; a failed read is reused until the interval passes too. A session
+  can have at most `LIVE_DRAFT_STREAMS_PER_SESSION` (default 6) event streams open and a client
+  `LIVE_DRAFT_STREAMS_PER_CLIENT` (default 30); a stream over either cap gets a
+  `live_draft_too_many_streams` problem and ends, and the browser tries again later.
 
 The plan assumes a snake draft; for other ESPN draft types the picks still come through, and the
 page says the plan may not match.
@@ -529,7 +534,7 @@ stable for clients to branch on:
 Validation errors don't echo the submitted input back. Browsers that hit a missing page get
 `frontend/404.html`; API clients (no `text/html` in `Accept`) get the JSON 404.
 
-**Rate limits.** Per client IP, in memory (`app/api/ratelimit.py`):
+**Rate limits.** Per client IP (an IPv6 client by its /64 network), in memory (`app/api/ratelimit.py`):
 
 | Bucket | Applies to | Burst | Sustained |
 |---|---|---|---|

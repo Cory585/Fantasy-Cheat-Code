@@ -397,12 +397,12 @@ _live_drafts_lock = threading.Lock()
 def get_live_drafts() -> LiveDrafts:
     """Live ESPN draft sessions, created on first use. Reads use a short timeout and a size
     cap; the per-host spacing is small because each session already polls only every few
-    seconds, and many leagues can be drafting at once."""
+    seconds, and many leagues can be drafting at once (see LIVE_DRAFT_ESPN_REQUESTS_PER_SECOND)."""
     global _live_drafts
     with _live_drafts_lock:
         if _live_drafts is None:
             client = RateLimitedClient(
-                min_interval=0.2,
+                min_interval=1 / settings.live_draft_espn_requests_per_second,
                 max_retries=1,
                 backoff_base=1.0,
                 timeout=8.0,
@@ -415,5 +415,7 @@ def get_live_drafts() -> LiveDrafts:
                 poll_seconds=settings.live_draft_poll_seconds,
                 ttl_seconds=settings.live_draft_session_hours * 3600,
                 max_sessions=settings.live_draft_max_sessions,
+                max_streams_per_session=settings.live_draft_streams_per_session,
+                max_streams_per_client=settings.live_draft_streams_per_client,
             )
         return _live_drafts

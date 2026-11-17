@@ -99,7 +99,7 @@ class EspnDraftSource:
             raise
         try:
             return parse_draft(data, league_id, season)
-        except (KeyError, TypeError) as error:
+        except (KeyError, TypeError, AttributeError) as error:
             raise ValueError(f"Unexpected ESPN league response: {type(error).__name__}") from None
 
 
