@@ -38,6 +38,7 @@
     match: "all",
     q: "",
     shown: PAGE,
+    loaded: false, // players and tags are in; until then the list shows loading or the error
   };
 
   const normalize = (text) => text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
@@ -136,6 +137,7 @@
   }
 
   function renderResults() {
+    if (!state.loaded) return; // keep "Loading players…" or the Try again block
     const found = [...state.players.values()].filter(matches).sort((a, b) => b.ros_projection - a.ros_projection);
     const chosen = state.selected.map((k) => state.byKey.get(k)).filter(Boolean);
     const what = chosen.length
@@ -241,6 +243,7 @@
     state.byKey = new Map(index.tags.map((t) => [t.key, t]));
     state.playerTags = index.players;
     state.season = index.season;
+    state.loaded = true;
     state.selected = state.selected.filter((k) => state.byKey.has(k));
     els.status.textContent = index.season
       ? `Role, usage, and trend tags come from the ${index.season} season so far.`

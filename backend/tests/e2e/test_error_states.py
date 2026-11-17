@@ -107,6 +107,19 @@ def test_finder_retries_loading(page):
     expect(page.locator(".finder-item").first).to_be_visible()
 
 
+def test_finder_filters_keep_the_error(page):
+    failing = Failing(page, "**/tags", **SERVER_ERROR)
+    page.goto("/finder/")
+    block = page.locator("#finder-list .error-block")
+    expect(block).to_be_visible()
+    page.fill("#finder-q", "Sample")
+    page.click('#finder-pos button[data-pos="WR"]')
+    expect(block).to_be_visible()
+    failing.stop()
+    block.get_by_role("button", name="Try again").click()
+    expect(page.locator(".finder-item").first).to_contain_text("Sample WR")
+
+
 def test_defense_error_has_a_retry(page):
     page.goto("/defense/")
     expect(page.locator("#df-error .error-block").get_by_role("button", name="Try again")).to_be_visible()
