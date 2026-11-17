@@ -46,7 +46,7 @@ def test_sleeper_parse_weekly_points_uses_scoring_field():
     assert sleeper.parse_weekly_points(rows, ScoringFormat.STANDARD) == {"1": 15.0}
 
 
-def test_espn_ros_points_filters_weeks_season_and_source():
+def test_espn_weekly_points_filters_weeks_season_and_source():
     player = {
         "stats": [
             espn_stat(10, 20.0, receptions=4),
@@ -56,8 +56,8 @@ def test_espn_ros_points_filters_weeks_season_and_source():
             espn_stat(10, 99.0, source=0),  # actual, not projected
         ]
     }
-    assert espn.ros_points(player, SEASON, WEEKS, ScoringFormat.PPR) == 30.0
-    assert espn.ros_points(player, SEASON, WEEKS, ScoringFormat.HALF_PPR) == 27.0
+    assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.PPR) == {10: 20.0, 11: 10.0}
+    assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.HALF_PPR) == {10: 18.0, 11: 9.0}
 
 
 def test_espn_projections_maps_positions_and_teams():
@@ -158,9 +158,9 @@ def test_sleeper_skips_teams_that_already_played():
     assert sleeper.parse_weekly_points(rows, ScoringFormat.PPR, skip_teams=frozenset({"DET"})) == {"2": 10.0}
 
 
-def test_espn_ros_points_skips_completed_week():
+def test_espn_weekly_points_skips_completed_week():
     player = {"stats": [espn_stat(10, 20.0), espn_stat(11, 10.0)]}
-    assert espn.ros_points(player, SEASON, WEEKS, ScoringFormat.PPR, skip_week=10) == 10.0
+    assert espn.weekly_points(player, SEASON, WEEKS, ScoringFormat.PPR, skip_week=10) == {11: 10.0}
 
 
 def test_parse_completed_teams_only_counts_final_games():

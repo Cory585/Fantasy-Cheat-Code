@@ -82,10 +82,6 @@ class TeamModels:
     # team -> week -> the defense's actual fantasy points (played games)
     dst_actual: dict[str, dict[int, float]] = field(default_factory=dict)
 
-    @property
-    def available(self) -> bool:
-        return bool(self.dst or self.kicker or self.dst_actual)
-
 
 def load_team_models(conn: sqlite3.Connection, season: int, dst_path: Path | None,
                      kicker_path: Path | None) -> TeamModels:

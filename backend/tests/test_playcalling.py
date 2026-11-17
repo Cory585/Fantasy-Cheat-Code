@@ -1,5 +1,5 @@
 from app.data import db
-from app.data.sources.playcalling import parse_play_by_play, parse_play_by_play_tables
+from app.data.sources.playcalling import parse_play_by_play_tables
 
 COLUMNS = [
     "game_id", "season", "week", "season_type", "posteam", "defteam", "play_type", "qb_dropback", "rush",
@@ -29,7 +29,7 @@ def test_summarizes_offense_per_game():
         play(play_type="no_play"),  # penalty, ignored
         play(play_type="punt", qb_dropback="0", rush="0"),  # not a pass or rush, ignored
     ])
-    (row,) = parse_play_by_play(text)
+    (row,), _ = parse_play_by_play_tables(text)
     assert row["team"] == "LAR" and row["opponent"] == "SF"  # nflverse 'LA' normalized
     assert (row["plays"], row["dropbacks"], row["sacks"], row["interceptions"], row["fumbles_lost"]) == (4, 3, 1, 1, 1)
     assert row["dropback_epa"] == 0.5 - 1.5 + 0.5
@@ -38,7 +38,7 @@ def test_summarizes_offense_per_game():
 
 
 def test_rows_fit_schema(tmp_path):
-    rows = parse_play_by_play(HEADER + play() + play(posteam="SF", defteam="LA"))
+    rows, _ = parse_play_by_play_tables(HEADER + play() + play(posteam="SF", defteam="LA"))
     assert db.upsert(db.connect(tmp_path / "t.db"), "team_game_offense", rows) == 2
 
 
