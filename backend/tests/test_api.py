@@ -220,6 +220,96 @@ def test_a_broken_cache_is_read_once_not_on_every_request(tmp_path, monkeypatch)
     assert len(reads) == 1
 
 
+def _bump(path, seconds=5):
+    import os
+
+    stat = path.stat()
+    os.utime(path, (stat.st_atime, stat.st_mtime + seconds))  # filesystems with coarse mtimes
+
+
+def _collected_data(tmp_path, monkeypatch):
+    """A cache and a collected database, loaded once, with player cache reads counted."""
+    from app.api import dependencies
+    from app.data import db
+    from app.data.sync import write_cache
+    from app.models.player import Player, Position
+    from app.models.trade import ScoringFormat
+
+    cache, database = tmp_path / "players.json", tmp_path / "fantasy.db"
+    write_cache(cache, [Player(id="x1", name="A", position=Position.QB, team="KC", ros_projection=100.0)],
+                2026, range(10, 18), ScoringFormat.PPR)
+    conn = db.connect(database)
+    db.record_completed_run(conn, 0)
+    data = dependencies.ReloadingPlayerData(cache, database)
+    data.current()
+    reads = []
+    real = dependencies.load_player_cache
+    monkeypatch.setattr(dependencies, "load_player_cache", lambda p: (reads.append(1), real(p))[1])
+    return data, conn, database, reads
+
+
+TEAM = {"abbrev": "DET", "espn_id": 8, "location": None, "name": None, "display_name": "Detroit Lions",
+        "color": None, "logo_url": None}
+
+
+def test_a_running_collection_does_not_reload_the_data_until_it_finishes(tmp_path, monkeypatch):
+    from app.data import db
+
+    data, conn, database, reads = _collected_data(tmp_path, monkeypatch)
+    for espn_id in range(3):  # commits from a collection still in progress
+        db.upsert(conn, "teams", [{**TEAM, "espn_id": espn_id}])
+        _bump(database, 5 * (espn_id + 1))
+        data.current()
+    assert reads == []
+    db.record_completed_run(conn, 3)
+    _bump(database, 30)
+    data.current()
+    data.current()
+    assert len(reads) == 1
+
+
+def test_a_database_without_a_finished_collection_reloads_when_the_file_changes(tmp_path, monkeypatch):
+    from app.data import db
+
+    data, conn, database, reads = _collected_data(tmp_path, monkeypatch)
+    conn.execute("DELETE FROM collection_runs")
+    conn.commit()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    _bump(database)
+    data.current()
+    data.current()
+    assert len(reads) == 1
+    assert db.last_completed_run(conn) is None
+
+
+def test_requests_are_served_the_current_data_while_new_data_is_built(tmp_path, monkeypatch):
+    import threading
+
+    from app.api import dependencies
+
+    data, conn, database, _ = _collected_data(tmp_path, monkeypatch)
+    old = data.current()[0]
+    started, release = threading.Event(), threading.Event()
+    real = dependencies.load_player_cache
+
+    def slow_load(path):
+        started.set()
+        release.wait(10)
+        return real(path)
+
+    monkeypatch.setattr(dependencies, "load_player_cache", slow_load)
+    _bump(tmp_path / "players.json")
+    builder = threading.Thread(target=data.current)
+    builder.start()
+    try:
+        assert started.wait(10)
+        assert data.current()[0] is old  # doesn't wait for the build
+    finally:
+        release.set()
+        builder.join(10)
+    assert data.current()[0] is not old
+
+
 def test_a_file_deleted_while_checking_for_changes_is_treated_as_missing(tmp_path, monkeypatch):
     from pathlib import Path
 
