@@ -339,11 +339,6 @@ select { cursor: pointer; }
 
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn-add {
-  background: var(--side);
-  color: var(--surface);
-}
-
 .btn-quiet {
   background: transparent;
   border-color: var(--line);
@@ -974,46 +969,6 @@ main {
   font-weight: 600;
   font-size: 0.9375rem;
 }
-
-/* ---------- Feature pages still in development ---------- */
-
-.feature-status {
-  display: inline-block;
-  margin-top: 0.875rem;
-  padding: 0.125rem 0.625rem;
-  border: 1px solid var(--turf);
-  border-radius: 999px;
-  color: var(--turf);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-:root[data-theme="dark"] .feature-status { color: var(--good); border-color: var(--good); }
-
-.preview {
-  margin: 0;
-  padding: 1.25rem;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-}
-
-.preview figcaption {
-  margin-bottom: 1rem;
-  color: var(--muted);
-  font-size: 0.9375rem;
-}
-
-/* Grey bars standing in for content that doesn't exist yet. */
-.bar {
-  display: block;
-  height: 0.625rem;
-  border-radius: 4px;
-  background: var(--line);
-}
-
-.bar-wide { width: 75%; }
-.bar-mid { width: 50%; }
-.bar-short { width: 30%; }
 
 /* Tier lists */
 
