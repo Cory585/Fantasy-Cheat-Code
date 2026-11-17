@@ -78,6 +78,54 @@ def test_server_error_is_shown(page):
     expect(page.locator(".result-error")).to_have_text("Week must be between 1 and 17.")
 
 
+def test_old_error_is_cleared_while_the_next_call_loads(page):
+    held = []
+
+    def handle(route):
+        if not held:
+            held.append(None)
+            return route.fulfill(status=500, content_type="application/json",
+                                 body='{"detail": "Start/sit is down for a moment."}')
+        held.append(route)  # answered below, once the page shows it's loading
+
+    page.route("**/start-sit?*", handle)
+    page.goto("/start-sit/?p=wr1,wr2&week=2")
+    expect(page.locator("#ss-result .result-error")).to_have_text("Start/sit is down for a moment.")
+    page.click("#week-next")
+    expect(page.locator("#ss-result .result-error")).to_have_count(0)
+    expect(page.locator("#ss-result .result-empty")).to_have_text("Comparing…")
+    while len(held) < 2:
+        page.wait_for_timeout(50)
+    held[1].continue_()
+    expect(page.locator(".ss-verdict")).to_contain_text("Week 3")
+
+
+def test_slow_older_answer_does_not_replace_a_newer_one(page):
+    # The week 2 answer arrives, but its body takes longer to read than the week 3 one.
+    page.add_init_script("""
+        const realFetch = window.fetch;
+        window.__releaseWeek2 = null;
+        window.fetch = async (url, options) => {
+            const response = await realFetch(url, options);
+            if (!String(url).startsWith('/start-sit?') || !String(url).includes('week=2')) return response;
+            const gate = new Promise((resolve) => { window.__releaseWeek2 = resolve; });
+            const json = response.json.bind(response);
+            response.json = async () => { await gate; return json(); };
+            return response;
+        };
+    """)
+    page.goto("/start-sit/?p=wr1,wr2&week=1")
+    expect(page.locator(".ss-verdict")).to_contain_text("Week 1")
+    page.click("#week-next")
+    page.wait_for_function("window.__releaseWeek2 !== null")
+    page.click("#week-next")
+    expect(page.locator(".ss-verdict")).to_contain_text("Week 3")
+    page.evaluate("window.__releaseWeek2()")
+    page.wait_for_timeout(300)
+    expect(page.locator(".ss-verdict")).to_contain_text("Week 3")
+    expect(page.locator("#ss-result")).to_have_attribute("aria-busy", "false")
+
+
 def test_player_names_render_as_text(page):
     page.goto("/start-sit/?p=666,wr1&week=2")
     expect(page.locator(".ss-card")).to_have_count(2)

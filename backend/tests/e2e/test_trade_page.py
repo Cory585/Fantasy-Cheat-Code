@@ -107,6 +107,22 @@ def test_search_adds_players_with_the_keyboard(page):
     assert "b=" in page.url
 
 
+def test_enter_in_an_empty_search_adds_nobody(page):
+    page.goto("/")
+    search = page.locator('.side[data-side="a"] .player-search')
+    expect(search).to_be_enabled()
+    search.click()
+    search.press("Enter")
+    search.fill("Sample WR")
+    search.fill("")  # typed, then cleared
+    search.press("Enter")
+    expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(0)
+    # With an option picked from the list, Enter still adds it.
+    search.press("ArrowDown")
+    search.press("Enter")
+    expect(page.locator('.side[data-side="a"] .roster-item')).to_have_count(1)
+
+
 def test_past_byes_drop_off_once_the_current_week_is_known(page):
     held = []
     page.route("**/meta", lambda route: held.append(route))
