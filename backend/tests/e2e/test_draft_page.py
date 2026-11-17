@@ -170,6 +170,9 @@ def test_pick_links_jump_to_each_card(page):
     expect(chips).to_have_count(15)
     expect(chips.first).to_have_text("1.05")
     expect(chips.nth(7)).to_have_text("8.08")
+    # Let the page's entrance and card appear animations finish: they offset the cards
+    # with transforms, which would skew where the scroll lands.
+    page.wait_for_timeout(1000)
     chips.nth(7).click()
     card = page.locator("#pick-92")
     expect(card.locator(".plan-pick-head strong")).to_have_text("8.08")
@@ -177,13 +180,17 @@ def test_pick_links_jump_to_each_card(page):
     expect(card).to_be_in_viewport()
     # The links stay at the top of the screen, and the card lands just below them.
     nav = page.locator("#plan-jump")
-    for _ in range(40):  # wait for the smooth scroll to settle
-        nav_box, card_box = nav.bounding_box(), card.bounding_box()
-        if abs(card_box["y"] - (nav_box["y"] + nav_box["height"])) < 24:
-            break
+    last = None
+    for _ in range(50):  # wait for the smooth scroll to settle
         page.wait_for_timeout(100)
-    assert nav_box["y"] == 0
-    assert nav_box["y"] + nav_box["height"] <= card_box["y"] < nav_box["y"] + nav_box["height"] + 24
+        card_y = card.bounding_box()["y"]
+        if last is not None and abs(card_y - last) < 0.5:
+            break
+        last = card_y
+    nav_box = nav.bounding_box()
+    nav_bottom = nav_box["y"] + nav_box["height"]
+    assert abs(nav_box["y"]) < 1  # stuck to the top (allowing for subpixel rounding)
+    assert nav_bottom - 1 <= card_y < nav_bottom + 24
     assert page.problems.errors == []
 
 
