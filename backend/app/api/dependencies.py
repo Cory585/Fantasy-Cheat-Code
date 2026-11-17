@@ -3,6 +3,7 @@
 import logging
 import sqlite3
 import threading
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from app.data.repository import (
 from app.data.sample_players import SAMPLE_PLAYERS
 from app.models.player import Player, PlayerOutlook
 from app.models.trade import ScoringFormat
+from app.data import db
 from app.data.adp import load_adp
 from app.data.league_store import LeagueStore
 from app.data.profile_cache import ProfileCache
@@ -65,14 +67,41 @@ def _season(meta: dict) -> int | None:
 
 def _mtime(*paths: Path) -> float | None:
     """Latest modification time across paths (None if none exist)."""
-    times = [p.stat().st_mtime for p in paths if p.exists()]
+    times = []
+    for p in paths:
+        try:
+            times.append(p.stat().st_mtime)
+        except OSError:  # missing, or (like SQLite's -wal file) deleted since it was last seen
+            pass
     return max(times) if times else None
+
+
+@dataclass
+class _Loaded:
+    """One consistent set of served data. Replaced whole on a reload, never changed in place,
+    so a request that read it keeps a consistent view even while the next one is built."""
+
+    versions: tuple
+    players: list[Player] | None  # as synced; None with sample data
+    meta: dict
+    matchups: MatchupData
+    adp: dict[int, float]
+    repo: PlayerRepository | None = None
+    outlooks: dict[str, PlayerOutlook] = field(default_factory=dict)
+    tags: dict[str, list[PlayerTag]] = field(default_factory=dict)
+    as_of: calendar.WeekState | None = None  # where the season stood for the projections
+    # The week state for one day, so it's worked out once a day, not on every request.
+    state_cache: tuple[date, calendar.WeekState] | None = None
 
 
 class ReloadingPlayerData:
     """Players from the sync cache, plus schedule/form outlooks from the collected
-    database. Both reload when their files change, so a fresh `app.data.sync` or
-    `app.data.collect` shows up without restarting the server.
+    database. Both reload when they change, so a fresh `app.data.sync` or `app.data.collect`
+    shows up without restarting the server. The database counts as changed when a collection
+    finishes (see `db.record_completed_run`), not on every commit a running collection makes.
+
+    New data is built while the old data is still served: only the first load makes requests
+    wait.
 
     Rest-of-season projections are summed from each player's weekly projections from the
     current week on, and recomputed (with the outlooks and tags built from them) whenever the
@@ -83,105 +112,136 @@ class ReloadingPlayerData:
         self._cache_path = cache_path
         self._model_paths = model_paths or (None, None)
         self._db_paths = (database_path, database_path.with_name(database_path.name + "-wal")) if database_path else ()
-        self._lock = threading.Lock()
-        self._versions: tuple | None = None
-        self._repo: PlayerRepository | None = None
-        self._outlooks: dict[str, PlayerOutlook] = {}
-        self._adp: dict[int, float] = {}
-        self._matchups = MatchupData()
-        self._meta: dict = {}
-        self._tags: dict[str, list[PlayerTag]] = {}
-        self._players: list[Player] | None = None  # as synced; None with sample data
-        self._as_of: calendar.WeekState | None = None  # where the season stood for the projections
-        # The week state for one day, so it's worked out once a day, not on every request.
-        self._state_cache: tuple[date, calendar.WeekState] | None = None
+        self._data: _Loaded | None = None
+        self._lock = threading.Lock()  # held while building new data, so only one build runs at a time
+        self._db_lock = threading.Lock()
+        self._db_seen: tuple | None = None  # the database files' mtimes when its version was last read
+        self._db_version = None
 
     def current(self) -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
-        with self._lock:
-            self._refresh()
-            return self._repo, self._outlooks
+        data = self._loaded()
+        return data.repo, data.outlooks
 
     def adp(self) -> dict[int, float]:
-        with self._lock:
-            self._refresh()
-            return self._adp
+        return self._loaded().adp
 
     def tags(self) -> tuple[dict[str, list[PlayerTag]], int | None]:
         """Stat-based player tags and the season they come from."""
-        with self._lock:
-            self._refresh()
-            season = self._meta.get("season")
-            return self._tags, int(season) if season is not None else None
+        data = self._loaded()
+        season = data.meta.get("season")
+        return data.tags, int(season) if season is not None else None
 
     def matchups(self) -> tuple[MatchupData, dict]:
         """Weekly matchup data and the player cache's metadata (season, weeks, scoring)."""
-        with self._lock:
-            self._refresh()
-            return self._matchups, self._meta
+        data = self._loaded()
+        return data.matchups, data.meta
 
     def source(self) -> str:
         """"synced" when serving the sync cache, "sample" when serving the built-in sample players."""
-        with self._lock:
-            self._refresh()
-            return "sample" if self._players is None else "synced"
+        return "sample" if self._loaded().players is None else "synced"
 
-    def _refresh(self) -> None:
-        versions = (_mtime(self._cache_path), _mtime(*self._db_paths),
-                    tuple(_mtime(p) for p in self._model_paths if p is not None))
-        if self._repo is None or versions != self._versions:
-            self._reload(versions)
+    def _loaded(self) -> _Loaded:
+        data = self._data
+        if data is not None and not self._outdated(data):
+            return data
+        if data is None:
+            self._lock.acquire()  # nothing to serve yet: wait for the first load
+        elif not self._lock.acquire(blocking=False):
+            return data  # another request is building the new data; serve the current data meanwhile
+        try:
+            data = self._data
+            if data is None or self._outdated(data):
+                data = self._data = self._rebuild(data)
+            return data
+        finally:
+            self._lock.release()
+
+    def _outdated(self, data: _Loaded) -> bool:
+        return data.versions != self._versions() or (data.players is not None and self._week_state(data) != data.as_of)
+
+    def _versions(self) -> tuple:
+        return (_mtime(self._cache_path), self._database_version(),
+                tuple(_mtime(p) for p in self._model_paths if p is not None))
+
+    def _database_version(self):
+        """Changes when a collection finishes. Databases without a finished collection recorded
+        (collected before that was recorded, or built some other way) fall back to the file's
+        modification time."""
+        if not self._db_paths:
+            return None
+        seen = (_mtime(self._db_paths[0]), _mtime(self._db_paths[1]))
+        with self._db_lock:
+            if seen != self._db_seen:
+                self._db_version = self._read_database_version(seen[0])
+                # Read the mtimes again: opening a WAL database can create its -wal file.
+                self._db_seen = (_mtime(self._db_paths[0]), _mtime(self._db_paths[1]))
+            return self._db_version
+
+    def _read_database_version(self, modified: float | None):
+        if modified is None:
+            return None
+        try:
+            conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
+            try:
+                finished = db.last_completed_run(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            finished = None
+        return ("collected", finished) if finished else ("modified", modified)
+
+    def _rebuild(self, previous: _Loaded | None) -> _Loaded:
+        versions = self._versions()
+        data = previous
+        if previous is None or versions != previous.versions:
+            data = self._load(versions, previous)
         # Also after a failed reload, which keeps serving the previous players: they still need
         # to move on with the weeks.
-        if self._players is not None and self._week_state() != self._as_of:
-            self._derive()
+        if data.players is not None and self._week_state(data) != data.as_of:
+            data = self._derive(data)
+        return data
 
-    def _week_state(self) -> calendar.WeekState:
+    def _week_state(self, data: _Loaded) -> calendar.WeekState:
         """Where the season stands today. It only changes with the date or the data, so it's
-        cached for the day and cleared on reload."""
+        cached for the day with the data."""
         day = calendar.today()
-        if self._state_cache is None or self._state_cache[0] != day:
-            state = calendar.week_state(self._matchups, cache_weeks(self._meta), _season(self._meta),
-                                        parse_date(self._meta.get("season_start")), day)
-            self._state_cache = (day, state)
-        return self._state_cache[1]
+        if data.state_cache is None or data.state_cache[0] != day:
+            state = calendar.week_state(data.matchups, cache_weeks(data.meta), _season(data.meta),
+                                        parse_date(data.meta.get("season_start")), day)
+            data.state_cache = (day, state)
+        return data.state_cache[1]
 
-    def _derive(self) -> None:
+    def _derive(self, data: _Loaded) -> _Loaded:
         """Rest-of-season projections, outlooks, and tags for the current week. Once the season
         is over, the synced totals stand (with no outlooks: there's no schedule left)."""
-        self._as_of = state = self._week_state()
+        state = self._week_state(data)
         if state.over:
-            players, self._outlooks = self._players, {}
+            players, outlooks = data.players, {}
         else:
-            players = [calendar.rest_of_season(p, state.week, state.played) for p in self._players]
-            self._outlooks = self._build_outlooks(players, state.week, state.played)
-        self._repo = InMemoryPlayerRepository(players)
-        self._tags = self._build_tags(players)
+            players = [calendar.rest_of_season(p, state.week, state.played) for p in data.players]
+            outlooks = self._build_outlooks(players, data.meta, state.week, state.played)
+        return replace(data, repo=InMemoryPlayerRepository(players), outlooks=outlooks,
+                       tags=self._build_tags(players, data.meta), as_of=state)
 
-    def _reload(self, versions: tuple) -> None:
+    def _load(self, versions: tuple, previous: _Loaded | None) -> _Loaded:
         try:
             players = load_player_cache(self._cache_path)
         except (OSError, ValueError) as error:
-            # Keep serving the previous data if the new file can't be read.
             log.error("Couldn't load player cache %s: %s", self._cache_path, error)
-            if self._repo is not None:
-                return
+            if previous is not None:
+                # Keep serving the previous data, but remember the broken file's version so it
+                # isn't re-read on every request.
+                return replace(previous, versions=versions)
             players = None
+        adp = self._load_adp()
         if players is None:
             log.warning("No player cache at %s; using sample data. Run `python -m app.data.sync`.", self._cache_path)
-            self._repo, self._outlooks = InMemoryPlayerRepository(SAMPLE_PLAYERS), {}
-            self._matchups, self._meta = MatchupData(), {}
-            self._tags = {}
-            self._players, self._as_of = None, None
-        else:
-            self._players = players
-            self._meta = self._load_meta()
-            self._matchups = self._load_matchups()
-            self._state_cache = None
-            self._derive()
-            log.info("Loaded %d players (%d with schedule/form outlooks) for week %d",
-                     len(players), len(self._outlooks), self._as_of.week)
-        self._adp = self._load_adp()
-        self._versions = versions
+            return _Loaded(versions, None, {}, MatchupData(), adp, repo=InMemoryPlayerRepository(SAMPLE_PLAYERS))
+        meta = self._load_meta()
+        data = self._derive(_Loaded(versions, players, meta, self._load_matchups(meta), adp))
+        log.info("Loaded %d players (%d with schedule/form outlooks) for week %d",
+                 len(players), len(data.outlooks), data.as_of.week)
+        return data
 
     def _load_meta(self) -> dict:
         try:
@@ -190,16 +250,16 @@ class ReloadingPlayerData:
             log.error("Couldn't read cache metadata from %s: %s", self._cache_path, error)
             return {}
 
-    def _load_matchups(self) -> MatchupData:
-        if not self._db_paths or not self._db_paths[0].exists() or "season" not in self._meta:
+    def _load_matchups(self, meta: dict) -> MatchupData:
+        if not self._db_paths or not self._db_paths[0].exists() or "season" not in meta:
             return MatchupData()
         try:
             conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
             try:
                 return load_matchups(
                     conn,
-                    season=int(self._meta["season"]),
-                    scoring=ScoringFormat(self._meta.get("scoring", settings.default_scoring)),
+                    season=int(meta["season"]),
+                    scoring=ScoringFormat(meta.get("scoring", settings.default_scoring)),
                     dst_model_path=self._model_paths[0],
                     kicker_model_path=self._model_paths[1],
                 )
@@ -209,15 +269,15 @@ class ReloadingPlayerData:
             log.error("Couldn't load matchups from %s: %s", self._db_paths[0], error)
             return MatchupData()
 
-    def _build_tags(self, players) -> dict[str, list[PlayerTag]]:
-        if not self._db_paths or not self._db_paths[0].exists() or "season" not in self._meta:
+    def _build_tags(self, players, meta: dict) -> dict[str, list[PlayerTag]]:
+        if not self._db_paths or not self._db_paths[0].exists() or "season" not in meta:
             return {}
         try:
             conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
             try:
                 return TagBuilder(
-                    conn, int(self._meta["season"]),
-                    ScoringFormat(self._meta.get("scoring", settings.default_scoring)),
+                    conn, int(meta["season"]),
+                    ScoringFormat(meta.get("scoring", settings.default_scoring)),
                 ).build(players)
             finally:
                 conn.close()
@@ -238,13 +298,12 @@ class ReloadingPlayerData:
             log.error("Couldn't load ADP from %s: %s", self._db_paths[0], error)
             return {}
 
-    def _build_outlooks(self, players, week: int, played: frozenset[str]) -> dict[str, PlayerOutlook]:
+    def _build_outlooks(self, players, meta: dict, week: int, played: frozenset[str]) -> dict[str, PlayerOutlook]:
         if not self._db_paths or not self._db_paths[0].exists():
             log.info("No database at %s; trade values use projections only. Run `python -m app.data.collect`.",
                      self._db_paths[0] if self._db_paths else None)
             return {}
         try:
-            meta = self._meta
             conn = sqlite3.connect(f"file:{self._db_paths[0]}?mode=ro", uri=True)
             try:
                 return OutlookBuilder(
@@ -317,7 +376,15 @@ def get_draft_planner(
     repo: PlayerRepository = Depends(get_player_repository),
     adp: dict[int, float] = Depends(get_adp),
 ) -> DraftPlanner:
-    return DraftPlanner(repo.list(), adp)
+    """One planner per version of the data (its board ranks every player), not one per request."""
+    global _draft_planner
+    cached = _draft_planner
+    if cached is None or cached[0] is not repo or cached[1] is not adp:
+        cached = _draft_planner = (repo, adp, DraftPlanner(repo.list(), adp))
+    return cached[2]
+
+
+_draft_planner: tuple[PlayerRepository, dict[int, float], DraftPlanner] | None = None
 
 
 _profile_service: ProfileService | None = None

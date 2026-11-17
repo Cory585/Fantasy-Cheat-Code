@@ -81,6 +81,9 @@ python -m app.data.collect --datasets player_week_stats,injuries
 Re-running replaces rows with the same key, so it's safe to run daily. `espn_market` keeps
 one snapshot per day, so trends in rostered % and ADP build up over time.
 
+A running API reloads once a collection finishes (each run is marked in `collection_runs`), not
+on every write while it's in progress, and keeps serving the previous data while it rebuilds.
+
 | Table | Source | What's in it |
 |---|---|---|
 | `teams` | ESPN sports API | Names, colors, logos |
@@ -94,7 +97,7 @@ one snapshot per day, so trends in rostered % and ADP build up over time.
 | `team_game_offense` | nflverse play-by-play | Per offense per game: neutral pass rate over expected (coaching tendency), plays, dropbacks, sacks taken, turnovers, EPA per dropback |
 | `player_game_usage` | nflverse play-by-play | Per player per game: targets by field location (left/middle/right), air yards, deep (20+), behind-the-line, red-zone, end-zone, and third-down targets; red-zone and goal-line carries |
 | `game_weather` | ESPN venues + [Open-Meteo](https://open-meteo.com) | Forecast temperature, wind, and precipitation for the 3 hours from kickoff, for unplayed games (Open-Meteo data is CC BY 4.0, free for non-commercial use) |
-| `collection_runs` | | When each dataset was last collected |
+| `collection_runs` | | When each dataset was last collected, and when the last whole run finished |
 
 ### Linking players across sources
 
@@ -132,7 +135,9 @@ All sources here are public APIs or published data files. No scraping is needed.
    schedule. The final projection is 70% provider projection and 30% this estimate
    (`FORM_WEIGHT`). The form estimate is capped at ±25% of the provider projection, because it
    can't see role changes like a starter returning from injury. Players listed Out or on IR,
-   and team defenses, use the provider projection only.
+   and team defenses, use the provider projection only. So do players without weekly
+   projections (a cache synced before they were stored): their total can't be cut to the
+   remaining weeks, so it isn't a fair cap for the form estimate.
 3. **Strength of schedule.** Each defense's fantasy points allowed per game to the position this
    season, relative to the league average and shrunk toward average for small samples, then
    averaged over the player's remaining opponents. Kickers use kicker points allowed (computed
