@@ -59,12 +59,18 @@
     return value.toFixed(value >= 10 ? 1 : 2);
   }
 
-  // A bar that fills further the better the rank (1st = full).
+  // A bar that fills further the better the rank (1st = full), shaded from green at the top
+  // of the league through amber to red at the bottom. The color tokens are per theme in
+  // styles.css; mixing in OKLCH keeps the in-between shades bright instead of muddy.
   function rankMeter(rank, teams) {
     const track = el("span", "df-meter");
     track.setAttribute("aria-hidden", "true");
-    const fill = el("span", `df-meter-fill ${tone(rank, teams)}`);
-    fill.style.width = `${teams > 1 ? Math.round(((teams - rank) / (teams - 1)) * 100) : 100}%`;
+    const fill = el("span", "df-meter-fill");
+    const pct = teams > 1 ? Math.round(((teams - rank) / (teams - 1)) * 100) : 100;
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct >= 50
+      ? `color-mix(in oklch, var(--meter-top) ${(pct - 50) * 2}%, var(--meter-mid))`
+      : `color-mix(in oklch, var(--meter-mid) ${pct * 2}%, var(--meter-bottom))`;
     track.append(fill);
     return track;
   }
