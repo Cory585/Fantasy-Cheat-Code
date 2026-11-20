@@ -14,6 +14,21 @@ Fantasy football tools built on free public data from Sleeper, ESPN, and nflvers
 | Player profiles | `/player/?id=…` | Bio, NFL and college stats, and combine results |
 | Tier lists | `/tiers/` | Groups each position (or flex) into tiers where projected points drop sharply, for this week or the rest of the season |
 
+Across the site:
+
+- **Light and dark mode.** A round switch fixed to the bottom-right corner of every page (moon for dark, sun for light). It follows the system setting until you use it, then remembers your choice.
+- **Star portrait.** The main pages show a star player's headshot dissolving in and out of the backdrop in dithered dots, tinted to the player's jersey. The same star carries over as you switch pages, and only the first page of a visit fades it in. A new star appears about once a minute.
+- **Rank colors.** On the Defenses page, each stat bar is shaded by league rank, from green at the top through amber to red at the bottom.
+
+## Releases
+
+**v1.0.0 is the first release.** Releases are tagged on `main` as `vMAJOR.MINOR.PATCH` and
+listed on the repository's Releases page with their notes:
+
+- **Patch** (`v1.0.1`): bug fixes only.
+- **Minor** (`v1.1.0`): new features or pages that keep existing links, saved leagues, and the API working.
+- **Major** (`v2.0.0`): changes that break them.
+
 ## Architecture
 
 ```mermaid
