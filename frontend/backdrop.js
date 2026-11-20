@@ -373,18 +373,51 @@
     return response.ok ? response.json() : [];
   }
 
-  async function stars() {
+  // The rotation carries across pages for the rest of the visit: which order the stars come
+  // in, who is showing, and since when. So switching pages keeps the same star instead of
+  // starting a new one with a fresh fade-in. Per tab (sessionStorage), so a new visit reshuffles.
+  const SESSION_KEY = "fcc.portrait.v1";
+
+  function readSession() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY));
+      return saved && Array.isArray(saved.order) && Number.isFinite(saved.since) ? saved : null;
+    } catch (e) {
+      return null; // storage blocked or holding junk: start a fresh rotation
+    }
+  }
+
+  function saveSession(list, player) {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        order: list.map((p) => p.espn_id), id: player.espn_id, since: Date.now(),
+      }));
+    } catch (e) {
+      // Storage blocked: each page just starts its own rotation.
+    }
+  }
+
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  }
+
+  // The stars in rotation order: the saved order when there is one (any star new since then
+  // goes at the end), else a fresh shuffle.
+  async function stars(saved) {
     const players = (await loadPool()).filter(
       (p) => p.position in STAR_COUNTS && Number.isInteger(p.espn_id) && p.espn_id > 0,
     );
     players.sort((a, b) => b.ros_projection - a.ros_projection);
     const taken = {};
     const top = players.filter((p) => (taken[p.position] = (taken[p.position] || 0) + 1) <= STAR_COUNTS[p.position]);
-    for (let i = top.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [top[i], top[j]] = [top[j], top[i]];
-    }
-    return top;
+    if (!saved) return shuffle(top);
+    const position = new Map(saved.order.map((id, i) => [id, i]));
+    const known = top.filter((p) => position.has(p.espn_id)).sort((a, b) => position.get(a.espn_id) - position.get(b.espn_id));
+    return [...known, ...shuffle(top.filter((p) => !position.has(p.espn_id)))];
   }
 
   // The next star whose headshot loads, starting at list[from] (skipping any that fail).
@@ -401,13 +434,35 @@
   }
 
   async function run() {
-    const list = await stars();
+    const saved = readSession();
+    const list = await stars(saved);
     if (!list.length) return;
-    let current = await loadNext(list, 0);
+
+    // Arriving from another page: pick up where it left off. The star that was showing stays
+    // for the rest of its minute; if its minute is up, the next one takes over.
+    let start = 0;
+    let holdLeft = HOLD_MS;
+    if (saved) {
+      const at = list.findIndex((p) => p.espn_id === saved.id);
+      const elapsed = Date.now() - saved.since;
+      if (at >= 0 && elapsed >= 0 && elapsed < HOLD_MS) {
+        start = at;
+        holdLeft = HOLD_MS - elapsed;
+      } else if (at >= 0) {
+        start = (at + 1) % list.length;
+      }
+    }
+
+    let current = await loadNext(list, start);
     if (!current) return;
+    // A different star than the one carried over (new, or the saved one's headshot failed):
+    // it starts its own full minute.
+    if (current.index !== start) holdLeft = HOLD_MS;
+    if (holdLeft === HOLD_MS) saveSession(list, list[current.index]);
     show(current.img);
     tintTo(list[current.index].team);
-    if (reduceMotion.matches) {
+    // Only the first page of a visit fades the portrait in; after that it's already there.
+    if (saved || reduceMotion.matches) {
       level = 1;
       render();
     } else {
@@ -418,7 +473,8 @@
       // With reduced motion the current star stays put until motion is allowed again.
       await motionAllowed();
       // Load the next headshot during the hold, so the switch starts right on time.
-      const [next] = await Promise.all([loadNext(list, current.index + 1), wait(HOLD_MS)]);
+      const [next] = await Promise.all([loadNext(list, current.index + 1), wait(holdLeft)]);
+      holdLeft = HOLD_MS;
       if (!next) return;
       await motionAllowed();
       await visible();
@@ -426,6 +482,7 @@
       tintTo(list[next.index].team);
       await wait(GAP_MS);
       show(next.img);
+      saveSession(list, list[next.index]);
       await fade(0, 1);
       current = next;
     }
