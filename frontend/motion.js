@@ -228,7 +228,9 @@
 
   // The theme switch's icon spins as it changes between sun and moon.
   document.getElementById("theme-toggle")?.addEventListener("click", (event) => {
-    const icon = event.currentTarget.querySelector(".theme-icon");
+    // theme.js runs first, so the button's class already names the icon now showing.
+    const button = event.currentTarget;
+    const icon = button.querySelector(button.classList.contains("is-dark") ? ".theme-icon-sun" : ".theme-icon-moon");
     if (icon) gsap.fromTo(icon, { rotate: -120 }, { rotate: 0, duration: 0.5, ease: "back.out(2)", clearProps: "transform" });
   });
 })();

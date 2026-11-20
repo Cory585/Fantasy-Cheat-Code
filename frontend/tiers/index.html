@@ -47,10 +47,6 @@
           </ul>
         </li>
       </ul>
-      <button id="theme-toggle" class="btn btn-quiet theme-toggle" type="button">
-        <span class="theme-icon" aria-hidden="true"></span>
-        <span class="theme-label">Dark mode</span>
-      </button>
     </div>
   </nav>
 
@@ -100,6 +96,18 @@
     <p class="section-note tier-note" id="tier-note"></p>
     <ol class="tier-list" id="tier-list" aria-label="Tiers"></ol>
   </main>
+
+  <!-- Floats in the bottom-right corner on every page; theme.js keeps the label and icon current. -->
+  <button id="theme-toggle" class="theme-toggle" type="button">
+    <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+    </svg>
+    <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="4.25" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+    </svg>
+    <span class="theme-label visually-hidden">Dark mode</span>
+  </button>
 
   <script src="/theme.js"></script>
   <script src="/backdrop.js"></script>
