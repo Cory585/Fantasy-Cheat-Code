@@ -24,6 +24,10 @@
   --side-b: #97600f; /* deep enough for white text (5.3:1) */
   --good: #23704b;
   --bad: #a8372b;
+  /* Rank bars on the defense page: top of the league → middle → bottom. */
+  --meter-top: #2e9a5c;
+  --meter-mid: #e0a526;
+  --meter-bottom: #d0453a;
   --focus: #2952a3;
   --on-color: #fff; /* text on a filled --tag or --bad background */
 
@@ -56,6 +60,9 @@
   --side-b: #e3a74c;
   --good: #6cc896;
   --bad: #ef8a7d;
+  --meter-top: #5cc48a;
+  --meter-mid: #ecc04f;
+  --meter-bottom: #ea6f62;
   --focus: #86a7ef;
   --on-color: #101a15; /* the dark-mode accents are light, so text on them is dark */
   color-scheme: dark;
@@ -2560,9 +2567,13 @@ body[data-mode="compare"] .lineup-only { display: none; }
   overflow: hidden;
 }
 
-.df-meter-fill { position: absolute; inset: 0 auto 0 0; background: var(--muted); opacity: 0.6; }
-.df-meter-fill.is-good { background: var(--good); opacity: 1; }
-.df-meter-fill.is-bad { background: var(--bad); opacity: 1; }
+/* defense.js sets the fill's background, blending --meter-top/-mid/-bottom by rank. */
+.df-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 4px; /* last place still shows a red sliver */
+  background: var(--meter-mid);
+}
 
 .df-players-heading {
   margin: 1rem 0 0.375rem;
