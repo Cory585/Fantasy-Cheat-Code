@@ -71,3 +71,23 @@ def test_small_controls_have_24px_targets(page):
     # A point 11px from the dot's center still finds its tooltip.
     tip = page.evaluate("([x, y]) => document.elementFromPoint(x, y)?.closest('[data-tip]')?.dataset.tip", [cx + 11, cy])
     assert tip == dot.get_attribute("data-tip")
+
+
+NAV_PAGES = ["/", "/start-sit/", "/defense/", "/tiers/", "/finder/", "/draft/", "/team/", "/profile/"]
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_nav_tabs_stay_put_from_page_to_page(page, width):
+    # The current tab is bolder; it mustn't widen and push the other tabs around (#72).
+    page.set_viewport_size({"width": width, "height": 900})
+    layouts = {}
+    for path in NAV_PAGES:
+        page.goto(path)
+        # The web font is blocked in tests, and the fallback may draw 500 and 600 alike; Arial's
+        # bold is clearly wider, so the check means something.
+        page.add_style_tag(content=".nav-links a { font-family: Arial, sans-serif; }")
+        layouts[path] = page.locator(".site-nav a").evaluate_all(
+            "links => links.map(a => { const r = a.getBoundingClientRect(); return [r.left, r.top, r.width]; })")
+    first = layouts[NAV_PAGES[0]]
+    for path, layout in layouts.items():
+        assert layout == first, (path, layout, first)
