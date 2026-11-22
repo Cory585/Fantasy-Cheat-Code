@@ -49,3 +49,12 @@ def test_tiers_endpoint_flex(pool):
 ])
 def test_tiers_endpoint_rejects_bad_input(pool, params):
     assert client.get("/tiers", params=params).status_code == 422
+
+
+def test_week_tiers_leave_out_players_who_are_out(pool):
+    # rb1 has the best week-11 projection but is ruled out; rb3 leads instead (#134).
+    hurt = [p.model_copy(update={"injury_status": "O"}) if p.id == "rb1" else p for p in POOL]
+    app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(hurt)
+    body = client.get("/tiers", params={"position": "RB", "horizon": "week"}).json()
+    ids = [p["player_id"] for t in body["tiers"] for p in t["players"]]
+    assert "rb1" not in ids and ids[0] == "rb3"

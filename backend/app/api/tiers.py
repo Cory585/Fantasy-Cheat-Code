@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import get_start_sit_advisor, get_tier_service
 from app.api.errors import ApiError
-from app.models.player import Position
+from app.models.player import Player, Position
 from app.models.tiers import TierList
 from app.services.start_sit import StartSitAdvisor, StartSitError
 from app.services.tiers import TierService
@@ -30,12 +30,22 @@ def tiers(
     and a new tier starts where projected points drop sharply. FLEX ranks RB, WR, and TE
     together by points over replacement for a league of `teams`.
 
-    The week view is empty when the synced data has no weekly projections for that week."""
+    The week view ranks by start/sit's projection for the week, so injuries, byes, recent form,
+    and games already played count."""
     if horizon == "ros" and week is not None:
         raise ApiError(422, "invalid_week", "Pass week only with horizon=week.")
+    week_points = None
     if horizon == "week":
         try:
             week = advisor.check_week(week)
         except StartSitError as error:
             raise ApiError(422, error.code, str(error)) from None
-    return service.tiers(None if position == "FLEX" else Position(position), teams, week=week, max_players=depth)
+        checked = week
+
+        # Not the providers' raw projection, which ignores the injury report: a player who is
+        # out or on IR scores 0 and drops off instead of topping the list (#134).
+        def week_points(player: Player) -> float:
+            return advisor.evaluate(player, checked).projection
+
+    return service.tiers(None if position == "FLEX" else Position(position), teams, week=week, max_players=depth,
+                         week_points=week_points)

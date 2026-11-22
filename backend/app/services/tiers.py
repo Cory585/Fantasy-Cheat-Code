@@ -109,21 +109,28 @@ class TierService:
         self._players = players
         self._valuation = valuation
 
-    def _points(self, player: Player, week: int | None) -> float | None:
+    def _points(self, player: Player, week: int | None,
+                week_points: Callable[[Player], float | None] | None) -> float | None:
         if week is None:
             return self._valuation.projection(player)
+        if week_points is not None:
+            return week_points(player)
         return player.week_projection(week)
 
     def tiers(self, position: Position | None, teams: int, week: int | None = None,
-              max_players: int | None = None) -> TierList:
+              max_players: int | None = None,
+              week_points: Callable[[Player], float | None] | None = None) -> TierList:
         """Tiers at `position` (None = flex: RB, WR, and TE by points over replacement),
-        for the rest of the season, or for one week if `week` is given."""
+        for the rest of the season, or for one week if `week` is given.
+
+        `week_points` scores a player for that week (the API passes start/sit's projection,
+        which counts injuries, byes, and form); without it, the providers' raw projection."""
         positions = FLEX_POSITIONS if position is None else (position,)
         scored = []
         for p in self._players:
             if p.position not in positions:
                 continue
-            points = self._points(p, week)
+            points = self._points(p, week, week_points)
             if points is not None and points > 0:
                 scored.append(_Scored(p, points, points))
         if position is None:
