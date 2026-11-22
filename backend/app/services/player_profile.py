@@ -12,6 +12,7 @@ from app.data.sources.espn_athletes import HEADSHOT_PREFIX, headshot_url, valid_
 from app.models.player import Player, Position
 from app.models.profile import Bio, Combine, CombineDrill, PlayerProfile, SourceStatus, StatCategory
 from app.services.profiles import ProfileService, ProfileUnavailable
+from app.services.tags import INJURY_STATUSES
 
 log = logging.getLogger(__name__)
 
@@ -159,6 +160,16 @@ def build_profile(player: Player, service: ProfileService, local: LocalPlayerDat
                     headshot = url
                 nfl_stats = _categories(cached.nfl_stats)
                 college_stats = _categories(cached.college_stats)
+
+    # The synced injury status is what start/sit, tiers, and the tags go by, so it wins over
+    # ESPN's: otherwise a player on injured reserve could read "Day-To-Day" or "Active" here.
+    # The other way too: off the report, ESPN's injury designation (a player back from IR still
+    # reading "Injured Reserve") is dropped. Only "Active" is kept.
+    injury = INJURY_STATUSES.get((player.injury_status or "").upper())
+    if injury:
+        bio = bio.model_copy(update={"status": injury})
+    elif bio.status and bio.status.lower() != "active":
+        bio = bio.model_copy(update={"status": None})
 
     return PlayerProfile(player=player, headshot_url=headshot, bio=bio, nfl_stats=nfl_stats,
                          college_stats=college_stats, combine=combine, espn=espn)

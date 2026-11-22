@@ -448,7 +448,7 @@
     }
     // The search stays disabled until there are players to find, so nothing typed is lost.
     playersReady = true;
-    els.search.placeholder = "Search players or teams to add";
+    els.search.placeholder = "Search name, team, position, or college";
     renderEditing();
     search.render();
   }
