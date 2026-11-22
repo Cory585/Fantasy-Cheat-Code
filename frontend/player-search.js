@@ -297,8 +297,59 @@ window.PlayerUI = (() => {
     return text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
   }
 
+  // Each team's city and nickname, so "lions" or "detroit" finds Detroit's players.
+  const TEAM_NAMES = {
+    ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
+    CAR: "Carolina Panthers", CHI: "Chicago Bears", CIN: "Cincinnati Bengals", CLE: "Cleveland Browns",
+    DAL: "Dallas Cowboys", DEN: "Denver Broncos", DET: "Detroit Lions", GB: "Green Bay Packers",
+    HOU: "Houston Texans", IND: "Indianapolis Colts", JAX: "Jacksonville Jaguars", KC: "Kansas City Chiefs",
+    LAC: "Los Angeles Chargers", LAR: "Los Angeles Rams", LV: "Las Vegas Raiders", MIA: "Miami Dolphins",
+    MIN: "Minnesota Vikings", NE: "New England Patriots", NO: "New Orleans Saints", NYG: "New York Giants",
+    NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SEA: "Seattle Seahawks",
+    SF: "San Francisco 49ers", TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Commanders",
+  };
+  const TEAM_WORDS = Object.fromEntries(
+    Object.entries(TEAM_NAMES).map(([code, name]) => [code, normalize(name).split(" ")]),
+  );
+  // Other ways of typing a position.
+  const POSITION_ALIASES = { def: "DST", dst: "DST", defense: "DST", pk: "K", kicker: "K" };
+
+  // Whether one typed word fits the player: part of their name, their team's code, the start
+  // of their team's city or nickname, their position, or part of their college.
+  function wordMatches(player, word) {
+    if (normalize(player.name).includes(word)) return true;
+    if (player.team && player.team.toLowerCase() === word) return true;
+    if (word.length >= 3 && (TEAM_WORDS[player.team] || []).some((w) => w.startsWith(word))) return true;
+    if ((POSITION_ALIASES[word] || word.toUpperCase()) === player.position) return true;
+    return word.length >= 3 && player.college != null && normalize(player.college).includes(word);
+  }
+
   /**
-   * A combobox that searches players by name or team.
+   * Whether a player fits a search, e.g. "jefferson", "det wr", "lions", "alabama rb": every
+   * word must fit their name, team (code, city, or nickname), position, or college.
+   */
+  const queryWords = (query) => normalize(query).split(" ").filter(Boolean);
+
+  function matchesQuery(player, query) {
+    return queryWords(query).every((word) => wordMatches(player, word));
+  }
+
+  // Whether every word is in the player's name: those results go first, so "brown" lists the
+  // Browns behind players named Brown.
+  function nameMatches(player, query) {
+    const name = normalize(player.name);
+    return queryWords(query).every((word) => name.includes(word));
+  }
+
+  // Whether some word only fits the player's college, so the result can say why it's there.
+  function matchedOnCollege(player, query) {
+    if (player.college == null) return false;
+    const other = { ...player, college: null };
+    return queryWords(query).some((word) => !wordMatches(other, word) && wordMatches(player, word));
+  }
+
+  /**
+   * A combobox that searches players by name, team, position, or college (see matchesQuery).
    *   input, list:  the <input role="combobox"> and its <ul role="listbox">
    *   players():    Map or array of players to search
    *   allowed(p):   whether a player can be picked (e.g. eligible and not already chosen)
@@ -311,11 +362,12 @@ window.PlayerUI = (() => {
     const idPrefix = `${list.id || "results"}-opt`;
 
     function search() {
-      const q = normalize(input.value.trim());
+      const q = input.value.trim();
+      const byName = (p) => (q && nameMatches(p, q) ? 0 : 1);
       return [...players().values()]
         .filter(allowed)
-        .filter((p) => !q || normalize(p.name).includes(q) || p.team.toLowerCase() === q)
-        .sort((x, y) => y.ros_projection - x.ros_projection)
+        .filter((p) => !q || matchesQuery(p, q))
+        .sort((x, y) => byName(x) - byName(y) || y.ros_projection - x.ros_projection)
         .slice(0, limit);
     }
 
@@ -327,7 +379,8 @@ window.PlayerUI = (() => {
       const text = el("span", "search-option-text");
       text.append(
         el("span", "search-option-name", player.name),
-        el("span", "search-option-meta", [player.position, player.team, player.injury_status].filter(Boolean).join(", ")),
+        el("span", "search-option-meta", [player.position, player.team, player.injury_status,
+          matchedOnCollege(player, input.value) ? player.college : null].filter(Boolean).join(", ")),
       );
       item.append(avatar(player, "sm"), text, el("span", "search-option-proj", player.ros_projection.toFixed(1)));
       // mousedown (not click) so the input doesn't blur and close the list first.
@@ -416,6 +469,6 @@ window.PlayerUI = (() => {
 
   return {
     POSITIONS, el, svg, ordinal, plural, request, RequestError, responseError, errorMessage, getJson, messageOf, errorBlock, countdown,
-    loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch,
+    loadPlayers, loadMeta, noteDataStatus, copyText, avatar, profileUrl, createSearch, matchesQuery,
   };
 })();
