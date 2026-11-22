@@ -28,7 +28,7 @@ def espn_draft(*player_ids, status=None):
         league_id="777", season=2026, name="Office League",
         status=status or ("in_progress" if picks else "pre_draft"), draft_type="SNAKE",
         team_count=TEAMS, rounds=2,
-        teams=[EspnDraftTeam(id=i, name=f"Team {i}", abbrev=f"T{i}", slot=i) for i in range(1, TEAMS + 1)],
+        teams=[EspnDraftTeam(id=i, name=f"Squad {i}", abbrev=f"S{i}", slot=i) for i in range(1, TEAMS + 1)],
         picks=picks,
     )
 
@@ -132,6 +132,23 @@ def test_choosing_your_team_moves_your_slot(page, espn):
     expect(page.locator("#draft-slot")).to_have_value("2")
     expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", "2")
     expect(page).to_have_url(re.compile(r"slot=2"))
+
+
+def test_the_board_names_the_league_teams_and_picking_one_follows_it(page, espn):
+    # The board said "Mock draft" and "Team 3" while following a live draft, and choosing a
+    # column moved your slot without changing your league team (#129).
+    connect(page)
+    expect(page.locator("#live-connected")).to_be_visible()
+    expect(page.locator("#board-heading")).to_have_text("Live draft")
+    expect(page.locator('.team-head[data-slot="3"]')).to_have_text("Squad 3")
+    expect(page.locator(".team-head.is-mine")).to_have_text("You")
+    page.click('.team-head[data-slot="3"]')
+    expect(page.locator("#live-team")).to_have_value("3")
+    expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", "3")
+    page.click("#live-disconnect")
+    expect(page.locator("#board-heading")).to_have_text("Mock draft by ADP")
+    expect(page.locator('.team-head[data-slot="5"]')).to_have_text("Team 5")
+    assert page.problems.errors == []
 
 
 def test_complete_draft(page, espn):

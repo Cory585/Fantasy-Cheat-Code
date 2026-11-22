@@ -284,11 +284,20 @@ function renderTimeline() {
 function renderBoard() {
   const { teams, slot, rounds } = state;
   const board = state.board;
-  const taken = new Map((state.live?.draft.picks || []).map((p) => [p.overall, p]));
+  const liveDraft = state.live?.draft;
+  const taken = new Map((liveDraft?.picks || []).map((p) => [p.overall, p]));
+  // Following a live draft, each column is that league's team (by draft slot), not "Team 3".
+  const liveTeams = new Map((liveDraft?.teams || []).filter((t) => t.slot).map((t) => [t.slot, t]));
+  document.getElementById("board-heading").textContent = liveDraft ? "Live draft" : "Mock draft by ADP";
+  document.getElementById("board-note").textContent = liveDraft
+    ? "Picks made in your league so far, then every team taking the best player left by average draft " +
+      "position (ADP). Pick a team's name to follow the draft as that team."
+    : "Every team takes the best player left by average draft position (ADP). Pick a team's name to draft " +
+      "from that slot.";
   const grid = el("div", "draft-grid");
   grid.style.setProperty("--teams", teams);
   grid.setAttribute("role", "table");
-  grid.setAttribute("aria-label", `Mock draft, ${teams} teams, ${rounds} rounds`);
+  grid.setAttribute("aria-label", `${liveDraft ? "Live draft" : "Mock draft"}, ${teams} teams, ${rounds} rounds`);
   // Rows use display: contents, so they group cells for assistive tech without
   // affecting the CSS grid.
   const row = () => {
@@ -306,10 +315,15 @@ function renderBoard() {
   for (let team = 1; team <= teams; team++) {
     const th = el("span", "team-head-cell");
     th.setAttribute("role", "columnheader");
-    const head = el("button", "team-head" + (team === slot ? " is-mine" : ""), team === slot ? "You" : `Team ${team}`);
+    const leagueTeam = liveTeams.get(team);
+    const name = leagueTeam ? leagueTeam.name : `Team ${team}`;
+    const head = el("button", "team-head" + (team === slot ? " is-mine" : ""), team === slot ? "You" : name);
     head.type = "button";
     head.dataset.slot = team;
-    head.setAttribute("aria-label", team === slot ? `Your slot, ${ordinal(team)} pick` : `Draft from the ${ordinal(team)} pick`);
+    if (leagueTeam) head.title = leagueTeam.name;
+    head.setAttribute("aria-label", team === slot
+      ? `Your slot, ${ordinal(team)} pick${leagueTeam ? `: ${leagueTeam.name}` : ""}`
+      : leagueTeam ? `Follow the draft as ${leagueTeam.name}, ${ordinal(team)} pick` : `Draft from the ${ordinal(team)} pick`);
     th.append(head);
     headRow.append(th);
   }
@@ -921,7 +935,16 @@ function init() {
   });
   els.board.addEventListener("click", (event) => {
     const head = event.target.closest("button[data-slot]");
-    if (head) setSlot(Number(head.dataset.slot));
+    if (!head) return;
+    const slot = Number(head.dataset.slot);
+    // Following a live draft, your slot is your league team's: switch teams, not just columns.
+    const leagueTeam = state.live?.draft?.teams.find((t) => t.slot === slot);
+    if (leagueTeam) {
+      state.live.teamId = leagueTeam.id;
+      els.liveTeam.value = String(leagueTeam.id);
+      saveLive();
+    }
+    setSlot(slot);
   });
   els.filter.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-position]");

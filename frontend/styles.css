@@ -1622,8 +1622,12 @@ main {
 }
 
 .team-head {
+  min-width: 0;
   margin: 0;
   padding: 0.5rem 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* a live league's team names can be long */
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--muted);
