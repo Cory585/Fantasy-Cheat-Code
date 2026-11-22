@@ -54,17 +54,8 @@ let requestId = 0; // ignore responses to settings that have since changed
 // ---------- Helpers ----------
 
 const pickLabel = (round, pickInRound) => `${round}.${String(pickInRound).padStart(2, "0")}`;
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const { el, ordinal, profileUrl, request, errorMessage, getJson, errorBlock } = window.PlayerUI;
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-function svg(tag, attrs = {}, text) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-  if (text != null) node.textContent = text;
-  return node;
-}
+const { el, svg, ordinal, plural, profileUrl, request, errorMessage, getJson, errorBlock } = window.PlayerUI;
 
 function shortName(name) {
   const parts = name.split(" ");
