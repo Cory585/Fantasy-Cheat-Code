@@ -204,6 +204,19 @@ button, input, select { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+/* Reserve the bold width of each label (a hidden copy, see data-label in the markup), so the
+   current tab's heavier weight doesn't widen it and nudge the tabs after it on every page. */
+.nav-links a { display: flex; flex-direction: column; align-items: center; }
+.nav-links a::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
 .nav-links a:hover { color: var(--ink); background: var(--bg); }
 
 .nav-links a[aria-current="page"] {
@@ -1609,8 +1622,12 @@ main {
 }
 
 .team-head {
+  min-width: 0;
   margin: 0;
   padding: 0.5rem 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* a live league's team names can be long */
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--muted);
@@ -2895,8 +2912,8 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   position: absolute;
   right: var(--portrait-right);
   /* backdrop.js sets --nav-height, since the nav wraps onto more rows as the window narrows.
-     The head peeks out from just under it. */
-  top: calc(var(--nav-height, 7.25rem) - 3rem);
+     The whole head sits below it, so the nav never cuts off its top. */
+  top: calc(var(--nav-height, 7.25rem) + 0.5rem);
   width: var(--portrait-width);
   height: auto;
   image-rendering: pixelated;
@@ -2907,10 +2924,9 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - max(1.5rem, calc(50vw - var(--page-max) / 2 + 1.5rem)) - 1rem);
 }
 
-/* Smaller on tablets and phones, wholly below the nav, which wraps onto two or more rows. */
+/* Smaller on tablets and phones, where the nav wraps onto two or more rows. */
 @media (max-width: 760px) {
   :root { --portrait-width: 34vw; }
-  .star-portrait { top: calc(var(--nav-height, 11rem) + 0.5rem); }
   .masthead-title { max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - 2rem); }
 }
 

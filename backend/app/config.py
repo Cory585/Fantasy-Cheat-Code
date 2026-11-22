@@ -57,6 +57,9 @@ class Settings:
     # Load the player data in the background at startup, so the first visitor doesn't wait for it
     # (building outlooks from a full database takes several seconds). WARM_START=0 turns it off.
     warm_start: bool = field(default_factory=lambda: os.getenv("WARM_START", "1") != "0")
+    # Re-run the sync and collect jobs every this many hours while the API runs (see
+    # app/data/refresh.py). 0, the default, leaves refreshing to you.
+    auto_refresh_hours: float = field(default_factory=lambda: float(os.getenv("AUTO_REFRESH_HOURS", "0")))
     # The leagues on each profile, written while the API runs.
     league_db_path: Path = field(
         default_factory=lambda: Path(os.getenv("LEAGUE_DB_PATH", str(DATA_DIR / "leagues.db")))

@@ -2,8 +2,10 @@ import os
 
 import pytest
 
-# Tests serve stand-in data; don't load the real data in the background at startup.
-os.environ.setdefault("WARM_START", "0")
+# Tests serve stand-in data: at startup (the e2e server runs it), never load the real data or
+# refresh it from the providers, whatever the shell exports.
+os.environ["WARM_START"] = "0"
+os.environ["AUTO_REFRESH_HOURS"] = "0"
 
 from app.api.dependencies import (
     get_adp,

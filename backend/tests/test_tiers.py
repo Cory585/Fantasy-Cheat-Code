@@ -1,6 +1,7 @@
 import pytest
 
 from app.data.repository import InMemoryPlayerRepository
+from app.models.trade import LeagueSettings
 from app.models.player import Player, Position
 from app.services.tiers import depth, group_into_tiers, tier_breaks, TierService
 from app.services.valuation import ValuationService
@@ -113,9 +114,9 @@ def test_flex_mixes_rb_wr_te_by_value_over_replacement():
     assert {p.position for p in players} == {Position.RB, Position.WR, Position.TE}
     assert "qb1" not in {p.player_id for p in players}
     # One team: RB1, RB2, WR1, WR2, TE1 start, and flex takes the next best (RB3 at 200), so
-    # replacement is RB4 (195), nobody at WR or TE (0).
+    # replacement is RB4 (195), nobody at WR or TE (0). TE1 is questionable: (180 - 0) x 0.9.
     values = {p.player_id: p.value for p in players}
-    assert values["rb1"] == 105 and values["wr1"] == 280 and values["te1"] == 180
+    assert values["rb1"] == 105 and values["wr1"] == 280 and values["te1"] == 162
     assert [p.value for p in players] == sorted(values.values(), reverse=True)
 
 
@@ -127,3 +128,28 @@ def test_depth_limits_the_list():
 def test_player_details_come_through():
     te = service(POOL).tiers(Position.TE, teams=12).tiers[0].players[0]
     assert (te.injury_status, te.bye_week, te.team) == ("Q", 7, "KC")
+
+
+def test_rest_of_season_cuts_injured_players_like_the_trade_analyzer():
+    # A healthy 200-point back outranks a 300-point back who is out (300 x 0.6 = 180).
+    pool = [player("hurt", Position.RB, 300, 25, injury_status="O"), player("well", Position.RB, 200, 10)]
+    result = service(pool).tiers(Position.RB, teams=12)
+    order = [p for t in result.tiers for p in t.players]
+    assert [p.player_id for p in order] == ["well", "hurt"]
+    assert (order[1].points, order[1].value, order[1].injury_factor) == (300, 180, 0.6)
+    # The week view goes by that week's projection, uncut.
+    week = service(pool).tiers(Position.RB, teams=12, week=11)
+    assert [p.player_id for t in week.tiers for p in t.players] == ["hurt", "well"]
+
+
+def test_flex_cuts_value_over_replacement_after_the_replacement_level_like_the_trade_analyzer():
+    # Replacement comes from full projections, and the cut applies to the value over it:
+    # (250 - level) x 0.6, not 250 x 0.6 - level, which would rank the back below replacement.
+    pool = [player("hurt", Position.RB, 250, injury_status="O"), player("rb2", Position.RB, 240),
+            player("rb3", Position.RB, 160), player("rb4", Position.RB, 150),
+            player("wr1", Position.WR, 200), player("wr2", Position.WR, 190), player("te1", Position.TE, 150)]
+    svc = service(pool)
+    values = {p.player_id: p.value for t in svc.tiers(None, teams=1).tiers for p in t.players}
+    trade = svc._valuation.value(pool[0], LeagueSettings(num_teams=1))
+    assert values["hurt"] > 0
+    assert values["hurt"] == round(trade.value, 1)

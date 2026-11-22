@@ -91,8 +91,9 @@ def test_espn_index_matching():
 
 def test_build_players_merges_sources():
     sleeper_players = {
-        "10": {"full_name": "Kenneth Walker III", "position": "RB", "team": "SEA", "injury_status": "Questionable"},
-        "DET": {"first_name": "Detroit", "last_name": "Lions", "position": "DEF", "team": "DET"},
+        "10": {"full_name": "Kenneth Walker III", "position": "RB", "team": "SEA", "injury_status": "Questionable",
+               "college": "Michigan State"},
+        "DET": {"first_name": "Detroit", "last_name": "Lions", "position": "DEF", "team": "DET", "college": " "},
         "11": {"full_name": "Free Agent", "position": "WR", "team": None},
         "12": {"full_name": "No Projection", "position": "WR", "team": "SEA"},
         "13": {"full_name": "Long Snapper", "position": "LS", "team": "SEA"},
@@ -113,6 +114,7 @@ def test_build_players_merges_sources():
     assert walker.espn_id == 100
     assert walker.injury_status == "Q"
     assert walker.bye_week == 8
+    assert walker.college == "Michigan State" and by_id["DET"].college is None
     assert by_id["DET"].name == "Detroit Lions"
     assert by_id["DET"].position == Position.DST
 

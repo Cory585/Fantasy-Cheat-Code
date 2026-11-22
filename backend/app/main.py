@@ -14,16 +14,25 @@ from app.api.static import SiteFiles
 from app.api.security import add_security_headers
 from app.api.ratelimit import RateLimiter, Rule, retry_after_header
 from app.config import settings
+from app.data.refresh import Refresher
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Build the served data now, so the first visitor doesn't wait for it.
     if settings.warm_start:
         threading.Thread(target=dependencies.warm_up, name="warm-start", daemon=True).start()
-    yield
+    # With AUTO_REFRESH_HOURS set, keep the synced and collected data fresh in the background.
+    refresher = Refresher(settings.auto_refresh_hours) if settings.auto_refresh_hours > 0 else None
+    if refresher:
+        refresher.start()
+    try:
+        yield
+    finally:
+        if refresher:
+            refresher.stop(timeout=1)
 
 
 app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)

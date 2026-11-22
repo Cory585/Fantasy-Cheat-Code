@@ -27,7 +27,7 @@ from typing import TypeVar
 from app.models.player import Player, Position
 from app.models.tiers import Tier, TierList, TierPlayer
 from app.models.trade import LeagueSettings
-from app.services.valuation import FLEX_POSITIONS, ValuationService, fill_lineups
+from app.services.valuation import FLEX_POSITIONS, INJURY_DISCOUNT, ValuationService, fill_lineups
 
 T = TypeVar("T")
 
@@ -102,6 +102,7 @@ class _Scored:
     player: Player
     points: float  # projection for the horizon
     value: float  # what's tiered: points, or points over replacement for flex
+    injury_factor: float = 1.0
 
 
 class TierService:
@@ -109,30 +110,42 @@ class TierService:
         self._players = players
         self._valuation = valuation
 
-    def _points(self, player: Player, week: int | None) -> float | None:
+    def _points(self, player: Player, week: int | None,
+                week_points: Callable[[Player], float | None] | None) -> float | None:
         if week is None:
             return self._valuation.projection(player)
+        if week_points is not None:
+            return week_points(player)
         return player.week_projection(week)
 
     def tiers(self, position: Position | None, teams: int, week: int | None = None,
-              max_players: int | None = None) -> TierList:
+              max_players: int | None = None,
+              week_points: Callable[[Player], float | None] | None = None) -> TierList:
         """Tiers at `position` (None = flex: RB, WR, and TE by points over replacement),
-        for the rest of the season, or for one week if `week` is given."""
+        for the rest of the season, or for one week if `week` is given.
+
+        `week_points` scores a player for that week (the API passes start/sit's projection,
+        which counts injuries, byes, and form); without it, the providers' raw projection."""
         positions = FLEX_POSITIONS if position is None else (position,)
         scored = []
         for p in self._players:
             if p.position not in positions:
                 continue
-            points = self._points(p, week)
+            points = self._points(p, week, week_points)
+            # Rest of season, an injured player keeps only part of their value, as in the trade
+            # analyzer: otherwise a player out for weeks tiers with healthy starters.
+            factor = INJURY_DISCOUNT.get(p.injury_status or "", 1.0) if week is None else 1.0
             if points is not None and points > 0:
-                scored.append(_Scored(p, points, points))
+                scored.append(_Scored(p, points, points * factor, factor))
         if position is None:
+            # Replacement levels from the full projections, as ValuationService sets them, and the
+            # discount applied to the value over replacement, as the trade analyzer applies it.
             league = LeagueSettings(num_teams=teams)
             pools = {pos: sorted((s.points for s in scored if s.player.position == pos), reverse=True)
                      for pos in Position}
             levels, _ = fill_lineups(pools, league)
             for s in scored:
-                s.value = s.points - levels[s.player.position]
+                s.value = (s.points - levels[s.player.position]) * s.injury_factor
 
         scored.sort(key=lambda s: (-s.value, s.player.name, s.player.id))
         scored = scored[:max_players or depth(position, teams)]
@@ -147,7 +160,7 @@ class TierService:
                 players.append(TierPlayer(
                     player_id=s.player.id, name=s.player.name, position=s.player.position, team=s.player.team,
                     bye_week=s.player.bye_week, injury_status=s.player.injury_status, rank=rank,
-                    points=round(s.points, 1), value=round(s.value, 1),
+                    points=round(s.points, 1), value=round(s.value, 1), injury_factor=s.injury_factor,
                 ))
             tiers.append(Tier(tier=number, players=players, high=players[0].value, low=players[-1].value))
         for tier, following in zip(tiers, tiers[1:]):

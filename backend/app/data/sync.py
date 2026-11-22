@@ -154,6 +154,7 @@ def build_players(
             continue
 
         status = raw.get("injury_status")
+        college = raw.get("college")
         players.append(
             Player(
                 id=sleeper_id,
@@ -163,6 +164,7 @@ def build_players(
                 bye_week=bye_weeks.get(team),
                 ros_projection=round(sum(sources.values()) / len(sources), 2),
                 injury_status=INJURY_CODES.get(status, status) if status else None,
+                college=(college.strip() or None) if isinstance(college, str) else None,
                 sleeper_id=sleeper_id,
                 espn_id=espn_id,
                 projection_sources=sources,
