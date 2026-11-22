@@ -71,7 +71,9 @@
     head.append(name);
     if (player.injury_status) {
       const injury = el("span", "tier-injury", player.injury_status);
-      injury.title = `Injury status: ${player.injury_status}`;
+      injury.title = player.injury_factor < 1
+        ? `Injury status: ${player.injury_status}. Rest-of-season points cut to ${Math.round(player.injury_factor * 100)}%.`
+        : `Injury status: ${player.injury_status}`;
       head.append(injury);
     }
     card.append(head);

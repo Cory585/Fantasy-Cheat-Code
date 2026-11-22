@@ -113,9 +113,9 @@ def test_flex_mixes_rb_wr_te_by_value_over_replacement():
     assert {p.position for p in players} == {Position.RB, Position.WR, Position.TE}
     assert "qb1" not in {p.player_id for p in players}
     # One team: RB1, RB2, WR1, WR2, TE1 start, and flex takes the next best (RB3 at 200), so
-    # replacement is RB4 (195), nobody at WR or TE (0).
+    # replacement is RB4 (195), nobody at WR or TE (0). TE1 is questionable: 180 x 0.9.
     values = {p.player_id: p.value for p in players}
-    assert values["rb1"] == 105 and values["wr1"] == 280 and values["te1"] == 180
+    assert values["rb1"] == 105 and values["wr1"] == 280 and values["te1"] == 162
     assert [p.value for p in players] == sorted(values.values(), reverse=True)
 
 
@@ -127,3 +127,15 @@ def test_depth_limits_the_list():
 def test_player_details_come_through():
     te = service(POOL).tiers(Position.TE, teams=12).tiers[0].players[0]
     assert (te.injury_status, te.bye_week, te.team) == ("Q", 7, "KC")
+
+
+def test_rest_of_season_cuts_injured_players_like_the_trade_analyzer():
+    # A healthy 200-point back outranks a 300-point back who is out (300 x 0.6 = 180).
+    pool = [player("hurt", Position.RB, 300, 25, injury_status="O"), player("well", Position.RB, 200, 10)]
+    result = service(pool).tiers(Position.RB, teams=12)
+    order = [p for t in result.tiers for p in t.players]
+    assert [p.player_id for p in order] == ["well", "hurt"]
+    assert (order[1].points, order[1].injury_factor) == (180, 0.6)
+    # The week view goes by that week's projection, uncut.
+    week = service(pool).tiers(Position.RB, teams=12, week=11)
+    assert [p.player_id for t in week.tiers for p in t.players] == ["hurt", "well"]

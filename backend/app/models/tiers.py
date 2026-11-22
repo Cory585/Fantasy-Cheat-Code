@@ -17,6 +17,8 @@ class TierPlayer(BaseModel):
     rank: int = Field(description="1-based rank in the whole list")
     points: float = Field(description="Projected points for the horizon (rest of season, or the week)")
     value: float = Field(description="What's tiered: points, or points over replacement in the flex view")
+    injury_factor: float = Field(1.0, description="Share of rest-of-season points kept for the injury status "
+                                                  "(the trade analyzer's discount); 1 in the week view")
 
 
 class Tier(BaseModel):
