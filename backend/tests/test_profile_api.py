@@ -72,6 +72,18 @@ def test_full_profile(tmp_path, local_db):
     assert client.get("/players/9221/profile").json()["espn"]["status"] == "cached"
 
 
+def test_synced_injury_status_wins_over_espn(tmp_path, local_db):
+    # ESPN's bio says "Active"; the synced injury report says IR (#128).
+    hurt = GIBBS.model_copy(update={"injury_status": "IR"})
+    use(tmp_path, Source(), local_db, players=(hurt,))
+    assert client.get("/players/9221/profile").json()["bio"]["status"] == "Injured reserve"
+
+
+def test_espn_status_stands_without_an_injury(tmp_path, local_db):
+    use(tmp_path, Source(), local_db)
+    assert client.get("/players/9221/profile").json()["bio"]["status"] == "Active"
+
+
 def test_espn_down_still_returns_local_data(tmp_path, local_db):
     use(tmp_path, Source(fail=httpx.ConnectError("down")), local_db)
     body = client.get("/players/9221/profile").json()
