@@ -1,5 +1,6 @@
 """FastAPI entry point. Run with: uvicorn app.main:app --reload (from backend/)."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -11,10 +12,26 @@ from app.api.static import SiteFiles
 from app.api.security import add_security_headers
 from app.api.ratelimit import RateLimiter, Rule, retry_after_header
 from app.config import settings
+from app.data.refresh import Refresher
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
-app = FastAPI(title=settings.app_name, version=settings.version)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # With AUTO_REFRESH_HOURS set, keep the synced and collected data fresh in the background.
+    refresher = Refresher(settings.auto_refresh_hours) if settings.auto_refresh_hours > 0 else None
+    if refresher:
+        refresher.start()
+    try:
+        yield
+    finally:
+        if refresher:
+            refresher.stop(timeout=1)
+
+
+app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
 errors.install(app)
 
 # Compress JSON and the static site (/players is a few hundred KB). Starlette leaves

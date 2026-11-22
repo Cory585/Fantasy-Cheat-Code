@@ -54,6 +54,9 @@ class Settings:
     rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
     # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
     trust_proxy: bool = field(default_factory=lambda: os.getenv("TRUST_PROXY", "0") == "1")
+    # Re-run the sync and collect jobs every this many hours while the API runs (see
+    # app/data/refresh.py). 0, the default, leaves refreshing to you.
+    auto_refresh_hours: float = field(default_factory=lambda: float(os.getenv("AUTO_REFRESH_HOURS", "0")))
     # The leagues on each profile, written while the API runs.
     league_db_path: Path = field(
         default_factory=lambda: Path(os.getenv("LEAGUE_DB_PATH", str(DATA_DIR / "leagues.db")))

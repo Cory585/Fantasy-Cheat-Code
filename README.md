@@ -133,6 +133,10 @@ python -m app.defense.train
 python -m app.kicker.train
 
 uvicorn app.main:app --reload
+
+# Keep the data fresh: sync and collect again every 6 hours while the API runs
+# (PowerShell: $env:AUTO_REFRESH_HOURS = "6"), or run `python -m app.data.refresh` from cron.
+AUTO_REFRESH_HOURS=6 uvicorn app.main:app
 ```
 
 Open http://localhost:8000 for the site and http://localhost:8000/docs for the interactive API
