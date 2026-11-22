@@ -82,9 +82,11 @@
       .filter(Boolean).join(" · ");
     const line = el("p", "tier-player-meta player-meta");
     line.append(el("span", null, meta));
+    // The value is what's ranked: points (or points over replacement in flex), cut for injury.
     const points = el("span", "tier-points",
-      flex ? `+${fmt(player.value)} (${fmt(player.points)} pts)` : `${fmt(player.points)} pts`);
+      flex ? `+${fmt(player.value)} (${fmt(player.points)} pts)` : `${fmt(player.value)} pts`);
     if (flex) points.title = `${fmt(player.value)} points over a replacement-level ${player.position}`;
+    else if (player.injury_factor < 1) points.title = `${fmt(player.points)} projected, cut for injury status`;
     line.append(points);
     card.append(line);
 
