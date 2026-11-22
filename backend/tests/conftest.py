@@ -1,4 +1,10 @@
+import os
+
 import pytest
+
+# Tests serve stand-in data: never refresh the real data from the providers, whatever the shell
+# exports (the e2e server runs the app's startup).
+os.environ["AUTO_REFRESH_HOURS"] = "0"
 
 from app.api.dependencies import (
     get_adp,
