@@ -943,6 +943,8 @@ function init() {
       state.live.teamId = leagueTeam.id;
       els.liveTeam.value = String(leagueTeam.id);
       saveLive();
+    } else if (liveTeamSlot() != null) {
+      return; // no league team in that slot to follow; your slot stays your team's
     }
     setSlot(slot);
   });

@@ -136,18 +136,36 @@ def test_choosing_your_team_moves_your_slot(page, espn):
 
 def test_the_board_names_the_league_teams_and_picking_one_follows_it(page, espn):
     # The board said "Mock draft" and "Team 3" while following a live draft, and choosing a
-    # column moved your slot without changing your league team (#129).
+    # column moved your slot without changing your league team (#129). Team ids and slots
+    # differ here (team 6 picks 3rd), so mixing them up shows.
+    reversed_order = espn_draft()
+    reversed_order.teams = [t.model_copy(update={"slot": TEAMS + 1 - t.id}) for t in reversed_order.teams]
+    espn.set(reversed_order)
     connect(page)
     expect(page.locator("#live-connected")).to_be_visible()
     expect(page.locator("#board-heading")).to_have_text("Live draft")
-    expect(page.locator('.team-head[data-slot="3"]')).to_have_text("Squad 3")
+    expect(page.locator('.team-head[data-slot="3"]')).to_have_text("Squad 6")
     expect(page.locator(".team-head.is-mine")).to_have_text("You")
     page.click('.team-head[data-slot="3"]')
-    expect(page.locator("#live-team")).to_have_value("3")
+    expect(page.locator("#live-team")).to_have_value("6")
     expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", "3")
+    assert '"teamId":6' in page.evaluate("sessionStorage.getItem('fcc-live-draft')")
     page.click("#live-disconnect")
     expect(page.locator("#board-heading")).to_have_text("Mock draft by ADP")
     expect(page.locator('.team-head[data-slot="5"]')).to_have_text("Team 5")
+    assert page.problems.errors == []
+
+
+def test_a_column_without_a_league_team_leaves_your_slot_alone(page, espn):
+    gap = espn_draft()
+    gap.teams = [t.model_copy(update={"slot": None}) if t.id == 7 else t for t in gap.teams]
+    espn.set(gap)
+    connect(page)
+    expect(page.locator("#live-connected")).to_be_visible()
+    expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", "5")
+    page.click('.team-head[data-slot="7"]')
+    expect(page.locator(".team-head.is-mine")).to_have_attribute("data-slot", "5")
+    expect(page.locator("#live-team")).to_have_value("5")
     assert page.problems.errors == []
 
 
