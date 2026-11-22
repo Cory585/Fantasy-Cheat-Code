@@ -84,6 +84,16 @@ def test_espn_status_stands_without_an_injury(tmp_path, local_db):
     assert client.get("/players/9221/profile").json()["bio"]["status"] == "Active"
 
 
+def test_espn_injury_status_is_dropped_when_the_report_has_the_player_healthy(tmp_path, local_db, monkeypatch):
+    from app.data.sources import espn_athletes
+
+    real = espn_athletes.parse_bio
+    monkeypatch.setattr(espn_athletes, "parse_bio", lambda raw, espn_id: {**real(raw, espn_id),
+                                                                          "status": "Injured Reserve"})
+    use(tmp_path, Source(), local_db)
+    assert client.get("/players/9221/profile").json()["bio"]["status"] is None
+
+
 def test_espn_down_still_returns_local_data(tmp_path, local_db):
     use(tmp_path, Source(fail=httpx.ConnectError("down")), local_db)
     body = client.get("/players/9221/profile").json()

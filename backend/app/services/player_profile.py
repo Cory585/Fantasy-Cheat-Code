@@ -163,9 +163,13 @@ def build_profile(player: Player, service: ProfileService, local: LocalPlayerDat
 
     # The synced injury status is what start/sit, tiers, and the tags go by, so it wins over
     # ESPN's: otherwise a player on injured reserve could read "Day-To-Day" or "Active" here.
+    # The other way too: off the report, ESPN's injury designation (a player back from IR still
+    # reading "Injured Reserve") is dropped. Only "Active" is kept.
     injury = INJURY_STATUSES.get((player.injury_status or "").upper())
     if injury:
         bio = bio.model_copy(update={"status": injury})
+    elif bio.status and bio.status.lower() != "active":
+        bio = bio.model_copy(update={"status": None})
 
     return PlayerProfile(player=player, headshot_url=headshot, bio=bio, nfl_stats=nfl_stats,
                          college_stats=college_stats, combine=combine, espn=espn)
