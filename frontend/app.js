@@ -817,7 +817,7 @@ async function loadData() {
     renderError(error, loadData);
     return;
   }
-  setSearchesReady(true, "Search players or teams");
+  setSearchesReady(true, "Search name, team, position, or college");
   state.loaded = true;
   readUrl();
   renderLineupSettings();

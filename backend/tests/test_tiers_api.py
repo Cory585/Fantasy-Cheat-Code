@@ -49,3 +49,25 @@ def test_tiers_endpoint_flex(pool):
 ])
 def test_tiers_endpoint_rejects_bad_input(pool, params):
     assert client.get("/tiers", params=params).status_code == 422
+
+
+def test_week_tiers_leave_out_players_who_are_out(pool):
+    # rb1 has the best week-11 projection but is ruled out; rb3 leads instead (#134).
+    hurt = [p.model_copy(update={"injury_status": "O"}) if p.id == "rb1" else p for p in POOL]
+    app.dependency_overrides[get_player_repository] = lambda: InMemoryPlayerRepository(hurt)
+    body = client.get("/tiers", params={"position": "RB", "horizon": "week"}).json()
+    ids = [p["player_id"] for t in body["tiers"] for p in t["players"]]
+    assert "rb1" not in ids and ids[0] == "rb3"
+
+
+def test_week_tiers_keep_players_whose_final_score_isnt_collected_yet(pool):
+    # KC's week-11 game is final but no score is collected: keep KC's players at their
+    # projection rather than dropping them off as 0 points.
+    from app.services.matchups import Game
+
+    played = MatchupData(season=2026, schedule={"KC": {11: Game(11, "DEN", True, True, gameday="2026-09-17")},
+                                                "DEN": {11: Game(11, "KC", False, True, gameday="2026-09-17")}})
+    app.dependency_overrides[get_matchups] = lambda: (played, {"season": 2026, "weeks": [11, 17]})
+    body = client.get("/tiers", params={"position": "RB", "horizon": "week", "week": 11}).json()
+    points = {p["player_id"]: p["points"] for t in body["tiers"] for p in t["players"]}
+    assert points["rb1"] == 25
