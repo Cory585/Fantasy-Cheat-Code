@@ -29,8 +29,12 @@ AUTO_REFRESH_HOURS=6 uvicorn app.main:app       # every 6 hours while the API ru
 ```
 
 With `AUTO_REFRESH_HOURS` set, a background thread runs both jobs that often, starting right
-away if the cache is already older than that. A failed run is logged and the current files keep
-serving; the API reloads the files once a run replaces them.
+away if nothing has refreshed the data for that long. Each run syncs in the scoring format the
+cache already has, collects the datasets that change during the week (the heavy ones, like
+play-by-play, at most daily), and records itself in `data/refresh_state.json`, so restarts don't
+refresh again at once. `data/refresh.lock` keeps several workers or a cron run from refreshing at
+the same time. A failed run is logged and the current files keep serving; the API reloads the
+files once a run replaces them.
 
 The running API picks up a new cache without a restart. If no cache exists (or it can't be
 read), the API falls back to the fictional sample players in `app/data/sample_players.py`, and
