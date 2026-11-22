@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.dependencies import get_start_sit_advisor, get_tier_service
 from app.api.errors import ApiError
 from app.models.player import Player, Position
+from app.models.start_sit import GameStatus
 from app.models.tiers import TierList
 from app.services.start_sit import StartSitAdvisor, StartSitError
 from app.services.tiers import TierService
@@ -47,9 +48,13 @@ def tiers(
         # out or on IR scores 0 and drops off instead of topping the list (#134). Players with
         # no projection for the week stay out, so a week without projections is still empty.
         def week_points(player: Player) -> float | None:
-            if player.week_projection(checked) is None:
+            provider = player.week_projection(checked)
+            if provider is None:
                 return None
-            return advisor.evaluate(player, checked).projection
+            outlook = advisor.evaluate(player, checked)
+            if outlook.status == GameStatus.PLAYED and outlook.actual_points is None:
+                return provider  # final, but not collected yet: keep them on the list
+            return outlook.projection
 
     return service.tiers(None if position == "FLEX" else Position(position), teams, week=week, max_players=depth,
                          week_points=week_points)

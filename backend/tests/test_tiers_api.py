@@ -58,3 +58,16 @@ def test_week_tiers_leave_out_players_who_are_out(pool):
     body = client.get("/tiers", params={"position": "RB", "horizon": "week"}).json()
     ids = [p["player_id"] for t in body["tiers"] for p in t["players"]]
     assert "rb1" not in ids and ids[0] == "rb3"
+
+
+def test_week_tiers_keep_players_whose_final_score_isnt_collected_yet(pool):
+    # KC's week-11 game is final but no score is collected: keep KC's players at their
+    # projection rather than dropping them off as 0 points.
+    from app.services.matchups import Game
+
+    played = MatchupData(season=2026, schedule={"KC": {11: Game(11, "DEN", True, True, gameday="2026-09-17")},
+                                                "DEN": {11: Game(11, "KC", False, True, gameday="2026-09-17")}})
+    app.dependency_overrides[get_matchups] = lambda: (played, {"season": 2026, "weeks": [11, 17]})
+    body = client.get("/tiers", params={"position": "RB", "horizon": "week", "week": 11}).json()
+    points = {p["player_id"]: p["points"] for t in body["tiers"] for p in t["players"]}
+    assert points["rb1"] == 25
