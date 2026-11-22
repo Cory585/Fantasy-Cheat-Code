@@ -18,6 +18,20 @@ week is past the end week (for example, when Sleeper's current week is a playoff
 won't write a cache with under half the current cache's players unless you pass `--force`.
 Provider records that don't parse are logged and skipped.
 
+### Keeping it fresh
+
+Projections and the injury report change daily, and the pages warn when the sync is from an
+earlier week. Either refresh on a schedule yourself, or let the API do it:
+
+```
+python -m app.data.refresh                      # once: sync, then collect the current season
+AUTO_REFRESH_HOURS=6 uvicorn app.main:app       # every 6 hours while the API runs
+```
+
+With `AUTO_REFRESH_HOURS` set, a background thread runs both jobs that often, starting right
+away if the cache is already older than that. A failed run is logged and the current files keep
+serving; the API reloads the files once a run replaces them.
+
 The running API picks up a new cache without a restart. If no cache exists (or it can't be
 read), the API falls back to the fictional sample players in `app/data/sample_players.py`, and
 `/meta` reports `"source": "sample"`.
