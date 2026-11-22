@@ -31,7 +31,8 @@ def tiers(
     together by points over replacement for a league of `teams`.
 
     The week view ranks by start/sit's projection for the week, so injuries, byes, recent form,
-    and games already played count."""
+    and games already played count. It's empty when the synced data has no weekly projections
+    for that week."""
     if horizon == "ros" and week is not None:
         raise ApiError(422, "invalid_week", "Pass week only with horizon=week.")
     week_points = None
@@ -43,8 +44,11 @@ def tiers(
         checked = week
 
         # Not the providers' raw projection, which ignores the injury report: a player who is
-        # out or on IR scores 0 and drops off instead of topping the list (#134).
-        def week_points(player: Player) -> float:
+        # out or on IR scores 0 and drops off instead of topping the list (#134). Players with
+        # no projection for the week stay out, so a week without projections is still empty.
+        def week_points(player: Player) -> float | None:
+            if player.week_projection(checked) is None:
+                return None
             return advisor.evaluate(player, checked).projection
 
     return service.tiers(None if position == "FLEX" else Position(position), teams, week=week, max_players=depth,
