@@ -54,6 +54,9 @@ class Settings:
     rate_limit_enabled: bool = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "1") != "0")
     # Key clients on X-Forwarded-For. Only enable behind a proxy you control that sets it.
     trust_proxy: bool = field(default_factory=lambda: os.getenv("TRUST_PROXY", "0") == "1")
+    # Load the player data in the background at startup, so the first visitor doesn't wait for it
+    # (building outlooks from a full database takes several seconds). WARM_START=0 turns it off.
+    warm_start: bool = field(default_factory=lambda: os.getenv("WARM_START", "1") != "0")
     # Re-run the sync and collect jobs every this many hours while the API runs (see
     # app/data/refresh.py). 0, the default, leaves refreshing to you.
     auto_refresh_hours: float = field(default_factory=lambda: float(os.getenv("AUTO_REFRESH_HOURS", "0")))

@@ -1,11 +1,13 @@
 """FastAPI entry point. Run with: uvicorn app.main:app --reload (from backend/)."""
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from starlette.middleware.gzip import GZipMiddleware
 
+from app.api import dependencies
 from app.api import defenses, draft, errors, leagues, live_draft, meta, players, start_sit, tags, tiers, trades
 from app.api.errors import error_response
 from app.api.static import SiteFiles
@@ -17,9 +19,11 @@ from app.data.refresh import Refresher
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Build the served data now, so the first visitor doesn't wait for it.
+    if settings.warm_start:
+        threading.Thread(target=dependencies.warm_up, name="warm-start", daemon=True).start()
     # With AUTO_REFRESH_HOURS set, keep the synced and collected data fresh in the background.
     refresher = Refresher(settings.auto_refresh_hours) if settings.auto_refresh_hours > 0 else None
     if refresher:
