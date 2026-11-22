@@ -39,8 +39,8 @@ def test_star_portrait_clears_the_nav_title_and_controls(page, path, width):
         "() => getComputedStyle(document.querySelector('.star-portrait')).getPropertyValue('--nav-height') !== ''")
     art = box(portrait)
     nav = box(page.locator(".site-nav"))
-    # On wide screens the head peeks out from just under the nav; narrower, it sits wholly below.
-    assert art["t"] >= nav["b"] - (48 if width > 760 else 0), (art, nav)
+    # Wholly below the nav at every width, so the nav doesn't cut off the top of the head (#74).
+    assert art["t"] >= nav["b"], (art, nav)
     for el in page.locator(".masthead-title > *, .masthead-controls > *").all():
         if el.is_visible():
             assert not overlaps(art, box(el)), (el.evaluate("e => e.outerHTML.slice(0, 80)"), art, box(el))

@@ -2908,8 +2908,8 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   position: absolute;
   right: var(--portrait-right);
   /* backdrop.js sets --nav-height, since the nav wraps onto more rows as the window narrows.
-     The head peeks out from just under it. */
-  top: calc(var(--nav-height, 7.25rem) - 3rem);
+     The whole head sits below it, so the nav never cuts off its top. */
+  top: calc(var(--nav-height, 7.25rem) + 0.5rem);
   width: var(--portrait-width);
   height: auto;
   image-rendering: pixelated;
@@ -2920,10 +2920,9 @@ th[aria-sort="descending"] .df-sort.is-active::after { content: " \25BC"; }
   max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - max(1.5rem, calc(50vw - var(--page-max) / 2 + 1.5rem)) - 1rem);
 }
 
-/* Smaller on tablets and phones, wholly below the nav, which wraps onto two or more rows. */
+/* Smaller on tablets and phones, where the nav wraps onto two or more rows. */
 @media (max-width: 760px) {
   :root { --portrait-width: 34vw; }
-  .star-portrait { top: calc(var(--nav-height, 11rem) + 0.5rem); }
   .masthead-title { max-width: calc(100vw - var(--portrait-right) - var(--portrait-width) - 2rem); }
 }
 
