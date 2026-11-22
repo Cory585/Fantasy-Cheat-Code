@@ -231,7 +231,7 @@ def test_search_waits_for_the_player_list(page):
     search.fill("Sample RB One")
     search.press("Enter")
     expect(page.locator(".team-item")).to_have_count(1)
-    expect(search).to_have_attribute("placeholder", "Search players or teams to add")
+    expect(search).to_have_attribute("placeholder", "Search name, team, position, or college")
 
 
 def test_enter_in_an_empty_search_adds_nobody(page):
@@ -274,7 +274,7 @@ def test_failed_leagues_load_turns_editing_off_until_a_retry_works(page, key):
                                                          body='{"detail": "Leagues are down for a moment."}'))
     page.goto("/team/")
     expect(page.locator("#league-picker .result-error")).to_contain_text("Leagues are down for a moment.")
-    expect(page.locator("#team-search")).to_have_attribute("placeholder", "Search players or teams to add")
+    expect(page.locator("#team-search")).to_have_attribute("placeholder", "Search name, team, position, or college")
     for control in ("#team-name-input", "#team-search", "#slots-reset", 'button[aria-label="More QB spots"]'):
         expect(page.locator(control)).to_be_disabled()
     page.wait_for_timeout(800)  # longer than the save delay

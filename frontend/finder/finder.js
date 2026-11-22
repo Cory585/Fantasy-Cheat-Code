@@ -5,7 +5,7 @@
 // URL (?tag=slot,high_target_share&pos=WR&match=all&q=), so a search can be shared.
 
 (() => {
-  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock, noteDataStatus } = window.PlayerUI;
+  const { el, loadPlayers, avatar, profileUrl, getJson, errorBlock, noteDataStatus, matchesQuery } = window.PlayerUI;
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("finder-status"),
@@ -41,8 +41,6 @@
     loaded: false, // players and tags are in; until then the list shows loading or the error
   };
 
-  const normalize = (text) => text.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, "");
-
   // ---------- URL ----------
 
   function readUrl() {
@@ -70,10 +68,7 @@
 
   function matches(player) {
     if (state.pos && player.position !== state.pos) return false;
-    if (state.q) {
-      const q = normalize(state.q);
-      if (!normalize(player.name).includes(q) && player.team.toLowerCase() !== q) return false;
-    }
+    if (state.q && !matchesQuery(player, state.q)) return false;
     if (!state.selected.length) return true;
     const keys = new Set(tagsOf(player.id).map((t) => t.key));
     return state.match === "all" ? state.selected.every((k) => keys.has(k)) : state.selected.some((k) => keys.has(k));

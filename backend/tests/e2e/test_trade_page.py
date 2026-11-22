@@ -107,6 +107,20 @@ def test_search_adds_players_with_the_keyboard(page):
     assert "b=" in page.url
 
 
+@pytest.mark.parametrize(("query", "expected"), [
+    ("lions rb", ["Jahmyr Gibbs", "Sample RB Three"]),  # team nickname and position (#21)
+    ("detroit RB", ["Jahmyr Gibbs", "Sample RB Three"]),  # city
+    ("alabama", ["Jahmyr Gibbs"]),  # college
+    ("gibbs det", ["Jahmyr Gibbs"]),  # name and team code
+])
+def test_search_finds_players_by_team_position_and_college(page, query, expected):
+    page.goto("/")
+    search = page.locator('.side[data-side="a"] .player-search')
+    expect(search).to_be_enabled()
+    search.fill(query)
+    expect(page.locator("#results-a .search-option-name")).to_have_text(expected)
+
+
 def test_enter_in_an_empty_search_adds_nobody(page):
     page.goto("/")
     search = page.locator('.side[data-side="a"] .player-search')
