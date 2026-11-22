@@ -328,9 +328,24 @@ window.PlayerUI = (() => {
    * Whether a player fits a search, e.g. "jefferson", "det wr", "lions", "alabama rb": every
    * word must fit their name, team (code, city, or nickname), position, or college.
    */
+  const queryWords = (query) => normalize(query).split(" ").filter(Boolean);
+
   function matchesQuery(player, query) {
-    const words = normalize(query).split(" ").filter(Boolean);
-    return words.every((word) => wordMatches(player, word));
+    return queryWords(query).every((word) => wordMatches(player, word));
+  }
+
+  // Whether every word is in the player's name: those results go first, so "brown" lists the
+  // Browns behind players named Brown.
+  function nameMatches(player, query) {
+    const name = normalize(player.name);
+    return queryWords(query).every((word) => name.includes(word));
+  }
+
+  // Whether some word only fits the player's college, so the result can say why it's there.
+  function matchedOnCollege(player, query) {
+    if (player.college == null) return false;
+    const other = { ...player, college: null };
+    return queryWords(query).some((word) => !wordMatches(other, word) && wordMatches(player, word));
   }
 
   /**
@@ -348,10 +363,11 @@ window.PlayerUI = (() => {
 
     function search() {
       const q = input.value.trim();
+      const byName = (p) => (q && nameMatches(p, q) ? 0 : 1);
       return [...players().values()]
         .filter(allowed)
         .filter((p) => !q || matchesQuery(p, q))
-        .sort((x, y) => y.ros_projection - x.ros_projection)
+        .sort((x, y) => byName(x) - byName(y) || y.ros_projection - x.ros_projection)
         .slice(0, limit);
     }
 
@@ -363,7 +379,8 @@ window.PlayerUI = (() => {
       const text = el("span", "search-option-text");
       text.append(
         el("span", "search-option-name", player.name),
-        el("span", "search-option-meta", [player.position, player.team, player.injury_status].filter(Boolean).join(", ")),
+        el("span", "search-option-meta", [player.position, player.team, player.injury_status,
+          matchedOnCollege(player, input.value) ? player.college : null].filter(Boolean).join(", ")),
       );
       item.append(avatar(player, "sm"), text, el("span", "search-option-proj", player.ros_projection.toFixed(1)));
       // mousedown (not click) so the input doesn't blur and close the list first.

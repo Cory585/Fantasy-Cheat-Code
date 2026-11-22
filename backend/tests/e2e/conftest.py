@@ -32,6 +32,8 @@ PLAYERS = SAMPLE_PLAYERS + [
            college="Alabama"),
     Player(id="666", name=XSS_NAME, position=Position.WR, team="DET", espn_id=666, ros_projection=1),
     Player(id="500", name="Down Espn", position=Position.TE, team="DET", espn_id=500, ros_projection=2),
+    # Named like a team's nickname, to check name matches list first in search.
+    Player(id="501", name="Joe Falcone", position=Position.WR, team="KC", ros_projection=0.5),
 ]
 
 BIO = {"name": "Jahmyr Gibbs", "height": "5' 9\"", "weight": "202 lbs", "age": 24, "college": "Alabama",

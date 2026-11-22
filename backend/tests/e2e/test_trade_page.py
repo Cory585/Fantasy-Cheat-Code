@@ -121,6 +121,20 @@ def test_search_finds_players_by_team_position_and_college(page, query, expected
     expect(page.locator("#results-a .search-option-name")).to_have_text(expected)
 
 
+def test_search_lists_name_matches_first_and_says_which_college_matched(page):
+    page.goto("/")
+    search = page.locator('.side[data-side="a"] .player-search')
+    expect(search).to_be_enabled()
+    search.fill("falc")  # Joe Falcone by name, then Atlanta's players by nickname
+    names = page.locator("#results-a .search-option-name")
+    expect(names.first).to_have_text("Joe Falcone")
+    assert names.count() > 1
+    search.fill("alabama")
+    expect(page.locator("#results-a .search-option-meta")).to_have_text(["RB, DET, Alabama"])
+    search.fill("gibbs")
+    expect(page.locator("#results-a .search-option-meta")).to_have_text(["RB, DET"])
+
+
 def test_enter_in_an_empty_search_adds_nobody(page):
     page.goto("/")
     search = page.locator('.side[data-side="a"] .player-search')
