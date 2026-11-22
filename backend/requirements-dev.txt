@@ -2,6 +2,6 @@
 -r requirements.txt
 hypothesis>=6.170.15
 pytest-cov>=7.1.0
-playwright>=1.65.1  # browser tests drive an installed Edge or Chrome; no browser download needed
+playwright>=1.65.2  # browser tests drive an installed Edge or Chrome; no browser download needed
 ruff>=0.17.5  # lint and security checks (ruff.toml); run by CI and the pre-push hook
 pip-audit>=2.10.1  # known-vulnerable dependency check, run by CI
