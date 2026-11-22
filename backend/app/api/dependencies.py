@@ -326,6 +326,14 @@ _data = ReloadingPlayerData(settings.player_cache_path, settings.database_path,
                             (settings.dst_model_path, settings.kicker_model_path))
 
 
+def warm_up() -> None:
+    """Build the served data now rather than on the first request (see settings.warm_start)."""
+    try:
+        _data.current()
+    except Exception:  # noqa: BLE001 - the first request will try again and report it
+        log.exception("Warm start failed")
+
+
 def get_player_data() -> tuple[PlayerRepository, dict[str, PlayerOutlook]]:
     """The players and their outlooks, read together once per request, so both come from the
     same week even if it turns over mid-request."""

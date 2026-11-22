@@ -1,4 +1,9 @@
+import os
+
 import pytest
+
+# Tests serve stand-in data; don't load the real data in the background at startup.
+os.environ.setdefault("WARM_START", "0")
 
 from app.api.dependencies import (
     get_adp,
